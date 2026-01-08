@@ -1,0 +1,26 @@
+---
+source: tests/cli/check.rs
+info:
+  program: glot
+  args:
+    - check
+  env:
+    NO_COLOR: "1"
+---
+success: true
+exit_code: 0
+----- stdout -----
+warning: "Common.submit"  unused-key
+  --> ./messages/en.json:1:0
+  = note: ("Submit")
+
+warning: "dynamic key"  dynamic-key
+  --> ./src/app.tsx:4:23
+  |
+4 |       return <button>{t(keyName)}</button>;
+  |                       ^
+
+
+✖ 2 problems (0 errors, 2 warnings)
+
+----- stderr -----

@@ -1,0 +1,370 @@
+---
+title: Directives
+description: Inline comments to suppress glot warnings
+---
+
+Glot supports inline comment directives to suppress specific warnings and declare dynamic key usage. Use these when you intentionally want to keep hardcoded text or need to handle dynamic translation keys.
+
+## Available Directives
+
+| Directive                | Scope                         |
+| ------------------------ | ----------------------------- |
+| `glot-disable-next-line` | Suppresses the next line only |
+| `glot-disable`           | Starts suppression block      |
+| `glot-enable`            | Ends suppression block        |
+| `glot-message-keys`      | Declares dynamic keys as used |
+
+## Line Suppression
+
+Use `glot-disable-next-line` to suppress warnings for the next line:
+
+```tsx
+// glot-disable-next-line
+const text = <div>Hardcoded text that's intentional</div>;
+```
+
+The comment must appear on the line immediately before the hardcoded text.
+
+## Block Suppression
+
+Use `glot-disable` and `glot-enable` to suppress a section:
+
+```tsx
+// glot-disable
+const legacy = (
+  <div>
+    <span>Old text</span>
+    <button>Legacy button</button>
+  </div>
+);
+// glot-enable
+```
+
+Everything between `glot-disable` and `glot-enable` is ignored.
+
+## File-Level Suppression
+
+Place `glot-disable` on the first or second line to disable the entire file:
+
+```tsx
+// glot-disable
+// This entire file is excluded from glot checks
+
+export function LegacyComponent() {
+  return <div>Hardcoded text everywhere</div>;
+}
+```
+
+<Note>
+  File-level suppression only works if `glot-disable` appears on line 1 or 2 of
+  the file.
+</Note>
+
+## JSX Comments
+
+In JSX context, use JSX comment syntax:
+
+```tsx
+function Component() {
+  return (
+    <div>
+      {/* glot-disable-next-line */}
+      <button>Submit</button>
+
+      {/* glot-disable */}
+      <span>Multiple</span>
+      <span>Hardcoded</span>
+      <span>Strings</span>
+      {/* glot-enable */}
+    </div>
+  );
+}
+```
+
+## Mixed Contexts
+
+You can mix JavaScript and JSX comments:
+
+```tsx
+function Component() {
+  // glot-disable-next-line
+  const title = "Page Title"; // JS context
+
+  return (
+    <div>
+      {/* glot-disable-next-line */}
+      <h1>Hardcoded Heading</h1> {/* JSX context */}
+    </div>
+  );
+}
+```
+
+## Block Behavior
+
+### Nesting
+
+Blocks cannot be nested. The first `glot-enable` closes the block:
+
+```tsx
+// glot-disable
+<div>Suppressed</div>
+// glot-disable  <- This is ignored
+<span>Still suppressed</span>
+// glot-enable   <- Block ends here
+<p>This is checked</p>
+// glot-enable   <- This is ignored
+```
+
+### Same-Line Enable
+
+Code on the same line as `glot-enable` is checked:
+
+```tsx
+// glot-disable
+<div>Suppressed</div>
+// glot-enable <span>This IS checked</span>
+```
+
+### Unclosed Blocks
+
+An unclosed `glot-disable` suppresses everything after it:
+
+```tsx
+// glot-disable
+<div>Suppressed</div>
+<span>Also suppressed</span>
+// No glot-enable - rest of file is suppressed
+```
+
+## Dynamic Key Declaration
+
+Use `glot-message-keys` to declare which translation keys are used dynamically. This is essential for dynamic keys that cannot be statically analyzed.
+
+### Why Use This?
+
+When you use dynamic keys like ``t(`items.${type}`)``, glot cannot determine which keys are actually used. This causes two problems:
+
+1. The `check` command reports a dynamic key warning
+2. The `clean` command refuses to run (to prevent accidental key deletion)
+
+Using `glot-message-keys` solves both problems by explicitly declaring which keys are used.
+
+### Syntax
+
+**JavaScript/TypeScript comments:**
+
+```tsx
+// glot-message-keys "key1", "key2", "pattern.*"
+```
+
+**JSX comments:**
+
+```tsx
+{
+  /* glot-message-keys "key1", "key2" */
+}
+```
+
+The directive applies to the next line of code.
+
+### Pattern Types
+
+#### Literal Keys
+
+Declare exact key names:
+
+```tsx
+// glot-message-keys "Status.active", "Status.inactive"
+const status = isActive ? "active" : "inactive";
+return <span>{t(`Status.${status}`)}</span>;
+```
+
+#### Glob Patterns
+
+Use `*` as a wildcard to match multiple keys:
+
+```tsx
+// glot-message-keys "errors.*"
+{
+  errors.map((err) => <li key={err}>{t(`errors.${err}`)}</li>);
+}
+```
+
+```tsx
+// glot-message-keys "form.*.label", "form.*.placeholder"
+{
+  fields.map((field) => (
+    <input
+      placeholder={t(`form.${field}.placeholder`)}
+      aria-label={t(`form.${field}.label`)}
+    />
+  ));
+}
+```
+
+<Note>
+  Prefix wildcards like `"*.title"` are not supported. The wildcard must appear
+  after at least one segment.
+</Note>
+
+### Dynamic Key Use Cases
+
+#### Conditional Keys
+
+```tsx
+// glot-message-keys "Button.submit", "Button.next"
+<button>{t(`Button.${isLast ? "submit" : "next"}`)}</button>
+```
+
+#### Array Iteration
+
+```tsx
+{
+  /* glot-message-keys "CharacterForm.genderOptions.*" */
+}
+<select>
+  {genderOptions.map((opt) => (
+    <option key={opt}>{t(`CharacterForm.genderOptions.${opt}`)}</option>
+  ))}
+</select>;
+```
+
+#### Object Property Access
+
+```tsx
+// glot-message-keys "errors.required", "errors.invalid", "errors.tooLong"
+const errorMessage = t(`errors.${validationResult.type}`);
+```
+
+### How It Works with Clean
+
+Keys declared via `glot-message-keys` are marked as "used" in glot's analysis:
+
+- The `check` command no longer warns about the dynamic key
+- The `clean` command can run safely because it knows which keys are in use
+- Declared keys will not be accidentally deleted as "unused"
+
+This is **more precise** than using `glot-disable-next-line`, which only suppresses the warning without telling glot which keys are actually used.
+
+## Use Cases
+
+### Third-Party Components
+
+When using components that require hardcoded text:
+
+```tsx
+{
+  /* glot-disable-next-line */
+}
+<ThirdPartyChart title="Sales Data" />;
+```
+
+### Development Placeholders
+
+Temporary text during development:
+
+```tsx
+// glot-disable-next-line
+<div>TODO: Replace with translated content</div>
+```
+
+### Legal or Technical Text
+
+Text that shouldn't be translated:
+
+```tsx
+{
+  /* glot-disable-next-line */
+}
+<code>npm install glotctl</code>;
+
+{
+  /* glot-disable-next-line */
+}
+<span>MIT License</span>;
+```
+
+### Legacy Code
+
+Sections being migrated gradually:
+
+```tsx
+// glot-disable
+// Legacy component - migrating in Q2
+function OldComponent() {
+  return <div>Old hardcoded text</div>;
+}
+// glot-enable
+```
+
+## Baseline Command
+
+Instead of manually adding directives, use the `baseline` command:
+
+<CodeGroup>
+```bash npm
+npx glot baseline --apply
+```
+
+```bash pnpm
+pnpm exec glot baseline --apply
+```
+
+```bash yarn
+yarn glot baseline --apply
+```
+
+```bash bun
+bunx glot baseline --apply
+```
+
+</CodeGroup>
+
+This is useful when adopting glot in an existing project.
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Be Specific" icon="bullseye">
+    Prefer `glot-disable-next-line` over blocks when possible
+  </Card>
+  <Card title="Add Context" icon="message">
+    Include a comment explaining why suppression is needed
+  </Card>
+  <Card title="Use glot-message-keys for Dynamic Keys" icon="key">
+    Prefer declaring keys over disabling checks for dynamic key usage
+  </Card>
+  <Card title="Review Regularly" icon="clock">
+    Periodically check suppressed items to see if they can be fixed
+  </Card>
+  <Card title="Track in CI" icon="chart-line">
+    Monitor the count of suppressed items over time
+  </Card>
+</CardGroup>
+
+## Example with Context
+
+```tsx
+// glot-disable-next-line - Brand name, do not translate
+<span>Acme Corporation</span>
+
+// glot-disable-next-line - Technical term
+<code>useState</code>
+
+{/* glot-disable-next-line - Migrating in JIRA-1234 */}
+<button>Legacy Action</button>
+```
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Clean Command" icon="broom" href="/commands/clean">
+    Remove unused translation keys safely
+  </Card>
+  <Card title="Baseline Command" icon="terminal" href="/commands/baseline">
+    Auto-insert suppression comments
+  </Card>
+  <Card title="Configuration" icon="gear" href="/configuration">
+    Global ignore patterns
+  </Card>
+</CardGroup>

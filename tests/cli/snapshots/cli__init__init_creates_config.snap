@@ -1,0 +1,15 @@
+---
+source: tests/cli/init.rs
+info:
+  program: glot
+  args:
+    - init
+  env:
+    NO_COLOR: "1"
+---
+success: true
+exit_code: 0
+----- stdout -----
+Created .glotrc.json
+
+----- stderr -----

@@ -1,0 +1,33 @@
+---
+source: tests/cli/check.rs
+info:
+  program: glot
+  args:
+    - check
+  env:
+    NO_COLOR: "1"
+---
+success: false
+exit_code: 1
+----- stdout -----
+warning: "Common.error.unknown"  unused-key
+  --> ./messages/en.json:1:0
+  = note: ("Unknown error")
+
+warning: "template with expression"  dynamic-key
+  --> ./src/app.tsx:6:21
+  |
+6 |         console.log(t(`error.${code}`));
+  |                     ^
+  = hint: add `// glot-message-keys "Common.error.*"` to declare expected keys
+
+error: "Click"  hardcoded-text
+  --> ./src/app.tsx:8:59
+  |
+8 |     return <button onClick={() => handleError('unknown')}>Click</button>;
+  |                                                           ^
+
+
+✖ 3 problems (1 error, 2 warnings)
+
+----- stderr -----

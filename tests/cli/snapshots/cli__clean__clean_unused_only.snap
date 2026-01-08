@@ -1,0 +1,20 @@
+---
+source: tests/cli/clean.rs
+info:
+  program: glot
+  args:
+    - clean
+    - "--unused"
+  env:
+    NO_COLOR: "1"
+---
+success: true
+exit_code: 0
+----- stdout -----
+./messages/en.json:
+  - Common.unused (line 4): ("Unused")  [unused]
+
+Would delete 1 unused key(s) and 0 orphan key(s) from 1 file(s).
+Run with --apply to delete these keys.
+
+----- stderr -----

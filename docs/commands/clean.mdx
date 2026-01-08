@@ -1,0 +1,315 @@
+---
+title: glot clean
+description: Remove unused translation keys from locale files
+---
+
+The `clean` command removes unused or orphan translation keys from your locale JSON files.
+
+## Usage
+
+<CodeGroup>
+```bash npm
+npx glot clean [OPTIONS]
+```
+
+```bash pnpm
+pnpm exec glot clean [OPTIONS]
+```
+
+```bash yarn
+yarn glot clean [OPTIONS]
+```
+
+```bash bun
+bunx glot clean [OPTIONS]
+```
+
+</CodeGroup>
+
+## Options
+
+<ParamField path="--apply" type="boolean" default="false">
+  Actually delete keys. Without this flag, glot runs in dry-run mode and only
+  shows what would be deleted.
+</ParamField>
+
+<ParamField path="--unused" type="boolean" default="false">
+  Only clean unused keys (defined in locale files but not used in code).
+</ParamField>
+
+<ParamField path="--orphan" type="boolean" default="false">
+  Only clean orphan keys (exist in non-primary locales but not in primary
+  locale).
+</ParamField>
+
+<ParamField path="--path" type="string" default=".">
+  Directory to check.
+</ParamField>
+
+## Dry-Run Mode (Default)
+
+By default, glot runs in dry-run mode to preview changes:
+
+<CodeGroup>
+```bash npm
+npx glot clean
+```
+
+```bash pnpm
+pnpm exec glot clean
+```
+
+```bash yarn
+yarn glot clean
+```
+
+```bash bun
+bunx glot clean
+```
+
+</CodeGroup>
+
+Output:
+
+```
+Dry-run mode: showing keys that would be deleted
+
+Would delete from messages/en.json:
+  - common.oldButton
+  - settings.deprecated
+
+Would delete from messages/es.json:
+  - common.oldButton
+  - settings.deprecated
+  - extra.orphanKey (orphan - not in primary locale)
+
+4 keys would be deleted. Run with --apply to delete.
+```
+
+## Apply Changes
+
+To actually delete the keys:
+
+<CodeGroup>
+```bash npm
+npx glot clean --apply
+```
+
+```bash pnpm
+pnpm exec glot clean --apply
+```
+
+```bash yarn
+yarn glot clean --apply
+```
+
+```bash bun
+bunx glot clean --apply
+```
+
+</CodeGroup>
+
+Output:
+
+```
+Deleted from messages/en.json:
+  - common.oldButton
+  - settings.deprecated
+
+Deleted from messages/es.json:
+  - common.oldButton
+  - settings.deprecated
+  - extra.orphanKey
+
+✓ 4 keys deleted
+```
+
+## Clean Specific Key Types
+
+### Unused Keys Only
+
+Remove keys that exist in locale files but are never used in code:
+
+<CodeGroup>
+```bash npm
+npx glot clean --unused --apply
+```
+
+```bash pnpm
+pnpm exec glot clean --unused --apply
+```
+
+```bash yarn
+yarn glot clean --unused --apply
+```
+
+```bash bun
+bunx glot clean --unused --apply
+```
+
+</CodeGroup>
+
+### Orphan Keys Only
+
+Remove keys that exist in non-primary locales but not in the primary locale:
+
+<CodeGroup>
+```bash npm
+npx glot clean --orphan --apply
+```
+
+```bash pnpm
+pnpm exec glot clean --orphan --apply
+```
+
+```bash yarn
+yarn glot clean --orphan --apply
+```
+
+```bash bun
+bunx glot clean --orphan --apply
+```
+
+</CodeGroup>
+
+<Note>
+  When neither `--unused` nor `--orphan` is specified, both types are cleaned.
+</Note>
+
+## Safety Checks
+
+Glot includes safety mechanisms to prevent accidental data loss:
+
+<Warning>
+  Glot will refuse to clean if:
+
+    - **Dynamic keys are detected** - Template literals with expressions like `` t(`key.${id}`) `` can't be statically analyzed
+    - **Parse errors exist** - Some files couldn't be parsed correctly
+
+  </Warning>
+
+If you see this message:
+
+```
+Cannot clean: dynamic keys detected in codebase
+These keys use runtime values and cannot be statically analyzed:
+  - src/components/Dynamic.tsx:15 - t(`items.${item.type}`)
+
+Fix or suppress these before cleaning.
+```
+
+You'll need to either:
+
+1. Replace dynamic keys with static alternatives
+2. Use `// glot-message-keys "pattern.*"` to declare which keys are used dynamically
+
+<Warning>
+  Do NOT use `glot-disable-next-line` for dynamic keys when using `clean`. While
+  it suppresses the warning, it doesn't tell glot which keys are actually used.
+  This means `clean` may incorrectly delete keys that are dynamically
+  referenced.
+</Warning>
+
+### Handling Dynamic Keys
+
+```tsx
+// Before: Dynamic key causes clean to fail
+{
+  items.map((item) => t(`items.${item.type}`));
+}
+
+// After: Declare expected keys with explicit list
+// glot-message-keys "items.basic", "items.premium", "items.enterprise"
+{
+  items.map((item) => t(`items.${item.type}`));
+}
+
+// Or with glob pattern to match all keys under items.*
+// glot-message-keys "items.*"
+{
+  items.map((item) => t(`items.${item.type}`));
+}
+```
+
+## Examples
+
+### Preview All Cleanable Keys
+
+<CodeGroup>
+```bash npm
+npx glot clean
+```
+
+```bash pnpm
+pnpm exec glot clean
+```
+
+```bash yarn
+yarn glot clean
+```
+
+```bash bun
+bunx glot clean
+```
+
+</CodeGroup>
+
+### Clean Everything
+
+<CodeGroup>
+```bash npm
+npx glot clean --apply
+```
+
+```bash pnpm
+pnpm exec glot clean --apply
+```
+
+```bash yarn
+yarn glot clean --apply
+```
+
+```bash bun
+bunx glot clean --apply
+```
+
+</CodeGroup>
+
+### Clean Only Unused Keys in Specific Directory
+
+<CodeGroup>
+```bash npm
+npx glot clean --unused --apply --path ./src
+```
+
+```bash pnpm
+pnpm exec glot clean --unused --apply --path ./src
+```
+
+```bash yarn
+yarn glot clean --unused --apply --path ./src
+```
+
+```bash bun
+bunx glot clean --unused --apply --path ./src
+```
+
+</CodeGroup>
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Directives" icon="code" href="/directives">
+    Use glot-message-keys for dynamic keys
+  </Card>
+  <Card title="Orphan Keys" icon="broom" href="/detection/orphan-keys">
+    Understanding orphan key detection
+  </Card>
+  <Card
+    title="Missing Keys"
+    icon="triangle-exclamation"
+    href="/detection/missing-keys"
+  >
+    Understanding missing key detection
+  </Card>
+</CardGroup>

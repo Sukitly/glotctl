@@ -1,0 +1,1036 @@
+use anyhow::Result;
+use insta_cmd::assert_cmd_snapshot;
+
+use crate::CliTest;
+
+#[test]
+fn test_hardcoded_text() -> Result<()> {
+    let test = CliTest::with_file(
+        "src/app/[locale]/app.tsx",
+        r#"
+  export function Button() {
+      return <button>Submit</button>;
+  }
+  "#,
+    )?;
+
+    assert_cmd_snapshot!(test.check_command());
+
+    Ok(())
+}
+
+#[test]
+fn test_clean_file() -> Result<()> {
+    let test = CliTest::with_file(
+        "app/app.tsx",
+        r#"
+  export function Button() {
+      return <button>{t('submit')}</button>;
+  }
+  "#,
+    )?;
+
+    assert_cmd_snapshot!(test.check_command());
+
+    Ok(())
+}
+
+#[test]
+fn test_multiple_issues() -> Result<()> {
+    let test = CliTest::with_file(
+        "src/app/[locale]/app.tsx",
+        r#"
+  export function Card() {
+      return (
+          <div>
+              <h1>Welcome</h1>
+              <p placeholder="Enter name">Hello World</p>
+          </div>
+      );
+  }
+  "#,
+    )?;
+
+    assert_cmd_snapshot!(test.check_command());
+
+    Ok(())
+}
+
+#[test]
+fn test_help() -> Result<()> {
+    let test = CliTest::new()?;
+
+    assert_cmd_snapshot!(test.command().arg("--help"));
+
+    Ok(())
+}
+
+#[test]
+fn test_config_ignores() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+         "ignores": ["**/generated/**"],
+         "includes": []
+     }"#,
+    )?;
+
+    test.write_file("src/app.tsx", r#"<div>Hello</div>"#)?;
+
+    test.write_file("generated/types.tsx", r#"<div>Ignored</div>"#)?;
+
+    assert_cmd_snapshot!(test.check_command());
+
+    Ok(())
+}
+
+#[test]
+fn test_config_includes() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+         "includes": ["src"]
+     }"#,
+    )?;
+
+    test.write_file("src/app.tsx", r#"<div>Hello</div>"#)?;
+    test.write_file("lib/utils.tsx", r#"<div>Not scanned</div>"#)?;
+
+    assert_cmd_snapshot!(test.check_command());
+
+    Ok(())
+}
+
+#[test]
+fn test_config_checked_attributes() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+         "includes": [],
+         "checkedAttributes": ["placeholder"]
+     }"#,
+    )?;
+
+    test.write_file(
+        "src/app.tsx",
+        r#"<input placeholder="Name" title="Title" />"#,
+    )?;
+
+    assert_cmd_snapshot!(test.check_command());
+
+    Ok(())
+}
+
+#[test]
+fn test_no_config_uses_defaults() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file("src/app/[locale]/app.tsx", r#"<div>In src</div>"#)?;
+    test.write_file("src/lib/utils.tsx", r#"<div>In lib</div>"#)?;
+
+    assert_cmd_snapshot!(test.check_command());
+
+    Ok(())
+}
+
+#[test]
+fn test_missing_key() -> Result<()> {
+    let test = CliTest::new()?;
+
+    // Create config
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+              "includes": ["src"],
+              "messagesDir": "./messages",
+              "primaryLocale": "en"
+          }"#,
+    )?;
+
+    // Create message file (missing "Common.submit")
+    test.write_file(
+        "messages/en.json",
+        r#"{
+              "Common": {
+                  "cancel": "Cancel"
+              }
+          }"#,
+    )?;
+
+    // Create TSX file using a missing key
+    test.write_file(
+        "src/app.tsx",
+        r#"
+  const t = useTranslations("Common");
+  export function Button() {
+      return <button>{t("submit")}</button>;
+  }
+  "#,
+    )?;
+
+    assert_cmd_snapshot!(test.check_command());
+
+    Ok(())
+}
+
+#[test]
+fn test_no_missing_key_when_defined() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+              "includes": ["src"],
+              "messagesDir": "./messages",
+              "primaryLocale": "en"
+          }"#,
+    )?;
+
+    // Key is defined
+    test.write_file(
+        "messages/en.json",
+        r#"{
+              "Common": {
+                  "submit": "Submit"
+              }
+          }"#,
+    )?;
+
+    test.write_file(
+        "src/app.tsx",
+        r#"
+  const t = useTranslations("Common");
+  export function Button() {
+      return <button>{t("submit")}</button>;
+  }
+  "#,
+    )?;
+
+    assert_cmd_snapshot!(test.check_command());
+
+    Ok(())
+}
+
+#[test]
+fn test_missing_key_with_hardcoded_text() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+              "includes": ["src"],
+              "messagesDir": "./messages",
+              "primaryLocale": "en"
+          }"#,
+    )?;
+
+    test.write_file("messages/en.json", r#"{"Common": {}}"#)?;
+
+    test.write_file(
+        "src/app.tsx",
+        r#"
+  const t = useTranslations("Common");
+  export function Form() {
+      return (
+          <form>
+              <button>{t("submit")}</button>
+              <span>Hardcoded</span>
+          </form>
+      );
+  }
+  "#,
+    )?;
+
+    assert_cmd_snapshot!(test.check_command());
+
+    Ok(())
+}
+
+#[test]
+fn test_dynamic_key_warning() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+              "includes": ["src"],
+              "messagesDir": "./messages",
+              "primaryLocale": "en"
+          }"#,
+    )?;
+
+    test.write_file("messages/en.json", r#"{"Common": {"submit": "Submit"}}"#)?;
+
+    test.write_file(
+        "src/app.tsx",
+        r#"
+  const t = useTranslations("Common");
+  export function Button({ keyName }) {
+      return <button>{t(keyName)}</button>;
+  }
+  "#,
+    )?;
+
+    assert_cmd_snapshot!(test.check_command());
+
+    Ok(())
+}
+
+#[test]
+fn test_template_with_expr_warning() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+              "includes": ["src"],
+              "messagesDir": "./messages",
+              "primaryLocale": "en"
+          }"#,
+    )?;
+
+    test.write_file("messages/en.json", r#"{"Common": {"submit": "Submit"}}"#)?;
+
+    test.write_file(
+        "src/app.tsx",
+        r#"
+  const t = useTranslations("Common");
+  export function Button({ prefix }) {
+      return <button>{t(`${prefix}.submit`)}</button>;
+  }
+  "#,
+    )?;
+
+    assert_cmd_snapshot!(test.check_command());
+
+    Ok(())
+}
+
+#[test]
+fn test_template_with_expr_non_jsx_context() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    test.write_file(
+        "messages/en.json",
+        r#"{"Common": {"error": {"unknown": "Unknown error"}}}"#,
+    )?;
+
+    // t() call in a callback, not in JSX - should use // comment style
+    test.write_file(
+        "src/app.tsx",
+        r#"
+import {useTranslations} from 'next-intl';
+export function Component() {
+    const t = useTranslations('Common');
+    const handleError = (code: string) => {
+        console.log(t(`error.${code}`));
+    };
+    return <button onClick={() => handleError('unknown')}>Click</button>;
+}
+"#,
+    )?;
+
+    assert_cmd_snapshot!(test.check_command());
+
+    Ok(())
+}
+
+#[test]
+fn test_replica_lag() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    // Primary locale has both keys
+    test.write_file(
+        "messages/en.json",
+        r#"{
+            "Common": {
+                "submit": "Submit",
+                "cancel": "Cancel"
+            }
+        }"#,
+    )?;
+
+    // zh is missing "cancel"
+    test.write_file(
+        "messages/zh.json",
+        r#"{
+            "Common": {
+                "submit": "提交"
+            }
+        }"#,
+    )?;
+
+    // Empty source file (no hardcoded text)
+    test.write_file(
+        "src/app.tsx",
+        r#"
+const t = useTranslations("Common");
+export function Button() {
+    return <button>{t("submit")}</button>;
+}
+"#,
+    )?;
+
+    assert_cmd_snapshot!(test.check_command());
+
+    Ok(())
+}
+
+#[test]
+fn test_replica_lag_multiple_locales() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    test.write_file(
+        "messages/en.json",
+        r#"{
+            "Common": {
+                "submit": "Submit"
+            }
+        }"#,
+    )?;
+
+    // Both zh and ja are missing the key
+    test.write_file("messages/zh.json", r#"{}"#)?;
+    test.write_file("messages/ja.json", r#"{}"#)?;
+
+    test.write_file("src/app.tsx", r#"const x = 1;"#)?;
+
+    assert_cmd_snapshot!(test.check_command());
+
+    Ok(())
+}
+
+#[test]
+fn test_replica_lag_none() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    test.write_file("messages/en.json", r#"{"Common": {"submit": "Submit"}}"#)?;
+
+    test.write_file("messages/zh.json", r#"{"Common": {"submit": "提交"}}"#)?;
+
+    test.write_file("src/app.tsx", r#"const x = 1;"#)?;
+
+    assert_cmd_snapshot!(test.check_command());
+
+    Ok(())
+}
+
+#[test]
+fn test_unused_key() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    // Define a key that's never used
+    test.write_file(
+        "messages/en.json",
+        r#"{"Common": {"submit": "Submit", "unused": "Unused Button"}}"#,
+    )?;
+
+    // Only use "submit", not "unused"
+    test.write_file(
+        "src/app.tsx",
+        r#"
+const t = useTranslations("Common");
+export function Button() {
+    return <button>{t("submit")}</button>;
+}
+"#,
+    )?;
+
+    assert_cmd_snapshot!(test.check_command());
+
+    Ok(())
+}
+
+#[test]
+fn test_no_unused_key_when_used() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    test.write_file("messages/en.json", r#"{"Common": {"submit": "Submit"}}"#)?;
+
+    test.write_file(
+        "src/app.tsx",
+        r#"
+const t = useTranslations("Common");
+export function Button() {
+    return <button>{t("submit")}</button>;
+}
+"#,
+    )?;
+
+    assert_cmd_snapshot!(test.check_command());
+
+    Ok(())
+}
+
+#[test]
+fn test_orphan_key() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    // Primary locale only has "submit"
+    test.write_file("messages/en.json", r#"{"Common": {"submit": "Submit"}}"#)?;
+
+    // zh has an extra key "oldKey" that doesn't exist in en
+    test.write_file(
+        "messages/zh.json",
+        r#"{"Common": {"submit": "提交", "oldKey": "旧的按钮"}}"#,
+    )?;
+
+    test.write_file("src/app.tsx", r#"const x = 1;"#)?;
+
+    assert_cmd_snapshot!(test.check_command());
+
+    Ok(())
+}
+
+#[test]
+fn test_orphan_key_multiple_locales() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    test.write_file("messages/en.json", r#"{"Common": {"submit": "Submit"}}"#)?;
+
+    test.write_file(
+        "messages/zh.json",
+        r#"{"Common": {"submit": "提交", "orphan1": "孤儿1"}}"#,
+    )?;
+
+    test.write_file(
+        "messages/ja.json",
+        r#"{"Common": {"submit": "送信", "orphan2": "孤児2"}}"#,
+    )?;
+
+    test.write_file("src/app.tsx", r#"const x = 1;"#)?;
+
+    assert_cmd_snapshot!(test.check_command());
+
+    Ok(())
+}
+
+// ============================================
+// Subcommand tests
+// ============================================
+
+#[test]
+fn test_subcommand_hardcoded() -> Result<()> {
+    let test = CliTest::with_file(
+        "src/app/[locale]/app.tsx",
+        r#"
+  export function Button() {
+      return <button>Submit</button>;
+  }
+  "#,
+    )?;
+
+    assert_cmd_snapshot!(test.check_command().arg("hardcoded"));
+
+    Ok(())
+}
+
+#[test]
+fn test_subcommand_missing() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+    test.write_file("messages/en.json", r#"{"Common": {"cancel": "Cancel"}}"#)?;
+    test.write_file("messages/zh.json", r#"{"Common": {"cancel": "取消"}}"#)?;
+    test.write_file(
+        "src/app.tsx",
+        r#"
+        const t = useTranslations("Common");
+        t("submit");
+        "#,
+    )?;
+
+    assert_cmd_snapshot!(test.check_command().arg("missing"));
+
+    Ok(())
+}
+
+#[test]
+fn test_subcommand_orphan() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+    test.write_file("messages/en.json", r#"{"Common": {"submit": "Submit"}}"#)?;
+    test.write_file(
+        "messages/zh.json",
+        r#"{"Common": {"submit": "提交", "oldKey": "旧的按钮"}}"#,
+    )?;
+    test.write_file("src/app.tsx", r#"const x = 1;"#)?;
+
+    assert_cmd_snapshot!(test.check_command().arg("orphan"));
+
+    Ok(())
+}
+
+// ============================================
+// Parameter combination tests
+// ============================================
+
+#[test]
+fn test_subcommand_with_path_arg() -> Result<()> {
+    let test = CliTest::new()?;
+
+    // Create files in a subdirectory
+    test.write_file(
+        "subdir/app.tsx",
+        r#"
+  export function Button() {
+      return <button>Submit</button>;
+  }
+  "#,
+    )?;
+
+    // Without --path, should find nothing (default is "." which has no tsx files at root)
+    assert_cmd_snapshot!(test.check_command().arg("hardcoded"));
+
+    // With --path subdir, should find the issue (args before subcommand)
+    assert_cmd_snapshot!(
+        test.check_command()
+            .arg("--path")
+            .arg("subdir")
+            .arg("hardcoded")
+    );
+
+    Ok(())
+}
+
+#[test]
+fn test_subcommand_with_verbose_arg() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./nonexistent",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+    test.write_file("src/app.tsx", r#"const x = 1;"#)?;
+
+    // Without --verbose, no warning output
+    assert_cmd_snapshot!(test.check_command().arg("missing"));
+
+    // With --verbose, should show warning about missing messages dir (args before subcommand)
+    assert_cmd_snapshot!(test.check_command().arg("--verbose").arg("missing"));
+
+    Ok(())
+}
+
+// ============================================
+// Schema Factory Function Tests
+// ============================================
+
+#[test]
+fn test_schema_factory_keys_tracked_as_used() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    // Define all keys including those used in schema
+    test.write_file(
+        "messages/en.json",
+        r#"{
+            "Form": {
+                "titleRequired": "Title is required",
+                "descMax": "Description too long"
+            }
+        }"#,
+    )?;
+
+    // Schema factory function file
+    test.write_file(
+        "src/schemas.ts",
+        r#"
+export const createFormSchema = (t) => z.object({
+    title: z.string().min(1, t("titleRequired")),
+    desc: z.string().max(100, t("descMax")),
+});
+"#,
+    )?;
+
+    // Component that uses the schema
+    test.write_file(
+        "src/form.tsx",
+        r#"
+const tForm = useTranslations("Form");
+const schema = createFormSchema(tForm);
+"#,
+    )?;
+
+    // Keys should be tracked as used, so no unused key warnings
+    assert_cmd_snapshot!(test.check_command());
+
+    Ok(())
+}
+
+#[test]
+fn test_schema_factory_missing_key_reported() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    // Missing "titleRequired" key
+    test.write_file(
+        "messages/en.json",
+        r#"{
+            "Form": {
+                "descMax": "Description too long"
+            }
+        }"#,
+    )?;
+
+    test.write_file(
+        "src/schemas.ts",
+        r#"
+export const createFormSchema = (t) => z.object({
+    title: z.string().min(1, t("titleRequired")),
+    desc: z.string().max(100, t("descMax")),
+});
+"#,
+    )?;
+
+    test.write_file(
+        "src/form.tsx",
+        r#"
+const tForm = useTranslations("Form");
+const schema = createFormSchema(tForm);
+"#,
+    )?;
+
+    // Should report missing key
+    assert_cmd_snapshot!(test.check_command());
+
+    Ok(())
+}
+
+#[test]
+fn test_schema_factory_nested_calls() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    // All keys defined
+    test.write_file(
+        "messages/en.json",
+        r#"{
+            "Form": {
+                "baseKey": "Base field required",
+                "extendedKey": "Extended field required"
+            }
+        }"#,
+    )?;
+
+    // Nested schema functions
+    test.write_file(
+        "src/schemas.ts",
+        r#"
+export const createBaseSchema = (t) => z.object({
+    base: z.string().min(1, t("baseKey")),
+});
+
+export const createExtendedSchema = (t) =>
+    createBaseSchema(t).extend({
+        extended: z.string().min(1, t("extendedKey")),
+    });
+"#,
+    )?;
+
+    test.write_file(
+        "src/form.tsx",
+        r#"
+const tForm = useTranslations("Form");
+const schema = createExtendedSchema(tForm);
+"#,
+    )?;
+
+    // Both base and extended keys should be tracked
+    assert_cmd_snapshot!(test.check_command());
+
+    Ok(())
+}
+
+#[test]
+fn test_dynamic_key_all_candidates_exist() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    // All candidate keys exist in messages
+    test.write_file(
+        "messages/en.json",
+        r#"{
+            "Tools": {
+                "createNovel": "Create Novel",
+                "updateNovel": "Update Novel"
+            }
+        }"#,
+    )?;
+
+    test.write_file(
+        "src/app.tsx",
+        r#"
+const toolKeys = {
+    createNovel: "createNovel",
+    updateNovel: "updateNovel",
+};
+const t = useTranslations("Tools");
+export function Tool({ toolName }) {
+    const key = toolKeys[toolName];
+    return t(key);
+}
+"#,
+    )?;
+
+    // Should pass silently - all candidates exist
+    assert_cmd_snapshot!(test.check_command());
+
+    Ok(())
+}
+
+#[test]
+fn test_dynamic_key_some_candidates_missing() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    // Only one key exists, other is missing
+    test.write_file(
+        "messages/en.json",
+        r#"{
+            "Tools": {
+                "createNovel": "Create Novel"
+            }
+        }"#,
+    )?;
+
+    test.write_file(
+        "src/app.tsx",
+        r#"
+const toolKeys = {
+    createNovel: "createNovel",
+    updateNovel: "updateNovel",
+};
+const t = useTranslations("Tools");
+export function Tool({ toolName }) {
+    const key = toolKeys[toolName];
+    return t(key);
+}
+"#,
+    )?;
+
+    // Should report error for missing candidate
+    assert_cmd_snapshot!(test.check_command());
+
+    Ok(())
+}
+
+// ============================================
+// String Array Iteration Tests
+// ============================================
+
+#[test]
+fn test_string_array_iteration_same_file_all_exist() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    // All candidate keys exist
+    test.write_file(
+        "messages/en.json",
+        r#"{
+            "Features": {
+                "prefix.save": "Save",
+                "prefix.load": "Load"
+            }
+        }"#,
+    )?;
+
+    // String array and component in SAME file
+    test.write_file(
+        "src/app.tsx",
+        r#"
+const FEATURE_KEYS = ["save", "load"] as const;
+const t = useTranslations("Features");
+FEATURE_KEYS.map((k) => t(`prefix.${k}`));
+"#,
+    )?;
+
+    // Expected: No errors - all keys exist
+    assert_cmd_snapshot!(test.check_command());
+
+    Ok(())
+}
+
+#[test]
+fn test_string_array_iteration_same_file_some_missing() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    // Only one key exists
+    test.write_file(
+        "messages/en.json",
+        r#"{
+            "Features": {
+                "prefix.save": "Save"
+            }
+        }"#,
+    )?;
+
+    // String array and component in SAME file
+    test.write_file(
+        "src/app.tsx",
+        r#"
+const FEATURE_KEYS = ["save", "load"] as const;
+const t = useTranslations("Features");
+FEATURE_KEYS.map((k) => t(`prefix.${k}`));
+"#,
+    )?;
+
+    // Expected: Error for missing "Features.prefix.load"
+    assert_cmd_snapshot!(test.check_command());
+
+    Ok(())
+}

@@ -1,0 +1,22 @@
+---
+source: tests/cli/baseline.rs
+info:
+  program: glot
+  args:
+    - baseline
+    - "--apply"
+  env:
+    NO_COLOR: "1"
+---
+success: true
+exit_code: 0
+----- stdout -----
+Skipped (line has translation call):
+  --> ./src/app.tsx:4:31
+     |
+   4 |     return <span>{t("title")} (Hardcoded)</span>;
+     |                               ^
+
+Skipped 1 line(s) with mixed translation/hardcoded text.
+
+----- stderr -----

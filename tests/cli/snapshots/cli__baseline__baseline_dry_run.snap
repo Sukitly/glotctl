@@ -1,0 +1,22 @@
+---
+source: tests/cli/baseline.rs
+info:
+  program: glot
+  args:
+    - baseline
+  env:
+    NO_COLOR: "1"
+---
+success: true
+exit_code: 0
+----- stdout -----
+  --> ./src/app.tsx:2:17
+     |
+   2 |     return <div>Hello World</div>;
+     |                 ^
+  +     {/* glot-disable-next-line */}
+
+Would insert 1 comment(s) in 1 file(s).
+Run with --apply to insert these comments.
+
+----- stderr -----

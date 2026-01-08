@@ -1,0 +1,296 @@
+---
+title: glot check
+description: Run i18n checks on your codebase
+---
+
+The `check` command is the core of glot. It scans your codebase for internationalization issues.
+
+## Usage
+
+<CodeGroup>
+```bash npm
+npx glot check [CHECK_TYPES...] [OPTIONS]
+```
+
+```bash pnpm
+pnpm exec glot check [CHECK_TYPES...] [OPTIONS]
+```
+
+```bash yarn
+yarn glot check [CHECK_TYPES...] [OPTIONS]
+```
+
+```bash bun
+bunx glot check [CHECK_TYPES...] [OPTIONS]
+```
+
+</CodeGroup>
+
+## Check Types
+
+You can run specific checks or all checks at once:
+
+| Type        | Description                                                          |
+| ----------- | -------------------------------------------------------------------- |
+| `hardcoded` | Find untranslated text in JSX/TSX files                              |
+| `missing`   | Identify translation keys used in code but missing from locale files |
+| `orphan`    | Find unused translation keys defined in locale files                 |
+
+<CodeGroup>
+```bash npm
+# Run all checks (default)
+npx glot check
+
+# Run specific checks
+
+npx glot check hardcoded
+npx glot check missing
+npx glot check orphan
+
+# Run multiple specific checks
+
+npx glot check hardcoded missing
+
+````
+
+```bash pnpm
+# Run all checks (default)
+pnpm exec glot check
+
+# Run specific checks
+pnpm exec glot check hardcoded
+pnpm exec glot check missing
+pnpm exec glot check orphan
+
+# Run multiple specific checks
+pnpm exec glot check hardcoded missing
+````
+
+```bash yarn
+# Run all checks (default)
+yarn glot check
+
+# Run specific checks
+yarn glot check hardcoded
+yarn glot check missing
+yarn glot check orphan
+
+# Run multiple specific checks
+yarn glot check hardcoded missing
+```
+
+```bash bun
+# Run all checks (default)
+bunx glot check
+
+# Run specific checks
+bunx glot check hardcoded
+bunx glot check missing
+bunx glot check orphan
+
+# Run multiple specific checks
+bunx glot check hardcoded missing
+```
+
+</CodeGroup>
+
+## Options
+
+<ParamField path="--path" type="string" default=".">
+  Directory to check. Defaults to current directory.
+</ParamField>
+
+<ParamField path="-v, --verbose" type="boolean" default="false">
+  Enable verbose output for debugging.
+</ParamField>
+
+## Examples
+
+### Basic Check
+
+Check the current directory for all i18n issues:
+
+<CodeGroup>
+```bash npm
+npx glot check
+```
+
+```bash pnpm
+pnpm exec glot check
+```
+
+```bash yarn
+yarn glot check
+```
+
+```bash bun
+bunx glot check
+```
+
+</CodeGroup>
+
+### Check Specific Directory
+
+Check only the `src` directory:
+
+<CodeGroup>
+```bash npm
+npx glot check --path ./src
+```
+
+```bash pnpm
+pnpm exec glot check --path ./src
+```
+
+```bash yarn
+yarn glot check --path ./src
+```
+
+```bash bun
+bunx glot check --path ./src
+```
+
+</CodeGroup>
+
+### Verbose Mode
+
+Get detailed output including scanned files:
+
+<CodeGroup>
+```bash npm
+npx glot check -v
+```
+
+```bash pnpm
+pnpm exec glot check -v
+```
+
+```bash yarn
+yarn glot check -v
+```
+
+```bash bun
+bunx glot check -v
+```
+
+</CodeGroup>
+
+### Check Specific Issue Types
+
+Run only hardcoded text detection:
+
+<CodeGroup>
+```bash npm
+npx glot check hardcoded
+```
+
+```bash pnpm
+pnpm exec glot check hardcoded
+```
+
+```bash yarn
+yarn glot check hardcoded
+```
+
+```bash bun
+bunx glot check hardcoded
+```
+
+</CodeGroup>
+
+Run hardcoded and missing key checks:
+
+<CodeGroup>
+```bash npm
+npx glot check hardcoded missing
+```
+
+```bash pnpm
+pnpm exec glot check hardcoded missing
+```
+
+```bash yarn
+yarn glot check hardcoded missing
+```
+
+```bash bun
+bunx glot check hardcoded missing
+```
+
+</CodeGroup>
+
+## Output Format
+
+Glot displays issues in a compiler-like format:
+
+```
+error: "Submit"  hardcoded-text
+  --> ./src/components/Button.tsx:5:22
+  |
+5 |     return <button>Submit</button>;
+  |                    ^
+
+warning: common.oldKey  orphan-key
+  --> ./messages/en.json
+  |
+  | Key exists in locale file but is not used in code
+  |
+
+✖ 2 problems (1 error, 1 warning)
+```
+
+### Issue Severity
+
+| Severity | Exit Code | Description                       |
+| -------- | --------- | --------------------------------- |
+| Error    | 1         | Hardcoded text, missing keys      |
+| Warning  | 0         | Orphan keys (unused translations) |
+
+## Exit Codes
+
+| Code | Meaning                              |
+| ---- | ------------------------------------ |
+| 0    | No errors found (warnings may exist) |
+| 1    | Errors found                         |
+
+This makes glot suitable for CI/CD pipelines where you want to fail builds on errors.
+
+## Verbose Output
+
+With `-v` flag, glot shows additional information:
+
+```
+Scanning directory: ./src
+Found 42 TSX/JSX files
+Checking file: ./src/components/Button.tsx
+Checking file: ./src/components/Form.tsx
+...
+
+error: "Submit"  hardcoded-text
+  --> ./src/components/Button.tsx:5:22
+```
+
+## Related
+
+<CardGroup cols={2}>
+  <Card
+    title="Hardcoded Text"
+    icon="magnifying-glass"
+    href="/detection/hardcoded-text"
+  >
+    Detect untranslated text in JSX/TSX
+  </Card>
+  <Card
+    title="Missing Keys"
+    icon="triangle-exclamation"
+    href="/detection/missing-keys"
+  >
+    Find keys used but not defined
+  </Card>
+  <Card title="Orphan Keys" icon="broom" href="/detection/orphan-keys">
+    Find unused translation keys
+  </Card>
+  <Card title="Directives" icon="code" href="/directives">
+    Suppress specific warnings
+  </Card>
+</CardGroup>

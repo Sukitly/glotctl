@@ -1,0 +1,23 @@
+---
+source: tests/cli/check.rs
+info:
+  program: glot
+  args:
+    - check
+    - hardcoded
+  env:
+    NO_COLOR: "1"
+---
+success: false
+exit_code: 1
+----- stdout -----
+error: "Submit"  hardcoded-text
+  --> ./src/app/[locale]/app.tsx:3:22
+  |
+3 |       return <button>Submit</button>;
+  |                      ^
+
+
+✖ 1 problems (1 error, 0 warnings)
+
+----- stderr -----

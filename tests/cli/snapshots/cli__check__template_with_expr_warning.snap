@@ -1,0 +1,27 @@
+---
+source: tests/cli/check.rs
+info:
+  program: glot
+  args:
+    - check
+  env:
+    NO_COLOR: "1"
+---
+success: true
+exit_code: 0
+----- stdout -----
+warning: "Common.submit"  unused-key
+  --> ./messages/en.json:1:0
+  = note: ("Submit")
+
+warning: "template with expression"  dynamic-key
+  --> ./src/app.tsx:4:23
+  |
+4 |       return <button>{t(`${prefix}.submit`)}</button>;
+  |                       ^
+  = hint: add `{/* glot-message-keys "Common.*.submit" */}` to declare expected keys
+
+
+✖ 2 problems (0 errors, 2 warnings)
+
+----- stderr -----

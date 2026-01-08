@@ -1,0 +1,21 @@
+---
+source: tests/cli/clean.rs
+info:
+  program: glot
+  args:
+    - clean
+  env:
+    NO_COLOR: "1"
+---
+success: true
+exit_code: 0
+----- stdout -----
+./messages/en.json:
+  - Auth.logout (line 4): ("Logout")  [unused]
+  - Common.cancel (line 8): ("Cancel")  [unused]
+  - Unused.key (line 11): ("Value")  [unused]
+
+Would delete 3 unused key(s) and 0 orphan key(s) from 1 file(s).
+Run with --apply to delete these keys.
+
+----- stderr -----

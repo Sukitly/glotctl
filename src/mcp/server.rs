@@ -1,0 +1,615 @@
+use std::collections::HashSet;
+use std::fs;
+use std::path::Path;
+
+use anyhow::Result;
+use rmcp::{
+    ErrorData as McpError, ServerHandler, ServiceExt,
+    handler::server::tool::ToolRouter,
+    model::{CallToolResult, Content, JsonObject, ServerCapabilities, ServerInfo},
+    tool, tool_handler, tool_router,
+};
+use serde_json;
+
+use crate::{
+    args::{CheckArgs, CommonArgs},
+    commands::runner::{CheckRunner, CheckType},
+    config::load_config,
+    issue::Rule,
+    parsers::json::scan_message_files,
+};
+
+use super::helpers::{parse_missing_locales, process_locale_translation};
+use super::types::{
+    AddTranslationsResult, AddTranslationsSummary, ConfigDto, ConfigValues, HardcodedItem,
+    HardcodedScanResult, HardcodedStats, LocaleInfo, LocalesResult, Pagination, PrimaryMissingItem,
+    PrimaryMissingScanResult, PrimaryMissingStats, ReplicaLagItem, ReplicaLagScanResult,
+    ReplicaLagStats, ScanOverviewResult,
+};
+
+#[derive(Clone)]
+pub struct GlotMcpServer {
+    tool_router: ToolRouter<Self>,
+}
+
+#[tool_router]
+impl GlotMcpServer {
+    pub fn new() -> Self {
+        Self {
+            tool_router: Self::tool_router(),
+        }
+    }
+
+    /// Scan for hardcoded text that should use translations
+    #[tool(
+        description = "Scan for hardcoded text in JSX/TSX files that should use translations. Returns paginated list of issues. Input: {project_root_path: string, limit?: number, offset?: number}"
+    )]
+    async fn scan_hardcoded(&self, params: JsonObject) -> Result<CallToolResult, McpError> {
+        let path = params
+            .get("project_root_path")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| {
+                McpError::invalid_params("Missing 'project_root_path' parameter", None)
+            })?;
+
+        let limit = params
+            .get("limit")
+            .and_then(|v| v.as_u64())
+            .map(|v| v as usize)
+            .unwrap_or(20)
+            .min(100);
+
+        let offset = params
+            .get("offset")
+            .and_then(|v| v.as_u64())
+            .map(|v| v as usize)
+            .unwrap_or(0);
+
+        let check_args = CheckArgs {
+            common: CommonArgs {
+                path: std::path::PathBuf::from(path),
+                verbose: false,
+            },
+        };
+
+        let runner = CheckRunner::new(check_args)
+            .map_err(|e| McpError::internal_error(format!("Failed to initialize: {}", e), None))?
+            .add(CheckType::Hardcoded);
+
+        let result = runner
+            .run()
+            .map_err(|e| McpError::internal_error(format!("Scan failed: {}", e), None))?;
+
+        // Filter hardcoded issues and collect file stats
+        let mut hardcoded_files: HashSet<String> = HashSet::new();
+        let all_items: Vec<HardcodedItem> = result
+            .issues
+            .into_iter()
+            .filter(|i| i.rule == Rule::HardcodedText)
+            .filter_map(|issue| {
+                let file_path = issue.file_path.clone()?;
+                hardcoded_files.insert(file_path.clone());
+                Some(HardcodedItem {
+                    file_path,
+                    line: issue.line.unwrap_or(0),
+                    col: issue.col.unwrap_or(0),
+                    text: issue.message,
+                    source_line: issue.source_line.unwrap_or_default(),
+                })
+            })
+            .collect();
+
+        let total_count = all_items.len();
+        let total_file_count = hardcoded_files.len();
+
+        // Apply pagination
+        let paginated: Vec<HardcodedItem> =
+            all_items.into_iter().skip(offset).take(limit).collect();
+
+        let has_more = offset + paginated.len() < total_count;
+
+        let scan_result = HardcodedScanResult {
+            total_count,
+            total_file_count,
+            items: paginated,
+            pagination: Pagination {
+                offset,
+                limit,
+                has_more,
+            },
+        };
+
+        let json_str = serde_json::to_string_pretty(&scan_result).map_err(|e| {
+            McpError::internal_error(format!("JSON serialization failed: {}", e), None)
+        })?;
+
+        Ok(CallToolResult::success(vec![Content::text(json_str)]))
+    }
+
+    /// Get overview statistics of all i18n issues
+    #[tool(
+        description = "Get statistics of all i18n issues without detailed items. Use this first to understand the overall state before diving into details. Input: {project_root_path: string}"
+    )]
+    async fn scan_overview(&self, params: JsonObject) -> Result<CallToolResult, McpError> {
+        let path = params
+            .get("project_root_path")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| {
+                McpError::invalid_params("Missing 'project_root_path' parameter", None)
+            })?;
+
+        let check_args = CheckArgs {
+            common: CommonArgs {
+                path: std::path::PathBuf::from(path),
+                verbose: false,
+            },
+        };
+
+        // Run all checks
+        let runner = CheckRunner::new(check_args)
+            .map_err(|e| McpError::internal_error(format!("Failed to initialize: {}", e), None))?
+            .add(CheckType::Hardcoded)
+            .add(CheckType::Missing);
+
+        let result = runner
+            .run()
+            .map_err(|e| McpError::internal_error(format!("Scan failed: {}", e), None))?;
+
+        // Count hardcoded issues
+        let mut hardcoded_files: HashSet<String> = HashSet::new();
+        let hardcoded_count = result
+            .issues
+            .iter()
+            .filter(|i| i.rule == Rule::HardcodedText)
+            .filter_map(|i| i.file_path.as_ref())
+            .map(|fp| {
+                hardcoded_files.insert(fp.clone());
+            })
+            .count();
+
+        // Count primary missing
+        let primary_missing_count = result
+            .issues
+            .iter()
+            .filter(|i| i.rule == Rule::MissingKey)
+            .count();
+
+        // Count replica lag and collect affected locales
+        let mut affected_locales: HashSet<String> = HashSet::new();
+        let replica_lag_count = result
+            .issues
+            .iter()
+            .filter(|i| i.rule == Rule::ReplicaLag)
+            .map(|issue| {
+                if let Some(details) = &issue.details {
+                    for locale in parse_missing_locales(details) {
+                        affected_locales.insert(locale);
+                    }
+                }
+            })
+            .count();
+
+        let mut affected_locales_vec: Vec<String> = affected_locales.into_iter().collect();
+        affected_locales_vec.sort();
+
+        let overview = ScanOverviewResult {
+            hardcoded: HardcodedStats {
+                total_count: hardcoded_count,
+                file_count: hardcoded_files.len(),
+            },
+            primary_missing: PrimaryMissingStats {
+                total_count: primary_missing_count,
+            },
+            replica_lag: ReplicaLagStats {
+                total_count: replica_lag_count,
+                affected_locales: affected_locales_vec,
+            },
+        };
+
+        let json_str = serde_json::to_string_pretty(&overview).map_err(|e| {
+            McpError::internal_error(format!("JSON serialization failed: {}", e), None)
+        })?;
+
+        Ok(CallToolResult::success(vec![Content::text(json_str)]))
+    }
+
+    /// Scan for keys missing from primary locale
+    #[tool(
+        description = "Scan for keys used in code but missing from primary locale. Returns paginated list. Input: {project_root_path: string, limit?: number, offset?: number}"
+    )]
+    async fn scan_primary_missing(&self, params: JsonObject) -> Result<CallToolResult, McpError> {
+        let path = params
+            .get("project_root_path")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| {
+                McpError::invalid_params("Missing 'project_root_path' parameter", None)
+            })?;
+
+        let limit = params
+            .get("limit")
+            .and_then(|v| v.as_u64())
+            .map(|v| v as usize)
+            .unwrap_or(50)
+            .min(100);
+
+        let offset = params
+            .get("offset")
+            .and_then(|v| v.as_u64())
+            .map(|v| v as usize)
+            .unwrap_or(0);
+
+        let check_args = CheckArgs {
+            common: CommonArgs {
+                path: std::path::PathBuf::from(path),
+                verbose: false,
+            },
+        };
+
+        let runner = CheckRunner::new(check_args)
+            .map_err(|e| McpError::internal_error(format!("Failed to initialize: {}", e), None))?
+            .add(CheckType::Missing);
+
+        let result = runner
+            .run()
+            .map_err(|e| McpError::internal_error(format!("Scan failed: {}", e), None))?;
+
+        // Collect primary missing keys
+        let all_items: Vec<PrimaryMissingItem> = result
+            .issues
+            .iter()
+            .filter(|i| i.rule == Rule::MissingKey)
+            .filter_map(|issue| {
+                Some(PrimaryMissingItem {
+                    key: issue.message.clone(),
+                    file_path: issue.file_path.clone()?,
+                    line: issue.line.unwrap_or(0),
+                })
+            })
+            .collect();
+
+        let total_count = all_items.len();
+
+        // Apply pagination
+        let paginated: Vec<PrimaryMissingItem> =
+            all_items.into_iter().skip(offset).take(limit).collect();
+
+        let has_more = offset + paginated.len() < total_count;
+
+        let scan_result = PrimaryMissingScanResult {
+            total_count,
+            items: paginated,
+            pagination: Pagination {
+                offset,
+                limit,
+                has_more,
+            },
+        };
+
+        let json_str = serde_json::to_string_pretty(&scan_result).map_err(|e| {
+            McpError::internal_error(format!("JSON serialization failed: {}", e), None)
+        })?;
+
+        Ok(CallToolResult::success(vec![Content::text(json_str)]))
+    }
+
+    /// Scan for keys missing from non-primary locales (replica lag)
+    #[tool(
+        description = "Scan for keys that exist in primary locale but missing in other locales. Returns paginated list. Input: {project_root_path: string, limit?: number, offset?: number}"
+    )]
+    async fn scan_replica_lag(&self, params: JsonObject) -> Result<CallToolResult, McpError> {
+        let path = params
+            .get("project_root_path")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| {
+                McpError::invalid_params("Missing 'project_root_path' parameter", None)
+            })?;
+
+        let limit = params
+            .get("limit")
+            .and_then(|v| v.as_u64())
+            .map(|v| v as usize)
+            .unwrap_or(50)
+            .min(100);
+
+        let offset = params
+            .get("offset")
+            .and_then(|v| v.as_u64())
+            .map(|v| v as usize)
+            .unwrap_or(0);
+
+        let check_args = CheckArgs {
+            common: CommonArgs {
+                path: std::path::PathBuf::from(path),
+                verbose: false,
+            },
+        };
+
+        let runner = CheckRunner::new(check_args)
+            .map_err(|e| McpError::internal_error(format!("Failed to initialize: {}", e), None))?
+            .add(CheckType::Missing);
+
+        let result = runner
+            .run()
+            .map_err(|e| McpError::internal_error(format!("Scan failed: {}", e), None))?;
+
+        // Get primary locale from config
+        let config = load_config(Path::new(path))
+            .map_err(|e| McpError::internal_error(format!("Failed to load config: {}", e), None))?;
+        let primary_locale = config.config.primary_locale.clone();
+
+        // Collect replica lag items
+        let all_items: Vec<ReplicaLagItem> = result
+            .issues
+            .iter()
+            .filter(|i| i.rule == Rule::ReplicaLag)
+            .filter_map(|issue| {
+                // Parse details to get missing locales
+                // Details format: "(value) missing in: de, fr, ja"
+                let details = issue.details.as_ref()?;
+                let missing_in = parse_missing_locales(details);
+
+                // Extract value from details (between parentheses)
+                let value = details
+                    .split(')')
+                    .next()
+                    .and_then(|s| s.strip_prefix('('))
+                    .unwrap_or("")
+                    .to_string();
+
+                Some(ReplicaLagItem {
+                    key: issue.message.clone(),
+                    value,
+                    exists_in: primary_locale.clone(),
+                    missing_in,
+                })
+            })
+            .collect();
+
+        let total_count = all_items.len();
+
+        // Apply pagination
+        let paginated: Vec<ReplicaLagItem> =
+            all_items.into_iter().skip(offset).take(limit).collect();
+
+        let has_more = offset + paginated.len() < total_count;
+
+        let scan_result = ReplicaLagScanResult {
+            total_count,
+            items: paginated,
+            pagination: Pagination {
+                offset,
+                limit,
+                has_more,
+            },
+        };
+
+        let json_str = serde_json::to_string_pretty(&scan_result).map_err(|e| {
+            McpError::internal_error(format!("JSON serialization failed: {}", e), None)
+        })?;
+
+        Ok(CallToolResult::success(vec![Content::text(json_str)]))
+    }
+
+    /// Add translation keys to multiple locale files
+    #[tool(
+        description = r#"Add translation keys to multiple locale files. Supports nested keys (e.g., 'common.title') and string arrays.
+
+Example:
+{
+  "project_root_path": "/path/to/project",
+  "translations": [
+    {"locale": "en", "keys": {"common.title": "Hello", "items": ["One", "Two"]}},
+    {"locale": "zh-CN", "keys": {"common.title": "你好", "items": ["一", "二"]}}
+  ]
+}"#
+    )]
+    async fn add_translations(&self, params: JsonObject) -> Result<CallToolResult, McpError> {
+        let path = params
+            .get("project_root_path")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| {
+                McpError::invalid_params("Missing 'project_root_path' parameter", None)
+            })?;
+
+        let translations = params
+            .get("translations")
+            .and_then(|v| v.as_array())
+            .ok_or_else(|| McpError::invalid_params("Missing 'translations' parameter", None))?;
+
+        // Validate translations is not empty
+        if translations.is_empty() {
+            return Err(McpError::invalid_params(
+                "translations array cannot be empty",
+                None,
+            ));
+        }
+
+        // Load config to get messages_dir
+        let config = load_config(Path::new(path))
+            .map_err(|e| McpError::internal_error(format!("Failed to load config: {}", e), None))?;
+
+        let messages_dir = Path::new(path).join(&config.config.messages_dir);
+
+        let mut results = Vec::new();
+        let mut total_keys_added = 0;
+        let mut total_keys_updated = 0;
+        let mut successful_locales = 0;
+        let mut failed_locales = 0;
+
+        for translation in translations {
+            let locale_result = process_locale_translation(translation, &messages_dir);
+
+            match &locale_result {
+                Ok(result) => {
+                    total_keys_added += result.added_count.unwrap_or(0);
+                    total_keys_updated += result.updated_count.unwrap_or(0);
+                    successful_locales += 1;
+                }
+                Err(_) => {
+                    failed_locales += 1;
+                }
+            }
+
+            results.push(locale_result.unwrap_or_else(|e| e.into_result()));
+        }
+
+        let all_success = failed_locales == 0;
+
+        let result = AddTranslationsResult {
+            success: all_success,
+            results,
+            summary: AddTranslationsSummary {
+                total_locales: translations.len(),
+                successful_locales,
+                failed_locales,
+                total_keys_added,
+                total_keys_updated,
+            },
+        };
+
+        let json_str = serde_json::to_string_pretty(&result).map_err(|e| {
+            McpError::internal_error(format!("JSON serialization failed: {}", e), None)
+        })?;
+
+        Ok(CallToolResult::success(vec![Content::text(json_str)]))
+    }
+
+    /// Get available locales and their file paths
+    #[tool(
+        description = "Get available locales and their file paths. Input: {project_root_path: string}"
+    )]
+    async fn get_locales(&self, params: JsonObject) -> Result<CallToolResult, McpError> {
+        let path = params
+            .get("project_root_path")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| {
+                McpError::invalid_params("Missing 'project_root_path' parameter", None)
+            })?;
+
+        // Load config to get messages_dir and primary_locale
+        let config = load_config(Path::new(path))
+            .map_err(|e| McpError::internal_error(format!("Failed to load config: {}", e), None))?;
+
+        let messages_dir = Path::new(path).join(&config.config.messages_dir);
+        let messages_dir_str = messages_dir.to_string_lossy().to_string();
+
+        let mut locales = Vec::new();
+
+        if messages_dir.exists() && messages_dir.is_dir() {
+            let entries = fs::read_dir(&messages_dir).map_err(|e| {
+                McpError::internal_error(format!("Failed to read messages directory: {}", e), None)
+            })?;
+
+            for entry in entries {
+                let entry = entry.map_err(|e| {
+                    McpError::internal_error(format!("Failed to read directory entry: {}", e), None)
+                })?;
+                let file_path = entry.path();
+
+                if file_path.extension().and_then(|e| e.to_str()) == Some("json")
+                    && let Some(locale) = file_path.file_stem().and_then(|s| s.to_str())
+                {
+                    // Count keys in the file
+                    let key_count = match scan_message_files(&messages_dir) {
+                        Ok(scan_result) => scan_result
+                            .messages
+                            .get(locale)
+                            .map(|m| m.len())
+                            .unwrap_or(0),
+                        Err(_) => 0,
+                    };
+
+                    locales.push(LocaleInfo {
+                        locale: locale.to_string(),
+                        file_path: file_path.to_string_lossy().to_string(),
+                        key_count,
+                    });
+                }
+            }
+        }
+
+        // Sort locales alphabetically
+        locales.sort_by(|a, b| a.locale.cmp(&b.locale));
+
+        let result = LocalesResult {
+            messages_dir: messages_dir_str,
+            primary_locale: config.config.primary_locale,
+            locales,
+        };
+
+        let json_str = serde_json::to_string_pretty(&result).map_err(|e| {
+            McpError::internal_error(format!("JSON serialization failed: {}", e), None)
+        })?;
+
+        Ok(CallToolResult::success(vec![Content::text(json_str)]))
+    }
+
+    /// Get the current glot configuration
+    #[tool(description = "Get the current glot configuration. Input: {project_root_path: string}")]
+    async fn get_config(&self, params: JsonObject) -> Result<CallToolResult, McpError> {
+        let path_str = params
+            .get("project_root_path")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| {
+                McpError::invalid_params("Missing 'project_root_path' parameter", None)
+            })?;
+
+        let path = Path::new(path_str);
+
+        let result = load_config(path)
+            .map_err(|e| McpError::internal_error(format!("Failed to load config: {}", e), None))?;
+
+        let config_dto = ConfigDto {
+            from_file: result.from_file,
+            config: ConfigValues::from(result.config),
+        };
+
+        let json_str = serde_json::to_string_pretty(&config_dto).map_err(|e| {
+            McpError::internal_error(format!("JSON serialization failed: {}", e), None)
+        })?;
+
+        Ok(CallToolResult::success(vec![Content::text(json_str)]))
+    }
+}
+
+#[tool_handler]
+impl ServerHandler for GlotMcpServer {
+    fn get_info(&self) -> ServerInfo {
+        ServerInfo {
+            instructions: Some(
+                "Glot MCP helps AI agents complete i18n translation work for next-intl projects.\n\n\
+                 Available tools:\n\
+                 1. get_config - Get project configuration\n\
+                 2. get_locales - Get available locale files and their key counts\n\
+                 3. scan_overview - Get statistics of all i18n issues (hardcoded, primary missing, replica lag)\n\
+                 4. scan_hardcoded - Get detailed hardcoded text list (paginated)\n\
+                 5. scan_primary_missing - Get keys missing from primary locale (paginated)\n\
+                 6. scan_replica_lag - Get keys missing from non-primary locales (paginated)\n\
+                 7. add_translations - Add keys to locale files\n\n\
+                 Recommended Workflow:\n\
+                 1. Use scan_overview to understand the overall state\n\
+                 2. Fix hardcoded issues first (replace text with t() calls, add keys to primary locale)\n\
+                 3. Then fix primary_missing issues (add missing keys to primary locale)\n\
+                 4. Finally fix replica_lag issues (sync keys to other locales)\n\n\
+                 IMPORTANT: Follow this order! Fixing hardcoded may create new primary_missing,\n\
+                 and fixing primary_missing may create new replica_lag. This order minimizes rework."
+                    .into(),
+            ),
+            capabilities: ServerCapabilities::builder().enable_tools().build(),
+            ..Default::default()
+        }
+    }
+}
+
+/// Entry point for MCP server
+pub fn run_server() -> Result<()> {
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()?
+        .block_on(async {
+            let service = GlotMcpServer::new();
+            let server = service.serve(rmcp::transport::stdio()).await?;
+            server.waiting().await?;
+            Ok(())
+        })
+}

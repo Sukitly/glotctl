@@ -1,0 +1,24 @@
+---
+source: tests/cli/check.rs
+info:
+  program: glot
+  args:
+    - check
+  env:
+    NO_COLOR: "1"
+---
+success: false
+exit_code: 1
+----- stdout -----
+error: "Common.cancel"  replica-lag
+  --> ./messages/en.json:4:0
+  = note: ("Cancel") missing in: zh
+
+warning: "Common.cancel"  unused-key
+  --> ./messages/en.json:4:0
+  = note: ("Cancel")
+
+
+✖ 2 problems (1 error, 1 warning)
+
+----- stderr -----

@@ -1,0 +1,20 @@
+---
+source: tests/cli/clean.rs
+info:
+  program: glot
+  args:
+    - clean
+    - "--apply"
+  env:
+    NO_COLOR: "1"
+---
+success: true
+exit_code: 0
+----- stdout -----
+./messages/en.json:
+  - Common.zebra (line 3): ("Zebra")  [unused]
+  - Common.middle (line 5): ("Middle")  [unused]
+
+Deleted 2 unused key(s) and 0 orphan key(s) from 1 file(s).
+
+----- stderr -----

@@ -1,0 +1,268 @@
+---
+title: Orphan Keys
+description: Understanding orphan and unused translation key detection
+---
+
+Glot detects translation keys that are defined in your locale files but never used in your code.
+
+## Types of Orphan Keys
+
+### Unused Keys
+
+Keys that exist in locale files but are never referenced in code:
+
+```json messages/en.json
+{
+  "common": {
+    "submit": "Submit", // Used in code
+    "oldButton": "Old Text" // Never used - orphan
+  }
+}
+```
+
+### Replica Orphans
+
+Keys that exist in non-primary locales but not in the primary locale. This typically happens when:
+
+- A key was deleted from the primary locale but not from other locales
+- A key was accidentally added to a non-primary locale
+
+The term "replica lag" refers to the synchronization gap between your primary and secondary locales:
+
+```json messages/en.json (primary)
+{
+  "common": {
+    "submit": "Submit"
+  }
+}
+```
+
+```json messages/es.json
+{
+  "common": {
+    "submit": "Enviar",
+    "legacy": "Legacy" // Orphan - not in primary locale
+  }
+}
+```
+
+## Why This Matters
+
+Orphan keys:
+
+- Increase translation file size unnecessarily
+- Cause confusion for translators
+- May indicate incomplete code cleanup
+- Add maintenance burden
+
+## Severity
+
+Orphan keys are reported as **warnings** (not errors) because:
+
+- They don't break functionality
+- They may be intentionally kept for future use
+- Removal is optional
+
+## Running Orphan Detection
+
+<Tabs syncKey="pkg">
+  <Tab title="npm">```bash npx glot check orphan ```</Tab>
+  <Tab title="pnpm">```bash pnpm exec glot check orphan ```</Tab>
+  <Tab title="yarn">```bash yarn glot check orphan ```</Tab>
+  <Tab title="bun">```bash bunx glot check orphan ```</Tab>
+</Tabs>
+
+Output:
+
+```
+warning: common.oldButton  orphan-key
+  --> ./messages/en.json
+  |
+  | Key exists in locale file but is not used in code
+  |
+
+warning: common.legacy  orphan-key
+  --> ./messages/es.json
+  |
+  | Key exists in non-primary locale but not in primary locale (en)
+  |
+
+✖ 0 errors, 2 warnings
+```
+
+## Cleaning Up Orphan Keys
+
+Use the `clean` command to remove orphan keys:
+
+<Tabs syncKey="pkg">
+  <Tab title="npm">
+    ```bash
+    # Preview what would be deleted
+    npx glot clean
+
+    # Actually delete orphan keys
+    npx glot clean --apply
+    ```
+
+  </Tab>
+  <Tab title="pnpm">
+    ```bash
+    # Preview what would be deleted
+    pnpm exec glot clean
+
+    # Actually delete orphan keys
+    pnpm exec glot clean --apply
+    ```
+
+  </Tab>
+  <Tab title="yarn">
+    ```bash
+    # Preview what would be deleted
+    yarn glot clean
+
+    # Actually delete orphan keys
+    yarn glot clean --apply
+    ```
+
+  </Tab>
+  <Tab title="bun">
+    ```bash
+    # Preview what would be deleted
+    bunx glot clean
+
+    # Actually delete orphan keys
+    bunx glot clean --apply
+    ```
+
+  </Tab>
+</Tabs>
+
+### Clean Only Specific Types
+
+<Tabs syncKey="pkg">
+  <Tab title="npm">
+    ```bash
+    # Only unused keys (in all locales)
+    npx glot clean --unused --apply
+
+    # Only replica orphans (only in non-primary locales)
+    npx glot clean --orphan --apply
+    ```
+
+  </Tab>
+  <Tab title="pnpm">
+    ```bash
+    # Only unused keys (in all locales)
+    pnpm exec glot clean --unused --apply
+
+    # Only replica orphans (only in non-primary locales)
+    pnpm exec glot clean --orphan --apply
+    ```
+
+  </Tab>
+  <Tab title="yarn">
+    ```bash
+    # Only unused keys (in all locales)
+    yarn glot clean --unused --apply
+
+    # Only replica orphans (only in non-primary locales)
+    yarn glot clean --orphan --apply
+    ```
+
+  </Tab>
+  <Tab title="bun">
+    ```bash
+    # Only unused keys (in all locales)
+    bunx glot clean --unused --apply
+
+    # Only replica orphans (only in non-primary locales)
+    bunx glot clean --orphan --apply
+    ```
+
+  </Tab>
+</Tabs>
+
+## Common Causes
+
+### Removed Features
+
+A feature was removed but translations weren't cleaned up:
+
+```tsx
+// Deleted component
+// function OldFeature() {
+//   return <div>{t('oldFeature.title')}</div>;
+// }
+```
+
+```json
+{
+  "oldFeature": {
+    "title": "Old Feature" // Now orphaned
+  }
+}
+```
+
+### Refactored Keys
+
+Keys were renamed but old ones weren't removed:
+
+```tsx
+// Before
+t("btn.submit");
+
+// After
+t("button.submit");
+```
+
+```json
+{
+  "btn": {
+    "submit": "Submit" // Orphaned
+  },
+  "button": {
+    "submit": "Submit" // Active
+  }
+}
+```
+
+### Copy-Paste Locales
+
+Locale files copied from another project with unused keys.
+
+## Keeping Keys Intentionally
+
+If you want to keep certain keys without using them (e.g., for future features), you can:
+
+1. Add a comment (though glot will still report them)
+2. Reference them in a special file that glot ignores
+3. Accept the warnings as informational
+
+## Dynamic Keys Warning
+
+<Warning>
+  If your code uses dynamic translation keys, glot cannot determine if a key is truly unused:
+
+```tsx
+// glot can't track this usage
+t(`items.${item.type}`);
+```
+
+In this case, `clean` will refuse to run to prevent accidental deletion.
+
+</Warning>
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Clean Command" icon="broom" href="/commands/clean">
+    Remove orphan keys
+  </Card>
+  <Card
+    title="Missing Keys"
+    icon="triangle-exclamation"
+    href="/detection/missing-keys"
+  >
+    Find missing translation keys
+  </Card>
+</CardGroup>

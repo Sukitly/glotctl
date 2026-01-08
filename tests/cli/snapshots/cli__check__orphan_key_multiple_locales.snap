@@ -1,0 +1,28 @@
+---
+source: tests/cli/check.rs
+info:
+  program: glot
+  args:
+    - check
+  env:
+    NO_COLOR: "1"
+---
+success: true
+exit_code: 0
+----- stdout -----
+warning: "Common.submit"  unused-key
+  --> ./messages/en.json:1:0
+  = note: ("Submit")
+
+warning: "Common.orphan2"  orphan-key
+  --> ./messages/ja.json:1:0
+  = note: in ja ("孤児2")
+
+warning: "Common.orphan1"  orphan-key
+  --> ./messages/zh.json:1:0
+  = note: in zh ("孤儿1")
+
+
+✖ 3 problems (0 errors, 3 warnings)
+
+----- stderr -----

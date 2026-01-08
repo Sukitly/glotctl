@@ -1,0 +1,182 @@
+//! Missing translation keys detection rule.
+//!
+//! Detects keys used in code but not defined in locale files, including:
+//! - Static keys passed to translation functions
+//! - Dynamic keys with resolvable values
+//! - Schema-based keys
+//! - Replica lag (keys missing in non-primary locales)
+
+use std::collections::HashSet;
+
+use anyhow::Result;
+
+use crate::{
+    checkers::{
+        missing_keys::DynamicKeyReason, schema::expand_schema_keys, value_source::ValueSource,
+    },
+    commands::{
+        check::{find_missing_keys, find_replica_lag},
+        context::CheckContext,
+    },
+    issue::Issue,
+    rules::Checker,
+};
+
+pub struct MissingKeysRule;
+
+impl Checker for MissingKeysRule {
+    fn name(&self) -> &str {
+        "missing_keys"
+    }
+
+    fn needs_registries(&self) -> bool {
+        true
+    }
+
+    fn needs_messages(&self) -> bool {
+        true
+    }
+
+    fn check(&self, ctx: &CheckContext) -> Result<Vec<Issue>> {
+        // Ensure extractions are loaded (this will load registries and messages first)
+        let parse_errors = ctx.ensure_extractions()?;
+        let mut issues = parse_errors;
+
+        let extractions = ctx.extractions().expect("extractions must be loaded");
+        let registries = ctx.registries().expect("registries must be loaded");
+        let messages = ctx.messages().expect("messages must be loaded");
+
+        let primary_messages = match &messages.primary_messages {
+            Some(m) => m,
+            None => return Ok(issues),
+        };
+
+        // Process cached extractions
+        for (file_path, extraction) in extractions {
+            // Check missing static keys
+            let missing = find_missing_keys(&extraction.used_keys, primary_messages);
+            for key in missing {
+                issues.push(Issue::missing_key(
+                    &key.file_path,
+                    key.line,
+                    key.col,
+                    &key.full_key,
+                    Some(key.source_line.clone()),
+                ));
+            }
+
+            // Process dynamic key warnings
+            for warning in &extraction.warnings {
+                let reason = match warning.reason {
+                    DynamicKeyReason::VariableKey => "dynamic key",
+                    DynamicKeyReason::TemplateWithExpr => "template with expression",
+                };
+                issues.push(Issue::dynamic_key_with_hint(
+                    &warning.file_path,
+                    warning.line,
+                    warning.col,
+                    reason,
+                    Some(warning.source_line.clone()),
+                    warning.hint.clone(),
+                ));
+            }
+
+            // Process pattern warnings
+            for warning in &extraction.pattern_warnings {
+                issues.push(Issue::dynamic_key(
+                    &warning.file_path,
+                    warning.line,
+                    1,
+                    &warning.message,
+                    None,
+                ));
+            }
+
+            // Process schema calls
+            for call in &extraction.schema_calls {
+                let mut visited = HashSet::new();
+                let expand_result = expand_schema_keys(
+                    &call.schema_name,
+                    &call.namespace,
+                    &registries.schema,
+                    &mut visited,
+                );
+                for key in expand_result.keys {
+                    if !key.has_namespace {
+                        issues.push(Issue::untracked_namespace(
+                            file_path,
+                            call.line,
+                            call.col,
+                            &key.from_schema,
+                            &key.raw_key,
+                            None,
+                        ));
+                        continue;
+                    }
+
+                    if !primary_messages.contains_key(&key.full_key) {
+                        let schema_file = registries
+                            .schema
+                            .get(&key.from_schema)
+                            .map(|s| s.file_path.as_str())
+                            .unwrap_or("unknown");
+
+                        issues.push(Issue::missing_key_from_schema(
+                            file_path,
+                            call.line,
+                            call.col,
+                            &key.full_key,
+                            &key.from_schema,
+                            schema_file,
+                            None,
+                        ));
+                    }
+                }
+            }
+
+            // Process resolved keys
+            for resolved_key in &extraction.resolved_keys {
+                if matches!(resolved_key.source, ValueSource::Literal(_)) {
+                    continue;
+                }
+
+                match resolved_key.source.resolve_keys() {
+                    Ok(keys) => {
+                        let mut missing_keys = Vec::new();
+                        for key in keys {
+                            let full_key = match &resolved_key.namespace {
+                                Some(ns) => format!("{}.{}", ns, key),
+                                None => key,
+                            };
+                            if !primary_messages.contains_key(&full_key) {
+                                missing_keys.push(full_key);
+                            }
+                        }
+                        if !missing_keys.is_empty() {
+                            let source_desc = resolved_key.source.source_description();
+                            issues.push(Issue::missing_dynamic_key_candidates(
+                                &resolved_key.file_path,
+                                resolved_key.line,
+                                resolved_key.col,
+                                &source_desc,
+                                &missing_keys,
+                                Some(resolved_key.source_line.clone()),
+                            ));
+                        }
+                    }
+                    Err(_) => {
+                        // Cannot resolve - warnings already emitted by the checker
+                    }
+                }
+            }
+        }
+
+        // Replica lag (keys missing in non-primary locales)
+        issues.extend(find_replica_lag(
+            &ctx.config.primary_locale,
+            &messages.all_messages,
+        ));
+
+        Ok(issues)
+    }
+}

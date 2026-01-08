@@ -1,0 +1,17 @@
+---
+source: tests/cli/check.rs
+info:
+  program: glot
+  args:
+    - check
+    - "--path"
+    - subdir
+    - hardcoded
+  env:
+    NO_COLOR: "1"
+---
+success: true
+exit_code: 0
+----- stdout -----
+
+----- stderr -----

@@ -1,0 +1,17 @@
+---
+source: tests/cli/clean.rs
+info:
+  program: glot
+  args:
+    - clean
+  env:
+    NO_COLOR: "1"
+---
+success: false
+exit_code: 1
+----- stdout -----
+
+----- stderr -----
+Error: Primary locale file 'en.json' not found in './messages'.
+Available locales: ["zh"]
+Hint: Check your .glotrc.json 'primaryLocale' setting.

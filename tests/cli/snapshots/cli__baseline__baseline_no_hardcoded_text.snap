@@ -1,0 +1,15 @@
+---
+source: tests/cli/baseline.rs
+info:
+  program: glot
+  args:
+    - baseline
+  env:
+    NO_COLOR: "1"
+---
+success: true
+exit_code: 0
+----- stdout -----
+No hardcoded text found.
+
+----- stderr -----

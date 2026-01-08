@@ -1,0 +1,24 @@
+---
+source: tests/cli/check.rs
+info:
+  program: glot
+  args:
+    - check
+  env:
+    NO_COLOR: "1"
+---
+success: false
+exit_code: 1
+----- stdout -----
+error: "Common.submit"  replica-lag
+  --> ./messages/en.json:3:0
+  = note: ("Submit") missing in: ja, zh
+
+warning: "Common.submit"  unused-key
+  --> ./messages/en.json:3:0
+  = note: ("Submit")
+
+
+✖ 2 problems (1 error, 1 warning)
+
+----- stderr -----

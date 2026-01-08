@@ -1,0 +1,23 @@
+---
+source: tests/cli/check.rs
+info:
+  program: glot
+  args:
+    - check
+    - missing
+  env:
+    NO_COLOR: "1"
+---
+success: false
+exit_code: 1
+----- stdout -----
+error: "Common.submit"  missing-key
+  --> ./src/app.tsx:3:9
+  |
+3 |         t("submit");
+  |         ^
+
+
+✖ 1 problems (1 error, 0 warnings)
+
+----- stderr -----

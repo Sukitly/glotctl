@@ -1,0 +1,28 @@
+---
+source: tests/cli/check.rs
+info:
+  program: glot
+  args:
+    - check
+  env:
+    NO_COLOR: "1"
+---
+success: false
+exit_code: 1
+----- stdout -----
+error: "Common.submit"  missing-key
+  --> ./src/app.tsx:6:24
+  |
+6 |               <button>{t("submit")}</button>
+  |                        ^
+
+error: "Hardcoded"  hardcoded-text
+  --> ./src/app.tsx:7:21
+  |
+7 |               <span>Hardcoded</span>
+  |                     ^
+
+
+✖ 2 problems (2 errors, 0 warnings)
+
+----- stderr -----

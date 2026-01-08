@@ -1,0 +1,223 @@
+---
+title: Hardcoded Text
+description: Understanding hardcoded text detection
+---
+
+Glot detects hardcoded text in JSX/TSX files that should use internationalization (i18n) translation functions.
+
+## Detection Rule
+
+Text is flagged as hardcoded if it contains **at least one Unicode alphabetic character** (`char::is_alphabetic()`). This approach:
+
+- Supports all languages (English, Chinese, Japanese, etc.)
+- Ignores pure numbers like `123` or `456.78`
+- Ignores pure symbols like `---` or `***`
+- Catches mixed content like `Price: $99` (contains letters)
+
+## What Gets Detected
+
+### JSX Text Content
+
+Direct text inside JSX elements:
+
+```tsx
+// Detected
+<button>Submit</button>
+<p>Welcome to our site</p>
+
+// Not detected (pure numbers/symbols)
+<span>123</span>
+<div>---</div>
+```
+
+### String Expressions
+
+String literals in JSX expressions:
+
+```tsx
+// Detected
+<div>{"Hello World"}</div>
+<span>{'Click here'}</span>
+
+// Not detected
+<div>{42}</div>
+<span>{variable}</span>
+```
+
+### Ternary Operators
+
+Text in conditional expressions:
+
+```tsx
+// Both strings detected
+{
+  isLoading ? "Loading..." : "Done";
+}
+
+// Only "Error!" detected
+{
+  hasError ? "Error!" : null;
+}
+```
+
+### Logical Operators
+
+Text in logical expressions:
+
+```tsx
+// Detected
+{
+  error && "Something went wrong";
+}
+{
+  user || "Anonymous";
+}
+```
+
+### Template Literals
+
+Template strings with text:
+
+```tsx
+// Detected
+<div>{`Welcome ${name}`}</div>
+<span>{`Total: ${count} items`}</span>
+
+// Not detected (no alphabetic chars)
+<span>{`${count}`}</span>
+```
+
+### Multiline JSX Text
+
+Text spanning multiple lines:
+
+```tsx
+// Detected
+<p>This is a long paragraph that spans multiple lines</p>
+```
+
+### JSX Fragments
+
+Text in fragments:
+
+```tsx
+// Detected
+<>Welcome</>
+```
+
+## Checked Attributes
+
+By default, glot checks these JSX attributes for hardcoded text:
+
+| Attribute              | Example                                          |
+| ---------------------- | ------------------------------------------------ |
+| `placeholder`          | `<input placeholder="Enter email" />`            |
+| `title`                | `<button title="Submit form">...</button>`       |
+| `alt`                  | `<img alt="Profile picture" />`                  |
+| `aria-label`           | `<button aria-label="Close">X</button>`          |
+| `aria-description`     | `<div aria-description="Help text">...</div>`    |
+| `aria-placeholder`     | `<input aria-placeholder="Search..." />`         |
+| `aria-roledescription` | `<div aria-roledescription="carousel">...</div>` |
+| `aria-valuetext`       | `<input aria-valuetext="50 percent" />`          |
+
+### Configuring Checked Attributes
+
+You can customize which attributes are checked in `.glotrc.json`:
+
+```json
+{
+  "checkedAttributes": ["placeholder", "title", "alt", "aria-label"]
+}
+```
+
+<Note>
+  Setting `checkedAttributes` overrides the defaults. Include all attributes you
+  want checked.
+</Note>
+
+## What's NOT Detected
+
+Glot is smart about ignoring certain patterns:
+
+### Translation Function Calls
+
+Recognized translation patterns are ignored:
+
+```tsx
+// Not detected (using t() function)
+<button>{t("common.submit")}</button>;
+
+// Not detected (using useTranslations)
+const t = useTranslations("namespace");
+<span>{t("key")}</span>;
+```
+
+### Pure Numbers and Symbols
+
+```tsx
+// Not detected
+<span>123</span>
+<div>$99.99</div>
+<p>---</p>
+<code>***</code>
+```
+
+### Code Examples
+
+Code blocks typically aren't in JSX context and aren't checked.
+
+### Suppressed Lines
+
+Lines with suppression directives:
+
+```tsx
+// glot-disable-next-line
+<button>Submit</button> // Not detected
+```
+
+## Examples
+
+<Accordion title="Form Component">
+```tsx
+// Before: Multiple hardcoded strings detected
+function LoginForm() {
+  return (
+    <form>
+      <label>Email</label>  {/* hardcoded */}
+      <input placeholder="Enter your email" />  {/* hardcoded */}
+      <label>Password</label>  {/* hardcoded */}
+      <input type="password" placeholder="Enter password" />  {/* hardcoded */}
+      <button>Sign In</button>  {/* hardcoded */}
+    </form>
+  );
+}
+
+// After: Using translations
+function LoginForm() {
+const t = useTranslations('auth');
+return (
+
+<form>
+<label>{t('email')}</label>
+<input placeholder={t('emailPlaceholder')} />
+<label>{t('password')}</label>
+<input type="password" placeholder={t('passwordPlaceholder')} />
+<button>{t('signIn')}</button>
+</form>
+);
+}
+
+```
+</Accordion>
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Check Command" icon="terminal" href="/commands/check">
+    Run hardcoded text detection
+  </Card>
+  <Card title="Directives" icon="code" href="/directives">
+    Suppress specific warnings
+  </Card>
+</CardGroup>
+```

@@ -1,0 +1,161 @@
+---
+title: glot init
+description: Create a glot configuration file
+---
+
+The `init` command creates a default `.glotrc.json` configuration file in your project root.
+
+## Usage
+
+<CodeGroup>
+```bash npm
+npx glot init
+```
+
+```bash pnpm
+pnpm exec glot init
+```
+
+```bash yarn
+yarn glot init
+```
+
+```bash bun
+bunx glot init
+```
+
+</CodeGroup>
+
+## What It Creates
+
+Running `glot init` creates a `.glotrc.json` file with sensible defaults:
+
+```json
+{
+  "primaryLocale": "en",
+  "messagesDir": "./messages",
+  "includes": [
+    "src/app/[locale]",
+    "src/components",
+    "app/[locale]",
+    "components"
+  ],
+  "ignores": [],
+  "ignoreTestFiles": true,
+  "ignoreTexts": [],
+  "checkedAttributes": [
+    "placeholder",
+    "title",
+    "alt",
+    "aria-label",
+    "aria-description",
+    "aria-placeholder",
+    "aria-roledescription",
+    "aria-valuetext"
+  ]
+}
+```
+
+## Behavior
+
+- Creates the file in the current directory
+- Fails if `.glotrc.json` already exists (won't overwrite)
+- Uses defaults suitable for typical Next.js projects
+
+## Example
+
+<CodeGroup>
+```bash npm
+$ npx glot init
+Created .glotrc.json
+
+$ cat .glotrc.json
+{
+"primaryLocale": "en",
+"messagesDir": "./messages",
+...
+}
+
+````
+
+```bash pnpm
+$ pnpm exec glot init
+Created .glotrc.json
+
+$ cat .glotrc.json
+{
+  "primaryLocale": "en",
+  "messagesDir": "./messages",
+  ...
+}
+````
+
+```bash yarn
+$ yarn glot init
+Created .glotrc.json
+
+$ cat .glotrc.json
+{
+  "primaryLocale": "en",
+  "messagesDir": "./messages",
+  ...
+}
+```
+
+```bash bun
+$ bunx glot init
+Created .glotrc.json
+
+$ cat .glotrc.json
+{
+  "primaryLocale": "en",
+  "messagesDir": "./messages",
+  ...
+}
+```
+
+</CodeGroup>
+
+## After Initialization
+
+After creating the config file, you should:
+
+<Steps>
+  <Step title="Review Paths">
+    Check that `includes` matches your project structure. Adjust paths if your
+    components are in different directories.
+  </Step>
+  <Step title="Set Primary Locale">
+    Change `primaryLocale` if your primary language isn't English.
+  </Step>
+  <Step title="Set Messages Directory">
+    Update `messagesDir` to point to your locale JSON files.
+  </Step>
+  <Step title="Run Check">
+    Test your configuration:
+    <CodeGroup>
+```bash npm
+npx glot check
+```
+
+```bash pnpm
+pnpm exec glot check
+```
+
+```bash yarn
+yarn glot check
+```
+
+```bash bun
+bunx glot check
+```
+
+</CodeGroup>
+  </Step>
+</Steps>
+
+## Related
+
+<Card title="Configuration" icon="gear" href="/configuration">
+  Full configuration reference
+</Card>

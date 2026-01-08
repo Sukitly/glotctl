@@ -1,0 +1,18 @@
+---
+source: tests/cli/check.rs
+info:
+  program: glot
+  args:
+    - check
+    - "--verbose"
+    - missing
+  env:
+    NO_COLOR: "1"
+---
+success: false
+exit_code: 1
+----- stdout -----
+
+----- stderr -----
+Error: Messages directory './nonexistent' does not exist.
+Hint: Check your .glotrc.json 'messagesDir' setting.

@@ -1,0 +1,261 @@
+---
+title: Missing Keys
+description: Understanding missing translation key detection
+---
+
+Glot detects translation keys that are used in your code but missing from your locale files.
+
+## What Are Missing Keys?
+
+A missing key occurs when:
+
+1. Your code calls a translation function with a key: `t('common.submit')`
+2. That key doesn't exist in your locale JSON files
+
+This typically happens when:
+
+- A developer adds a translation call but forgets to add the key to locale files
+- A key is misspelled in the code
+- Keys are deleted from locale files but still used in code
+
+## Example
+
+Code using a translation:
+
+```tsx
+function Button() {
+  const t = useTranslations("common");
+  return <button>{t("submit")}</button>;
+}
+```
+
+Locale file missing the key:
+
+```json messages/en.json
+{
+  "common": {
+    "cancel": "Cancel"
+    // "submit" is missing!
+  }
+}
+```
+
+Glot output:
+
+```
+error: common.submit  missing-key
+  --> ./src/components/Button.tsx:3
+  |
+  | Translation key "common.submit" is used but not defined in messages/en.json
+  |
+
+✖ 1 problem (1 error, 0 warnings)
+```
+
+## Detection Methods
+
+Glot identifies translation usage through:
+
+### Direct Function Calls
+
+```tsx
+t("key");
+t("namespace.key");
+```
+
+### Template Literals (Warning)
+
+Dynamic keys can't be statically analyzed:
+
+```tsx
+t(`items.${type}`); // Warning: dynamic key
+```
+
+### Supported Translation Hooks
+
+Glot recognizes these next-intl translation functions:
+
+| Function          | Context           | Import             |
+| ----------------- | ----------------- | ------------------ |
+| `useTranslations` | Client components | `next-intl`        |
+| `getTranslations` | Server components | `next-intl/server` |
+
+```tsx
+// useTranslations hook (client)
+const t = useTranslations("namespace");
+t("key"); // Detected as namespace.key
+
+// getTranslations (server)
+import { getTranslations } from "next-intl/server";
+const t = await getTranslations("namespace");
+t("key"); // Detected as namespace.key
+```
+
+<Note>
+  Custom translation functions or renamed imports are not automatically
+  detected. If you use a wrapper function, consider using
+  [glot-message-keys](/directives#dynamic-key-declaration) to declare keys.
+</Note>
+
+## Severity
+
+Missing keys are reported as **errors** because they cause runtime issues:
+
+- In development: Often shows the key itself or an error message
+- In production: Can break the user experience
+
+## Fixing Missing Keys
+
+<Steps>
+  <Step title="Run Check">
+    <Tabs syncKey="pkg">
+      <Tab title="npm">
+        ```bash
+        npx glot check missing
+        ```
+      </Tab>
+      <Tab title="pnpm">
+        ```bash
+        pnpm exec glot check missing
+        ```
+      </Tab>
+      <Tab title="yarn">
+        ```bash
+        yarn glot check missing
+        ```
+      </Tab>
+      <Tab title="bun">
+        ```bash
+        bunx glot check missing
+        ```
+      </Tab>
+    </Tabs>
+  </Step>
+  <Step title="Review Issues">
+    Check each missing key report to understand what's needed.
+  </Step>
+  <Step title="Add Keys">
+    Add the missing keys to your locale files:
+    ```json messages/en.json
+    {
+      "common": {
+        "submit": "Submit",
+        "cancel": "Cancel"
+      }
+    }
+    ```
+  </Step>
+  <Step title="Verify">
+    Run the check again to confirm all keys are present:
+    <Tabs syncKey="pkg">
+      <Tab title="npm">
+        ```bash
+        npx glot check missing
+        ```
+      </Tab>
+      <Tab title="pnpm">
+        ```bash
+        pnpm exec glot check missing
+        ```
+      </Tab>
+      <Tab title="yarn">
+        ```bash
+        yarn glot check missing
+        ```
+      </Tab>
+      <Tab title="bun">
+        ```bash
+        bunx glot check missing
+        ```
+      </Tab>
+    </Tabs>
+  </Step>
+</Steps>
+
+## Dynamic Keys
+
+When glot encounters dynamic keys, it issues a warning:
+
+```tsx
+// This generates a warning
+const t = useTranslations("items");
+return <span>{t(`${item.type}.label`)}</span>;
+```
+
+```
+warning: Dynamic key detected  dynamic-key
+  --> ./src/components/Item.tsx:5
+  |
+5 |   return <span>{t(`${item.type}.label`)}</span>;
+  |
+  | Cannot statically analyze dynamic translation keys
+```
+
+### Handling Dynamic Keys
+
+Options for handling dynamic keys:
+
+1. **Refactor to static keys** (recommended):
+
+   ```tsx
+   const labels = {
+     book: t("book.label"),
+     video: t("video.label"),
+   };
+   return <span>{labels[item.type]}</span>;
+   ```
+
+2. **Declare expected keys** (when refactoring is not feasible):
+
+   ```tsx
+   // glot-message-keys "book.label", "video.label"
+   return <span>{t(`${item.type}.label`)}</span>;
+   ```
+
+   Or use a glob pattern to match multiple keys:
+
+   ```tsx
+   // glot-message-keys "*.label"
+   return <span>{t(`${item.type}.label`)}</span>;
+   ```
+
+3. **Suppress the warning** (last resort):
+
+   ```tsx
+   // glot-disable-next-line
+   return <span>{t(`${item.type}.label`)}</span>;
+   ```
+
+<Note>
+  Option 2 (`glot-message-keys`) is preferred over option 3 because it
+  explicitly declares which keys are used, enabling accurate tracking for the
+  [`clean`](/commands/clean) command.
+</Note>
+
+## Primary vs Non-Primary Locales
+
+Missing key detection checks against the **primary locale** defined in your config:
+
+```json .glotrc.json
+{
+  "primaryLocale": "en"
+}
+```
+
+If a key is missing from `messages/en.json`, it's reported as a missing key.
+
+If a key exists in `en.json` but not in `es.json`, it's reported as **replica lag** (a different check).
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Directives" icon="code" href="/directives">
+    Use glot-message-keys for dynamic keys
+  </Card>
+  <Card title="Orphan Keys" icon="broom" href="/detection/orphan-keys">
+    Find unused translation keys
+  </Card>
+  <Card title="Check Command" icon="terminal" href="/commands/check">
+    Run missing key detection
+  </Card>
+</CardGroup>

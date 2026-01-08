@@ -1,0 +1,19 @@
+---
+source: tests/cli/clean.rs
+info:
+  program: glot
+  args:
+    - clean
+    - "--apply"
+  env:
+    NO_COLOR: "1"
+---
+success: true
+exit_code: 0
+----- stdout -----
+./messages/en.json:
+  - App.Settings.Account.unused (line 5): ("Unused")  [unused]
+
+Deleted 1 unused key(s) and 0 orphan key(s) from 1 file(s).
+
+----- stderr -----

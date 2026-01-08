@@ -1,0 +1,20 @@
+---
+source: tests/cli/clean.rs
+info:
+  program: glot
+  args:
+    - clean
+    - "--orphan"
+    - "--apply"
+  env:
+    NO_COLOR: "1"
+---
+success: true
+exit_code: 0
+----- stdout -----
+./messages/zh.json:
+  - Common.orphan (line 4): in zh ("孤儿")  [orphan]
+
+Deleted 0 unused key(s) and 1 orphan key(s) from 1 file(s).
+
+----- stderr -----

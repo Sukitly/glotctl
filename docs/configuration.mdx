@@ -1,0 +1,265 @@
+---
+title: Configuration
+description: Complete .glotrc.json configuration reference
+---
+
+Glot is configured using a `.glotrc.json` file in your project root.
+
+## Creating Configuration
+
+Run the init command to create a default configuration:
+
+<Tabs syncKey="pkg">
+  <Tab title="npm">```bash npx glot init ```</Tab>
+  <Tab title="pnpm">```bash pnpm exec glot init ```</Tab>
+  <Tab title="yarn">```bash yarn glot init ```</Tab>
+  <Tab title="bun">```bash bunx glot init ```</Tab>
+</Tabs>
+
+Or create `.glotrc.json` manually.
+
+## Configuration Options
+
+### primaryLocale
+
+The primary locale for your application. Missing key detection uses this locale as the source of truth.
+
+| Type     | Default |
+| -------- | ------- |
+| `string` | `"en"`  |
+
+```json
+{
+  "primaryLocale": "en"
+}
+```
+
+### messagesDir
+
+Path to the directory containing your locale JSON files.
+
+| Type     | Default        |
+| -------- | -------------- |
+| `string` | `"./messages"` |
+
+```json
+{
+  "messagesDir": "./messages"
+}
+```
+
+Expected structure:
+
+```
+messages/
+├── en.json
+├── es.json
+├── fr.json
+└── ...
+```
+
+### includes
+
+Directories to scan for TSX/JSX files. Glot only checks files in these directories.
+
+| Type       | Default   |
+| ---------- | --------- |
+| `string[]` | See below |
+
+Default value:
+
+```json
+{
+  "includes": [
+    "src/app/[locale]",
+    "src/components",
+    "app/[locale]",
+    "components"
+  ]
+}
+```
+
+<Note>
+  Paths can include Next.js dynamic route syntax like `[locale]`. This is
+  treated as a literal folder name, not a glob pattern.
+</Note>
+
+### ignores
+
+Glob patterns for files and directories to exclude from scanning.
+
+| Type       | Default |
+| ---------- | ------- |
+| `string[]` | `[]`    |
+
+```json
+{
+  "ignores": ["**/node_modules/**", "**/generated/**", "**/*.stories.tsx"]
+}
+```
+
+### ignoreTestFiles
+
+Skip test files automatically.
+
+| Type      | Default |
+| --------- | ------- |
+| `boolean` | `true`  |
+
+When enabled, glot ignores:
+
+- `*.test.tsx`, `*.test.ts`, `*.test.jsx`, `*.test.js`
+- `*.spec.tsx`, `*.spec.ts`, `*.spec.jsx`, `*.spec.js`
+- Files in `__tests__/` directories
+
+```json
+{
+  "ignoreTestFiles": true
+}
+```
+
+### ignoreTexts
+
+Specific text patterns to ignore. Case-sensitive.
+
+| Type       | Default |
+| ---------- | ------- |
+| `string[]` | `[]`    |
+
+```json
+{
+  "ignoreTexts": ["TODO", "FIXME", "Lorem ipsum"]
+}
+```
+
+Useful for:
+
+- Development placeholders
+- Known patterns that don't need translation
+- Third-party component text
+
+### checkedAttributes
+
+JSX attributes to check for [hardcoded text](/detection/hardcoded-text). These attributes commonly contain user-facing strings that should be translated.
+
+| Type       | Default   |
+| ---------- | --------- |
+| `string[]` | See below |
+
+Default value:
+
+```json
+{
+  "checkedAttributes": [
+    "placeholder",
+    "title",
+    "alt",
+    "aria-label",
+    "aria-description",
+    "aria-placeholder",
+    "aria-roledescription",
+    "aria-valuetext"
+  ]
+}
+```
+
+<Warning>
+  Setting this option **overrides** the defaults. Include all attributes you
+  want checked.
+</Warning>
+
+## Full Example
+
+A complete configuration file:
+
+```json .glotrc.json
+{
+  "primaryLocale": "en",
+  "messagesDir": "./locales",
+  "includes": ["src/app/[locale]", "src/components", "src/features"],
+  "ignores": ["**/node_modules/**", "**/*.stories.tsx", "**/mocks/**"],
+  "ignoreTestFiles": true,
+  "ignoreTexts": ["TODO", "FIXME", "N/A"],
+  "checkedAttributes": ["placeholder", "title", "alt", "aria-label"]
+}
+```
+
+## Configuration Resolution
+
+Glot searches for `.glotrc.json` starting from the specified path (or current directory) and traversing upward:
+
+1. Check current directory for `.glotrc.json`
+2. If not found, check parent directory
+3. Continue until:
+   - A `.glotrc.json` is found
+   - A `.git` directory is encountered (project root)
+   - Filesystem root is reached
+
+If no configuration is found, glot uses all default values.
+
+## Validation
+
+Glot validates your configuration on startup:
+
+- Paths in `includes` are checked for existence
+- Glob patterns in `ignores` are validated
+- Invalid configuration shows clear error messages
+
+```
+Error: Invalid configuration in .glotrc.json
+  - includes[0]: Directory "src/pages" does not exist
+  - ignores[2]: Invalid glob pattern "***"
+```
+
+## Common Configurations
+
+<Accordion title="Next.js App Router">
+```json
+{
+  "primaryLocale": "en",
+  "messagesDir": "./messages",
+  "includes": [
+    "src/app/[locale]",
+    "src/components"
+  ]
+}
+```
+</Accordion>
+
+<Accordion title="Next.js Pages Router">
+```json
+{
+  "primaryLocale": "en",
+  "messagesDir": "./locales",
+  "includes": [
+    "src/pages",
+    "src/components"
+  ]
+}
+```
+</Accordion>
+
+<Accordion title="Monorepo with Multiple Apps">
+```json
+{
+  "primaryLocale": "en",
+  "messagesDir": "./packages/i18n/messages",
+  "includes": [
+    "apps/web/src/app/[locale]",
+    "apps/web/src/components",
+    "packages/ui/src"
+  ]
+}
+```
+</Accordion>
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Init Command" icon="terminal" href="/commands/init">
+    Create configuration file
+  </Card>
+  <Card title="Directives" icon="code" href="/directives">
+    Inline suppression directives
+  </Card>
+</CardGroup>

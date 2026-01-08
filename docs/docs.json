@@ -1,0 +1,54 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "name": "Glot",
+  "theme": "mint",
+  "colors": {
+    "primary": "#22C55E",
+    "light": "#4ADE80",
+    "dark": "#16A34A"
+  },
+  "favicon": "/favicon.svg",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": ["introduction", "quickstart"]
+          },
+          {
+            "group": "Commands",
+            "pages": [
+              "commands/init",
+              "commands/check",
+              "commands/baseline",
+              "commands/clean"
+            ]
+          },
+          {
+            "group": "Detection Rules",
+            "pages": [
+              "detection/hardcoded-text",
+              "detection/missing-keys",
+              "detection/orphan-keys"
+            ]
+          },
+          {
+            "group": "MCP Integration",
+            "pages": ["mcp/overview"]
+          },
+          {
+            "group": "Reference",
+            "pages": ["configuration", "directives"]
+          }
+        ]
+      }
+    ]
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/Sukitly/glotctl"
+    }
+  }
+}

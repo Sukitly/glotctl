@@ -1,0 +1,45 @@
+[package]
+name = "glot"
+version = "0.1.0"
+edition = "2024"
+description = "A fast CLI tool for checking i18n issues in Next.js projects"
+license = "MIT"
+repository = "https://github.com/Sukitly/glotctl"
+homepage = "https://github.com/Sukitly/glotctl"
+keywords = ["i18n", "next-intl", "nextjs", "internationalization", "cli"]
+categories = ["command-line-utilities", "development-tools"]
+
+[[bin]]
+name = "glot"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0.100"
+clap = { version = "4.5.53", features = ["derive", "env"] }
+colored = "3.0.0"
+glob = "0.3.3"
+regex = "1.11"
+unicode-width = "0.2"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = { version = "1.0.147", features = ["preserve_order"] }
+swc_common = { version = "18.0.1", features = ["tty-emitter"] }
+swc_ecma_ast = "19.0.0"
+swc_ecma_parser = "30.0.0"
+swc_ecma_visit = "19.0.0"
+walkdir = "2.5.0"
+
+# MCP server dependencies
+rmcp = { version = "0.12", features = ["server", "transport-io", "macros"] }
+tokio = { version = "1", features = ["rt", "macros"] }
+schemars = "1.0"
+
+[dev-dependencies]
+insta = { version = "1.45.0", features = ["filters"] }
+insta-cmd = "0.6.0"
+pretty_assertions = "1.4.1"
+tempfile = "3.24.0"
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"

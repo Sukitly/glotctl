@@ -1,0 +1,22 @@
+---
+source: tests/cli/baseline.rs
+info:
+  program: glot
+  args:
+    - baseline
+    - "--apply"
+  env:
+    NO_COLOR: "1"
+---
+success: true
+exit_code: 0
+----- stdout -----
+  --> ./src/app.tsx:4:28
+     |
+   4 |             {show && <span>Conditional text</span>}
+     |                            ^
+  +             {/* glot-disable-next-line */}
+
+Inserted 1 comment(s) in 1 file(s).
+
+----- stderr -----

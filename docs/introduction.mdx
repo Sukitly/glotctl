@@ -1,0 +1,75 @@
+---
+title: Introduction
+description: A fast CLI tool for checking i18n issues in Next.js projects
+---
+
+Glot is a fast Rust-based CLI tool for checking internationalization (i18n) issues in [Next.js](https://nextjs.org/) projects using [next-intl](https://next-intl-docs.vercel.app/). It helps you catch hardcoded text that should use translation functions, find missing translation keys, and identify unused translations.
+
+## Key Features
+
+<CardGroup cols={2}>
+  <Card
+    title="Hardcoded Text Detection"
+    icon="magnifying-glass"
+    href="/detection/hardcoded-text"
+  >
+    Find untranslated text in JSX/TSX files that should use i18n translation
+    functions
+  </Card>
+  <Card
+    title="Missing Key Detection"
+    icon="triangle-exclamation"
+    href="/detection/missing-keys"
+  >
+    Identify translation keys used in code but missing from your locale files
+  </Card>
+  <Card title="Orphan Key Detection" icon="broom" href="/detection/orphan-keys">
+    Find unused translation keys defined in locale files but never used in code
+  </Card>
+  <Card title="Multi-language Support" icon="globe">
+    Detects text in any language using Unicode alphabetic character detection
+  </Card>
+  <Card title="AI Integration" icon="robot" href="/mcp/overview">
+    MCP server for AI agents like Claude to analyze and fix i18n issues
+  </Card>
+</CardGroup>
+
+## Why Glot?
+
+- **Fast**: Built in Rust using the same parser as Next.js (swc)
+- **Accurate**: Understands JSX/TSX syntax and next-intl patterns
+- **Configurable**: Customize detection rules, ignored patterns, and checked attributes
+- **CI-friendly**: Perfect for automated pipelines with exit codes and structured output
+
+## How It Works
+
+Glot parses your TSX/JSX files using the swc AST parser and visits each node to detect:
+
+1. **Text content** in JSX elements: `<button>Submit</button>`
+2. **String expressions**: `<div>{"Hello"}</div>`
+3. **Conditional text**: `{loading ? "Loading..." : "Done"}`
+4. **Attribute values**: `<input placeholder="Enter email" />`
+
+Any text containing at least one Unicode alphabetic character is flagged as potentially hardcoded.
+
+## Quick Example
+
+```bash
+# Check your project for i18n issues
+npx glot check
+
+# Output:
+# error: "Submit"  hardcoded-text
+#   --> ./src/components/Button.tsx:5:22
+#   |
+# 5 |     return <button>Submit</button>;
+#   |                    ^
+#
+# ✖ 1 problem (1 error, 0 warnings)
+```
+
+## Next Steps
+
+<Card title="Quick Start" icon="rocket" href="/quickstart">
+  Install glot and run your first i18n check in 2 minutes
+</Card>

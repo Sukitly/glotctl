@@ -1,0 +1,112 @@
+use clap::{Args, CommandFactory, Parser, Subcommand};
+
+use crate::commands::runner::CheckType;
+
+#[derive(Debug, Parser)]
+#[command(author, version, about, long_about = None)]
+pub struct Arguments {
+    #[command(subcommand)]
+    pub command: Option<Command>,
+}
+
+impl Arguments {
+    /// Check if a command was provided, otherwise print help and return None.
+    pub fn with_command_or_help(self) -> Option<Self> {
+        if self.command.is_none() {
+            Self::command().print_help().ok();
+            None
+        } else {
+            Some(self)
+        }
+    }
+
+    /// Get the verbose flag from the command's common args.
+    pub fn verbose(&self) -> bool {
+        match &self.command {
+            Some(Command::Check(cmd)) => cmd.args.common.verbose,
+            Some(Command::Clean(cmd)) => cmd.args.common.verbose,
+            Some(Command::Baseline(cmd)) => cmd.args.common.verbose,
+            Some(Command::Init) | Some(Command::Serve) | None => false,
+        }
+    }
+}
+
+/// Common arguments shared by all commands.
+#[derive(Debug, Clone, Args)]
+pub struct CommonArgs {
+    /// Path to check (default: current directory)
+    #[arg(long, default_value = ".")]
+    pub path: std::path::PathBuf,
+
+    /// Enable verbose output
+    #[arg(short, long)]
+    pub verbose: bool,
+}
+
+#[derive(Debug, Parser)]
+pub struct CheckArgs {
+    #[command(flatten)]
+    pub common: CommonArgs,
+}
+
+#[derive(Debug, Args)]
+pub struct CheckCommand {
+    #[arg(value_enum)]
+    pub checks: Vec<CheckType>,
+    #[command(flatten)]
+    pub args: CheckArgs,
+}
+
+#[derive(Debug, Parser)]
+pub struct CleanArgs {
+    #[command(flatten)]
+    pub common: CommonArgs,
+
+    /// Actually delete keys (default is dry-run)
+    #[arg(long)]
+    pub apply: bool,
+
+    /// Only clean unused keys (defined but not used in code)
+    #[arg(long)]
+    pub unused: bool,
+
+    /// Only clean orphan keys (not in primary locale)
+    #[arg(long)]
+    pub orphan: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct CleanCommand {
+    #[command(flatten)]
+    pub args: CleanArgs,
+}
+
+#[derive(Debug, Parser)]
+pub struct BaselineArgs {
+    #[command(flatten)]
+    pub common: CommonArgs,
+
+    /// Actually insert comments (default is dry-run)
+    #[arg(long)]
+    pub apply: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct BaselineCommand {
+    #[command(flatten)]
+    pub args: BaselineArgs,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum Command {
+    /// Check for i18n issues (hardcoded text, missing keys, orphan keys)
+    Check(CheckCommand),
+    /// Remove unused or orphan translation keys from JSON files
+    Clean(CleanCommand),
+    /// Insert glot-disable-next-line comments to suppress hardcoded text warnings
+    Baseline(BaselineCommand),
+    /// Initialize a new .glotrc.json configuration file
+    Init,
+    /// Start MCP server for AI coding agents
+    Serve,
+}

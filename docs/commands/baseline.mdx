@@ -1,0 +1,195 @@
+---
+title: glot baseline
+description: Establish a baseline for existing projects
+---
+
+The `baseline` command inserts `glot-disable-next-line` comments to suppress existing hardcoded text warnings. This is useful when adopting glot in an existing project.
+
+## Usage
+
+<CodeGroup>
+```bash npm
+npx glot baseline [OPTIONS]
+```
+
+```bash pnpm
+pnpm exec glot baseline [OPTIONS]
+```
+
+```bash yarn
+yarn glot baseline [OPTIONS]
+```
+
+```bash bun
+bunx glot baseline [OPTIONS]
+```
+
+</CodeGroup>
+
+## Options
+
+<ParamField path="--apply" type="boolean" default="false">
+  Actually insert comments. Without this flag, glot runs in dry-run mode and
+  only shows what would be changed.
+</ParamField>
+
+<ParamField path="--path" type="string" default=".">
+  Directory to process.
+</ParamField>
+
+## Why Use Baseline?
+
+When adding glot to an existing project, you might have hundreds of hardcoded strings. Fixing them all at once isn't practical. The baseline command lets you:
+
+1. Suppress all existing warnings
+2. Start with a clean slate
+3. Prevent new hardcoded text from being added
+4. Gradually fix existing issues over time
+
+## Dry-Run Mode (Default)
+
+Preview what comments would be inserted:
+
+<CodeGroup>
+```bash npm
+npx glot baseline
+```
+
+```bash pnpm
+pnpm exec glot baseline
+```
+
+```bash yarn
+yarn glot baseline
+```
+
+```bash bun
+bunx glot baseline
+```
+
+</CodeGroup>
+
+Output:
+
+```
+Dry-run mode: showing comments that would be inserted
+
+./src/components/Button.tsx:5
+  Would add: // glot-disable-next-line
+  Before: return <button>Submit</button>;
+
+./src/components/Form.tsx:12
+  Would add: // glot-disable-next-line
+  Before: <input placeholder="Enter your email" />
+
+2 comments would be inserted. Run with --apply to insert.
+```
+
+## Apply Changes
+
+Insert the suppression comments:
+
+<CodeGroup>
+```bash npm
+npx glot baseline --apply
+```
+
+```bash pnpm
+pnpm exec glot baseline --apply
+```
+
+```bash yarn
+yarn glot baseline --apply
+```
+
+```bash bun
+bunx glot baseline --apply
+```
+
+</CodeGroup>
+
+Output:
+
+```
+./src/components/Button.tsx:5
+  Inserted: // glot-disable-next-line
+
+./src/components/Form.tsx:12
+  Inserted: // glot-disable-next-line
+
+✓ 2 comments inserted
+```
+
+## Result
+
+Before:
+
+```tsx
+export function Button() {
+  return <button>Submit</button>;
+}
+```
+
+After:
+
+```tsx
+export function Button() {
+  // glot-disable-next-line
+  return <button>Submit</button>;
+}
+```
+
+## Workflow
+
+<Steps>
+  <Step title="Run Baseline">
+    Insert suppression comments for all existing hardcoded text:
+    <CodeGroup>
+```bash npm
+npx glot baseline --apply
+```
+
+```bash pnpm
+pnpm exec glot baseline --apply
+```
+
+```bash yarn
+yarn glot baseline --apply
+```
+
+```bash bun
+bunx glot baseline --apply
+```
+
+</CodeGroup>
+  </Step>
+  <Step title="Commit Changes">
+    Commit the baseline to your repository: ```bash git add -A git commit -m
+    "chore: add glot baseline comments" ```
+  </Step>
+  <Step title="Add to CI">
+    Add glot check to your CI pipeline. New hardcoded text will be caught.
+  </Step>
+  <Step title="Gradually Fix">
+    Over time, remove the suppression comments and add proper translations.
+  </Step>
+</Steps>
+
+## Smart Behavior
+
+The baseline command is smart about where it inserts comments:
+
+- Skips lines that already have translation function calls
+- Places comments on the correct line for multiline JSX
+- Handles JSX attributes correctly
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Directives" icon="code" href="/directives">
+    Learn about inline suppression directives
+  </Card>
+  <Card title="Check Command" icon="terminal" href="/commands/check">
+    Run i18n checks
+  </Card>
+</CardGroup>

@@ -1,0 +1,26 @@
+---
+source: tests/cli/check.rs
+info:
+  program: glot
+  args:
+    - check
+  env:
+    NO_COLOR: "1"
+---
+success: false
+exit_code: 1
+----- stdout -----
+warning: "Common.cancel"  unused-key
+  --> ./messages/en.json:3:0
+  = note: ("Cancel")
+
+error: "Common.submit"  missing-key
+  --> ./src/app.tsx:4:23
+  |
+4 |       return <button>{t("submit")}</button>;
+  |                       ^
+
+
+✖ 2 problems (1 error, 1 warning)
+
+----- stderr -----

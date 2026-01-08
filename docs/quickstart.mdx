@@ -1,0 +1,329 @@
+---
+title: Quick Start
+description: Get started with glot in 2 minutes
+---
+
+Get up and running with glot in just a few steps.
+
+## Installation
+
+Glot is distributed as an npm package called `glotctl`. The CLI command is `glot`.
+
+<CodeGroup>
+```bash npm
+npm install -D glotctl
+```
+
+```bash pnpm
+pnpm add -D glotctl
+```
+
+```bash yarn
+yarn add -D glotctl
+```
+
+```bash bun
+bun add -D glotctl
+```
+
+</CodeGroup>
+
+Verify the installation:
+
+<CodeGroup>
+```bash npm
+npx glot --version
+```
+
+```bash pnpm
+pnpm exec glot --version
+```
+
+```bash yarn
+yarn glot --version
+```
+
+```bash bun
+bunx glot --version
+```
+
+</CodeGroup>
+
+## Initialize Configuration
+
+Create a `.glotrc.json` configuration file:
+
+<CodeGroup>
+```bash npm
+npx glot init
+```
+
+```bash pnpm
+pnpm exec glot init
+```
+
+```bash yarn
+yarn glot init
+```
+
+```bash bun
+bunx glot init
+```
+
+</CodeGroup>
+
+This creates a default configuration:
+
+```json
+{
+  "primaryLocale": "en",
+  "messagesDir": "./messages",
+  "includes": [
+    "src/app/[locale]",
+    "src/components",
+    "app/[locale]",
+    "components"
+  ],
+  "ignores": [],
+  "ignoreTestFiles": true,
+  "ignoreTexts": [],
+  "checkedAttributes": [
+    "placeholder",
+    "title",
+    "alt",
+    "aria-label",
+    "aria-description",
+    "aria-placeholder",
+    "aria-roledescription",
+    "aria-valuetext"
+  ]
+}
+```
+
+<Tip>
+  Adjust the `includes` paths to match your project structure. Glot will only
+  scan these directories.
+</Tip>
+
+## Run Your First Check
+
+Check your project for all i18n issues:
+
+<CodeGroup>
+```bash npm
+npx glot check
+```
+
+```bash pnpm
+pnpm exec glot check
+```
+
+```bash yarn
+yarn glot check
+```
+
+```bash bun
+bunx glot check
+```
+
+</CodeGroup>
+
+Or check for specific issue types:
+
+- [hardcoded](/detection/hardcoded-text) - Untranslated text in JSX/TSX
+- [missing](/detection/missing-keys) - Keys used but not defined in locale files
+- [orphan](/detection/orphan-keys) - Unused keys in locale files
+
+<CodeGroup>
+```bash npm
+# Only hardcoded text
+npx glot check hardcoded
+
+# Only missing translation keys
+
+npx glot check missing
+
+# Only orphan (unused) keys
+
+npx glot check orphan
+
+````
+
+```bash pnpm
+# Only hardcoded text
+pnpm exec glot check hardcoded
+
+# Only missing translation keys
+pnpm exec glot check missing
+
+# Only orphan (unused) keys
+pnpm exec glot check orphan
+````
+
+```bash yarn
+# Only hardcoded text
+yarn glot check hardcoded
+
+# Only missing translation keys
+yarn glot check missing
+
+# Only orphan (unused) keys
+yarn glot check orphan
+```
+
+```bash bun
+# Only hardcoded text
+bunx glot check hardcoded
+
+# Only missing translation keys
+bunx glot check missing
+
+# Only orphan (unused) keys
+bunx glot check orphan
+```
+
+</CodeGroup>
+
+## Understanding the Output
+
+Glot displays issues in a familiar format:
+
+```
+error: "Submit"  hardcoded-text
+  --> ./src/components/Button.tsx:5:22
+  |
+5 |     return <button>Submit</button>;
+  |                    ^
+
+error: "Enter your email"  hardcoded-text
+  --> ./src/components/Form.tsx:12:28
+   |
+12 |     <input placeholder="Enter your email" />
+   |                        ^
+
+✖ 2 problems (2 errors, 0 warnings)
+```
+
+Each issue shows:
+
+- The problematic text in quotes
+- The issue type (e.g., `hardcoded-text`)
+- File path and location
+- Source code context with a pointer
+
+## Fixing Issues
+
+Replace hardcoded text with translation function calls:
+
+<CodeGroup>
+```tsx Before
+export function Button() {
+  return <button>Submit</button>;
+}
+```
+
+```tsx After
+import { useTranslations } from "next-intl";
+
+export function Button() {
+  const t = useTranslations("common");
+  return <button>{t("submit")}</button>;
+}
+```
+
+</CodeGroup>
+
+Then add the key to your locale file:
+
+```json messages/en.json
+{
+  "common": {
+    "submit": "Submit"
+  }
+}
+```
+
+## Add to package.json
+
+For convenience, add glot commands to your `package.json`:
+
+```json
+{
+  "scripts": {
+    "i18n:check": "glot check",
+    "i18n:clean": "glot clean --apply"
+  }
+}
+```
+
+## Using with CI
+
+Glot returns exit code 1 when issues are found, making it perfect for CI pipelines:
+
+<CodeGroup>
+```yaml npm .github/workflows/i18n.yml
+name: i18n Check
+on: [push, pull_request]
+
+jobs:
+check:
+runs-on: ubuntu-latest
+steps: - uses: actions/checkout@v4 - uses: actions/setup-node@v4 - run: npm ci - run: npx glot check
+
+````
+
+```yaml pnpm .github/workflows/i18n.yml
+name: i18n Check
+on: [push, pull_request]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+      - run: pnpm install
+      - run: pnpm exec glot check
+````
+
+```yaml yarn .github/workflows/i18n.yml
+name: i18n Check
+on: [push, pull_request]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+      - run: yarn install
+      - run: yarn glot check
+```
+
+```yaml bun .github/workflows/i18n.yml
+name: i18n Check
+on: [push, pull_request]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install
+      - run: bunx glot check
+```
+
+</CodeGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Commands" icon="terminal" href="/commands/check">
+    Learn all available commands
+  </Card>
+  <Card title="Configuration" icon="gear" href="/configuration">
+    Customize glot for your project
+  </Card>
+</CardGroup>
