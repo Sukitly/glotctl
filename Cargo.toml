@@ -1,6 +1,6 @@
 [package]
 name = "glot"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 description = "A fast CLI tool for checking i18n issues in Next.js projects"
 license = "MIT"
