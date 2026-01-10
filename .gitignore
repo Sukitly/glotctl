@@ -33,6 +33,7 @@ target
 .cursor/
 .codex/
 .vscode/
+.opencode/
 
 CLAUDE.md
 AGENT.md
