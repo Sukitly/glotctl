@@ -24,12 +24,12 @@ jobs:
     if: |
       github.event_name == 'workflow_dispatch' ||
       github.event.workflow_run.conclusion == 'success'
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     steps:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "24"
           registry-url: "https://registry.npmjs.org"
 
       - name: Download npm package from release
@@ -46,4 +46,4 @@ jobs:
         run: |
           tar -xzf glot-npm-package.tar.gz
           cd package
-          npm publish --access public --provenance
+          npm publish --access public
