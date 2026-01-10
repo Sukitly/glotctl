@@ -18,7 +18,21 @@ Run the init command to create a default configuration:
 
 Or create `.glotrc.json` manually.
 
-## Configuration Options
+## Quick Reference
+
+| Option                                  | Type       | Default                         | Description                              |
+| --------------------------------------- | ---------- | ------------------------------- | ---------------------------------------- |
+| [primaryLocale](#primarylocale)         | `string`   | `"en"`                          | Primary locale for missing key detection |
+| [messagesDir](#messagesdir)             | `string`   | `"./messages"`                  | Path to locale JSON files                |
+| [includes](#includes)                   | `string[]` | [See below](#includes)          | Directories to scan for TSX/JSX          |
+| [ignores](#ignores)                     | `string[]` | `[]`                            | Paths or glob patterns to exclude        |
+| [ignoreTestFiles](#ignoretestfiles)     | `boolean`  | `true`                          | Skip test files automatically            |
+| [ignoreTexts](#ignoretexts)             | `string[]` | `[]`                            | Text patterns to ignore                  |
+| [checkedAttributes](#checkedattributes) | `string[]` | [See below](#checkedattributes) | JSX attributes to check                  |
+
+## Configuration Details
+
+<Accordion title="primaryLocale" defaultOpen>
 
 ### primaryLocale
 
@@ -33,6 +47,10 @@ The primary locale for your application. Missing key detection uses this locale 
   "primaryLocale": "en"
 }
 ```
+
+</Accordion>
+
+<Accordion title="messagesDir">
 
 ### messagesDir
 
@@ -57,6 +75,10 @@ messages/
 ├── fr.json
 └── ...
 ```
+
+</Accordion>
+
+<Accordion title="includes">
 
 ### includes
 
@@ -106,6 +128,10 @@ Uses glob matching to find directories to scan.
   treated as a literal folder name, not a glob pattern.
 </Note>
 
+</Accordion>
+
+<Accordion title="ignores">
+
 ### ignores
 
 Paths or glob patterns to exclude from scanning.
@@ -152,10 +178,14 @@ You can combine both directory paths and glob patterns:
 ```
 
 <Note>
-  Directory paths like `src/components/ai-elements` will exclude all files
-  under that directory. Paths can include Next.js dynamic route syntax like
+  Directory paths like `src/components/ai-elements` will exclude all files under
+  that directory. Paths can include Next.js dynamic route syntax like
   `app/[locale]/admin` - the `[locale]` is treated as a literal folder name.
 </Note>
+
+</Accordion>
+
+<Accordion title="ignoreTestFiles">
 
 ### ignoreTestFiles
 
@@ -177,6 +207,10 @@ When enabled, glot ignores:
 }
 ```
 
+</Accordion>
+
+<Accordion title="ignoreTexts">
+
 ### ignoreTexts
 
 Specific text patterns to ignore. Case-sensitive.
@@ -196,6 +230,10 @@ Useful for:
 - Development placeholders
 - Known patterns that don't need translation
 - Third-party component text
+
+</Accordion>
+
+<Accordion title="checkedAttributes">
 
 ### checkedAttributes
 
@@ -226,6 +264,8 @@ Default value:
   Setting this option **overrides** the defaults. Include all attributes you
   want checked.
 </Warning>
+
+</Accordion>
 
 ## Full Example
 
