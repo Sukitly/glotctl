@@ -10,6 +10,8 @@ info:
 success: true
 exit_code: 0
 ----- stdout -----
+A fast CLI tool for checking i18n issues in Next.js projects
+
 Usage: glot [COMMAND]
 
 Commands:
