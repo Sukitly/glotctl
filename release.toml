@@ -1,6 +1,6 @@
 publish = false                              # Don't publish to crates.io
 tag-prefix = "v"                             # Tag format: v0.1.0
 tag-name = "{{prefix}}{{version}}"
-push = true                                  # Push commits and tags to remote
+push = false                                 # Don't push directly, use PR workflow instead
 pre-release-commit-message = "chore: release {{version}}"
 tag-message = "{{version}}"
