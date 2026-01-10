@@ -79,6 +79,28 @@ Default value:
 }
 ```
 
+Glot supports two types of include patterns:
+
+**Directory paths** (without `*` or `?`):
+
+Scans all files within the specified directory.
+
+```json
+{
+  "includes": ["src/app/[locale]", "src/components"]
+}
+```
+
+**Glob patterns** (with `*` or `?`):
+
+Uses glob matching to find directories to scan.
+
+```json
+{
+  "includes": ["src/*", "packages/*/src"]
+}
+```
+
 <Note>
   Paths can include Next.js dynamic route syntax like `[locale]`. This is
   treated as a literal folder name, not a glob pattern.
@@ -86,17 +108,54 @@ Default value:
 
 ### ignores
 
-Glob patterns for files and directories to exclude from scanning.
+Paths or glob patterns to exclude from scanning.
 
 | Type       | Default |
 | ---------- | ------- |
 | `string[]` | `[]`    |
 
+Glot supports two types of ignore patterns:
+
+**Directory paths** (without `*` or `?`):
+
+Excludes the entire directory and all files within it. This works the same way as `includes`.
+
 ```json
 {
-  "ignores": ["**/node_modules/**", "**/generated/**", "**/*.stories.tsx"]
+  "ignores": ["src/components/ai-elements", "src/generated"]
 }
 ```
+
+**Glob patterns** (with `*` or `?`):
+
+Uses glob matching for more flexible patterns.
+
+```json
+{
+  "ignores": ["**/*.stories.tsx", "**/mocks/**"]
+}
+```
+
+**Mixed usage:**
+
+You can combine both directory paths and glob patterns:
+
+```json
+{
+  "ignores": [
+    "src/components/ai-elements",
+    "src/generated",
+    "**/*.stories.tsx",
+    "**/node_modules/**"
+  ]
+}
+```
+
+<Note>
+  Directory paths like `src/components/ai-elements` will exclude all files
+  under that directory. Paths can include Next.js dynamic route syntax like
+  `app/[locale]/admin` - the `[locale]` is treated as a literal folder name.
+</Note>
 
 ### ignoreTestFiles
 

@@ -30,19 +30,33 @@ pub fn scan_files(
     let mut files: HashSet<String> = HashSet::new();
     let mut skipped_count = 0;
 
-    let mut all_patterns: Vec<String> = ignore_patterns.to_vec();
-    if ignore_test_files {
-        all_patterns.extend(TEST_FILE_PATTERNS.iter().map(|s| s.to_string()));
+    // Separate ignore patterns into literal paths and glob patterns
+    let mut literal_ignore_paths: Vec<PathBuf> = Vec::new();
+    let mut glob_patterns: Vec<Pattern> = Vec::new();
+
+    // Process user-defined ignore patterns
+    for p in ignore_patterns {
+        if is_glob_pattern(p) {
+            match Pattern::new(p) {
+                Ok(pattern) => glob_patterns.push(pattern),
+                Err(e) => {
+                    if verbose {
+                        eprintln!("Warning: Invalid ignore pattern '{}': {}", p, e);
+                    }
+                }
+            }
+        } else {
+            // Literal path mode: convert to absolute path for prefix matching
+            let path = Path::new(base_dir).join(p);
+            literal_ignore_paths.push(path);
+        }
     }
 
-    let mut patterns: Vec<Pattern> = Vec::new();
-    for p in &all_patterns {
-        match Pattern::new(p) {
-            Ok(pattern) => patterns.push(pattern),
-            Err(e) => {
-                if verbose {
-                    eprintln!("Warning: Invalid ignore pattern '{}': {}", p, e);
-                }
+    // Add test file patterns (these are always glob patterns)
+    if ignore_test_files {
+        for p in TEST_FILE_PATTERNS {
+            if let Ok(pattern) = Pattern::new(p) {
+                glob_patterns.push(pattern);
             }
         }
     }
@@ -98,7 +112,16 @@ pub fn scan_files(
             let path = entry.path();
             let path_str = path.to_string_lossy();
 
-            if patterns.iter().any(|p| p.matches(&path_str)) {
+            // Check if path matches any literal ignore path (prefix match)
+            if literal_ignore_paths
+                .iter()
+                .any(|ignore_path| path.starts_with(ignore_path))
+            {
+                continue;
+            }
+
+            // Check if path matches any glob pattern
+            if glob_patterns.iter().any(|p| p.matches(&path_str)) {
                 continue;
             }
 
@@ -416,5 +439,102 @@ mod tests {
         assert!(!is_glob_pattern("src"));
         assert!(!is_glob_pattern("app/[locale]")); // [locale] without * or ? is literal
         assert!(!is_glob_pattern("src/components"));
+    }
+
+    #[test]
+    fn test_scan_ignores_literal_directory_path() {
+        let dir = tempdir().unwrap();
+        let dir_path = dir.path();
+
+        // Create: src/components/Button.tsx, src/components/ai-elements/Chat.tsx
+        let components = dir_path.join("src").join("components");
+        fs::create_dir_all(&components).unwrap();
+        File::create(components.join("Button.tsx")).unwrap();
+
+        let ai_elements = components.join("ai-elements");
+        fs::create_dir_all(&ai_elements).unwrap();
+        File::create(ai_elements.join("Chat.tsx")).unwrap();
+
+        // Use literal path to ignore ai-elements directory
+        let result = scan_files(
+            dir_path.to_str().unwrap(),
+            &["src".to_owned()],
+            &["src/components/ai-elements".to_owned()],
+            false,
+            false,
+        );
+
+        assert_eq!(result.files.len(), 1);
+        assert!(result.files.iter().any(|f| f.ends_with("Button.tsx")));
+        assert!(!result.files.iter().any(|f| f.contains("ai-elements")));
+    }
+
+    #[test]
+    fn test_scan_ignores_mixed_patterns() {
+        let dir = tempdir().unwrap();
+        let dir_path = dir.path();
+
+        // Create directory structure:
+        // src/components/Button.tsx
+        // src/components/Button.stories.tsx
+        // src/generated/types.ts
+        let components = dir_path.join("src").join("components");
+        fs::create_dir_all(&components).unwrap();
+        File::create(components.join("Button.tsx")).unwrap();
+        File::create(components.join("Button.stories.tsx")).unwrap();
+
+        let generated = dir_path.join("src").join("generated");
+        fs::create_dir_all(&generated).unwrap();
+        File::create(generated.join("types.ts")).unwrap();
+
+        // Mix literal path and glob pattern
+        let result = scan_files(
+            dir_path.to_str().unwrap(),
+            &["src".to_owned()],
+            &[
+                "src/generated".to_owned(),    // literal path
+                "**/*.stories.tsx".to_owned(), // glob pattern
+            ],
+            false,
+            false,
+        );
+
+        assert_eq!(result.files.len(), 1);
+        assert!(result.files.iter().any(|f| f.ends_with("Button.tsx")));
+        assert!(!result.files.iter().any(|f| f.contains("generated")));
+        assert!(!result.files.iter().any(|f| f.contains("stories")));
+    }
+
+    #[test]
+    fn test_scan_ignores_nested_literal_path() {
+        let dir = tempdir().unwrap();
+        let dir_path = dir.path();
+
+        // Create: app/[locale]/page.tsx, app/[locale]/admin/page.tsx
+        let locale_dir = dir_path.join("app").join("[locale]");
+        fs::create_dir_all(&locale_dir).unwrap();
+        File::create(locale_dir.join("page.tsx")).unwrap();
+
+        let admin_dir = locale_dir.join("admin");
+        fs::create_dir_all(&admin_dir).unwrap();
+        File::create(admin_dir.join("page.tsx")).unwrap();
+
+        // Ignore the admin directory using literal path with [locale]
+        let result = scan_files(
+            dir_path.to_str().unwrap(),
+            &["app/[locale]".to_owned()],
+            &["app/[locale]/admin".to_owned()],
+            false,
+            false,
+        );
+
+        assert_eq!(result.files.len(), 1);
+        assert!(
+            result
+                .files
+                .iter()
+                .any(|f| f.ends_with("[locale]/page.tsx"))
+        );
+        assert!(!result.files.iter().any(|f| f.contains("admin")));
     }
 }
