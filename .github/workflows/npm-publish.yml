@@ -10,13 +10,13 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Release tag (e.g. v0.1.2)'
+        description: "Release tag (e.g. v0.1.2)"
         required: true
         type: string
 
 permissions:
   contents: read
-  id-token: write  # Required for OIDC Trusted Publishing
+  id-token: write # Required for OIDC Trusted Publishing
 
 jobs:
   publish-npm:
@@ -45,5 +45,5 @@ jobs:
       - name: Extract and publish npm package
         run: |
           tar -xzf glot-npm-package.tar.gz
-          cd glot-npm-package
+          cd package
           npm publish --access public
