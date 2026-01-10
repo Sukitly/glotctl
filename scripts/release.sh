@@ -2,7 +2,8 @@
 set -e
 
 # Release script for glot
-# This script handles the release workflow with PR-based merging to main
+# This script creates a release PR. After the PR is merged,
+# GitHub Actions will automatically create a tag and trigger the release workflow.
 
 # Colors for output
 RED='\033[0;31m'
@@ -55,37 +56,74 @@ if [ "$LOCAL" != "$REMOTE" ]; then
     exit 1
 fi
 
-# Get current version
+# Get current version from Cargo.toml
 CURRENT_VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
 echo -e "${GREEN}Current version: $CURRENT_VERSION${NC}"
 
-# Run cargo release in dry-run mode first to get the new version
-echo -e "${YELLOW}Running cargo release dry-run...${NC}"
-cargo release "$LEVEL" 2>&1 | head -20
+# Parse version components
+IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
+
+# Calculate new version
+case "$LEVEL" in
+    patch)
+        NEW_PATCH=$((PATCH + 1))
+        NEW_VERSION="$MAJOR.$MINOR.$NEW_PATCH"
+        ;;
+    minor)
+        NEW_MINOR=$((MINOR + 1))
+        NEW_VERSION="$MAJOR.$NEW_MINOR.0"
+        ;;
+    major)
+        NEW_MAJOR=$((MAJOR + 1))
+        NEW_VERSION="$NEW_MAJOR.0.0"
+        ;;
+esac
+
+RELEASE_BRANCH="release/v$NEW_VERSION"
+TAG_NAME="v$NEW_VERSION"
+
+echo -e "${GREEN}New version: $NEW_VERSION${NC}"
+echo ""
+
+# Check if release branch already exists
+if git show-ref --verify --quiet "refs/heads/$RELEASE_BRANCH" || \
+   git show-ref --verify --quiet "refs/remotes/origin/$RELEASE_BRANCH"; then
+    echo -e "${RED}Error: Branch '$RELEASE_BRANCH' already exists.${NC}"
+    exit 1
+fi
+
+# Check if tag already exists
+if git tag -l | grep -q "^$TAG_NAME$" || \
+   git ls-remote --tags origin | grep -q "refs/tags/$TAG_NAME"; then
+    echo -e "${RED}Error: Tag '$TAG_NAME' already exists.${NC}"
+    exit 1
+fi
 
 # Ask for confirmation
-echo ""
-read -p "Do you want to proceed with the release? (y/N) " -n 1 -r
+read -p "Create release PR for v$NEW_VERSION? (y/N) " -n 1 -r
 echo
 if [[ ! $REPLY =~ ^[Yy]$ ]]; then
     echo -e "${YELLOW}Release cancelled.${NC}"
     exit 0
 fi
 
-# Execute cargo release (creates commit and tag locally)
-echo -e "${YELLOW}Creating release commit and tag...${NC}"
-cargo release "$LEVEL" --execute --no-confirm
+# Update version in Cargo.toml
+echo -e "${YELLOW}Updating Cargo.toml...${NC}"
+sed -i.bak "s/^version = \"$CURRENT_VERSION\"/version = \"$NEW_VERSION\"/" Cargo.toml
+rm -f Cargo.toml.bak
 
-# Get the new version
-NEW_VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
-RELEASE_BRANCH="release/v$NEW_VERSION"
-TAG_NAME="v$NEW_VERSION"
+# Update Cargo.lock
+echo -e "${YELLOW}Updating Cargo.lock...${NC}"
+cargo check --quiet
 
-echo -e "${GREEN}New version: $NEW_VERSION${NC}"
-
-# Create release branch from current state
+# Create release branch
 echo -e "${YELLOW}Creating release branch '$RELEASE_BRANCH'...${NC}"
 git checkout -b "$RELEASE_BRANCH"
+
+# Commit changes
+echo -e "${YELLOW}Committing changes...${NC}"
+git add Cargo.toml Cargo.lock
+git commit -m "chore: release v$NEW_VERSION"
 
 # Push the release branch
 echo -e "${YELLOW}Pushing release branch...${NC}"
@@ -93,32 +131,23 @@ git push -u origin "$RELEASE_BRANCH"
 
 # Create PR using GitHub CLI
 echo -e "${YELLOW}Creating Pull Request...${NC}"
+PR_BODY="## Release v$NEW_VERSION
+
+This PR was automatically created by the release script.
+
+### Changes
+- Bump version from $CURRENT_VERSION to $NEW_VERSION
+
+### What happens after merge
+After this PR is merged, GitHub Actions will automatically:
+1. Create tag \`$TAG_NAME\` on the merged commit
+2. Trigger the release workflow to build and publish binaries"
+
 PR_URL=$(gh pr create \
     --base main \
     --head "$RELEASE_BRANCH" \
     --title "chore: release v$NEW_VERSION" \
-    --body "## Release v$NEW_VERSION
-
-This PR was automatically created by the release script.
-
-### Changes
-- Bump version from $CURRENT_VERSION to $NEW_VERSION
-
-### After Merge
-After this PR is merged, the tag \`$TAG_NAME\` will be pushed to trigger the release workflow." \
-    --label "release" 2>/dev/null || gh pr create \
-    --base main \
-    --head "$RELEASE_BRANCH" \
-    --title "chore: release v$NEW_VERSION" \
-    --body "## Release v$NEW_VERSION
-
-This PR was automatically created by the release script.
-
-### Changes
-- Bump version from $CURRENT_VERSION to $NEW_VERSION
-
-### After Merge
-After this PR is merged, the tag \`$TAG_NAME\` will be pushed to trigger the release workflow.")
+    --body "$PR_BODY")
 
 echo ""
 echo -e "${GREEN}========================================${NC}"
@@ -129,8 +158,7 @@ echo -e "PR URL: ${YELLOW}$PR_URL${NC}"
 echo ""
 echo -e "${YELLOW}Next steps:${NC}"
 echo "1. Review and merge the PR"
-echo "2. After merge, run: ${GREEN}git checkout main && git pull && git push origin $TAG_NAME${NC}"
-echo "   This will push the tag and trigger the release workflow."
+echo "2. GitHub Actions will automatically create the tag and trigger the release"
 echo ""
-echo -e "${YELLOW}Or switch back to main now:${NC}"
-echo "   git checkout main"
+echo -e "${YELLOW}Switching back to main branch...${NC}"
+git checkout main
