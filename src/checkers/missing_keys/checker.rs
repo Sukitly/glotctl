@@ -7,17 +7,18 @@ use std::collections::{HashMap, HashSet};
 
 use swc_common::{Loc, SourceMap};
 use swc_ecma_ast::{
-    CallExpr, Callee, CondExpr, Expr, JSXElement, JSXFragment, Lit, MemberProp, Module, Pat,
-    VarDecl,
+    CallExpr, Callee, CondExpr, Expr, FnDecl, JSXElement, JSXFragment, Lit, MemberProp, Module,
+    ObjectPatProp, Pat, VarDecl, VarDeclarator,
 };
 use swc_ecma_visit::{Visit, VisitWith};
 
 use super::types::{
-    DynamicKeyReason, DynamicKeyWarning, GlotAnnotation, MissingKeyResult, UsedKey,
+    DynamicKeyReason, DynamicKeyWarning, GlotAnnotation, MissingKeyResult, TranslationSource,
+    UsedKey,
 };
 use crate::checkers::{
     glob_matcher::{expand_glob_pattern, is_glob_pattern},
-    key_objects::FileImports,
+    key_objects::{FileImports, make_translation_prop_key},
     schema::SchemaCallInfo,
     value_analyzer::ValueAnalyzer,
     value_source::ResolvedKey,
@@ -55,7 +56,9 @@ pub(crate) fn resolve_full_key(namespace: &Option<String>, key: &str) -> String 
 pub struct MissingKeyChecker<'a> {
     file_path: &'a str,
     source_map: &'a SourceMap,
-    bindings: HashMap<String, Option<String>>,
+    /// Maps translation function variable names to their source.
+    /// e.g., { "t" -> Direct { namespace: Some("Common") } }
+    bindings: HashMap<String, TranslationSource>,
     pub used_keys: Vec<UsedKey>,
     pub warnings: Vec<DynamicKeyWarning>,
     registries: &'a Registries,
@@ -70,6 +73,8 @@ pub struct MissingKeyChecker<'a> {
     pub pattern_warnings: Vec<PatternWarning>,
     /// Track whether we're currently inside JSX context
     in_jsx_context: bool,
+    /// Available keys for glob expansion (stored for relative pattern expansion)
+    available_keys: &'a HashSet<String>,
 }
 
 impl<'a> MissingKeyChecker<'a> {
@@ -79,7 +84,7 @@ impl<'a> MissingKeyChecker<'a> {
         registries: &'a Registries,
         file_imports: &'a FileImports,
         source: &str,
-        available_keys: &HashSet<String>,
+        available_keys: &'a HashSet<String>,
     ) -> Self {
         // Parse glot-message-keys annotations
         let (glot_annotations, pattern_warnings) =
@@ -104,10 +109,16 @@ impl<'a> MissingKeyChecker<'a> {
             glot_annotations,
             pattern_warnings,
             in_jsx_context: false,
+            available_keys,
         }
     }
 
-    /// Parse glot-message-keys annotations and build line -> keys mapping
+    /// Parse glot-message-keys annotations and build line -> keys mapping.
+    ///
+    /// Handles two types of patterns:
+    /// - Absolute patterns: `Namespace.key.path` - expanded immediately
+    /// - Relative patterns: `.key.path` (starting with `.`) - stored for later expansion
+    ///   with the namespace from the translation function binding
     fn parse_glot_annotations(
         source: &str,
         file_path: &str,
@@ -118,23 +129,28 @@ impl<'a> MissingKeyChecker<'a> {
 
         for annotation in extract_result.annotations {
             let mut expanded_keys = Vec::new();
+            let mut relative_patterns = Vec::new();
 
             for pattern in &annotation.patterns {
-                if is_glob_pattern(pattern) {
-                    // Expand glob pattern against available keys
+                if pattern.starts_with('.') {
+                    // Relative pattern - store for later expansion with namespace
+                    relative_patterns.push(pattern.clone());
+                } else if is_glob_pattern(pattern) {
+                    // Absolute glob pattern - expand immediately
                     let expanded = expand_glob_pattern(pattern, available_keys);
                     expanded_keys.extend(expanded);
                 } else {
-                    // Literal pattern - add as-is
+                    // Absolute literal pattern - add as-is
                     expanded_keys.push(pattern.clone());
                 }
             }
 
-            if !expanded_keys.is_empty() {
+            if !expanded_keys.is_empty() || !relative_patterns.is_empty() {
                 annotations.insert(
                     annotation.line,
                     GlotAnnotation {
                         keys: expanded_keys,
+                        relative_patterns,
                     },
                 );
             }
@@ -174,6 +190,22 @@ impl<'a> MissingKeyChecker<'a> {
         });
     }
 
+    /// Add used keys for a relative key with all namespaces from the translation source.
+    /// For Direct sources, adds a single key.
+    /// For FromProps sources, adds a key for each possible namespace.
+    fn add_used_keys_with_namespaces(
+        &mut self,
+        loc: Loc,
+        key: &str,
+        translation_source: &TranslationSource,
+    ) {
+        let namespaces = translation_source.namespaces();
+        for namespace in namespaces {
+            let full_key = resolve_full_key(&namespace, key);
+            self.add_used_key(loc.clone(), full_key);
+        }
+    }
+
     fn add_warning(&mut self, loc: Loc, reason: DynamicKeyReason, hint: Option<String>) {
         let source_line = loc
             .file
@@ -190,6 +222,55 @@ impl<'a> MissingKeyChecker<'a> {
         });
     }
 
+    /// Expand relative patterns (starting with `.`) with namespace(s).
+    ///
+    /// For Direct sources: expands with the single namespace.
+    /// For FromProps sources: expands with all possible namespaces.
+    ///
+    /// Relative patterns like `.features.*.title` become `Namespace.features.*.title`.
+    /// Glob patterns within relative patterns are expanded against available keys.
+    /// If a glob pattern doesn't match any keys, the original pattern is preserved
+    /// (to allow missing-key detection to report it).
+    fn expand_relative_patterns(
+        &self,
+        relative_patterns: &[String],
+        translation_source: &TranslationSource,
+    ) -> Vec<String> {
+        if relative_patterns.is_empty() {
+            return Vec::new();
+        }
+
+        let namespaces = translation_source.namespaces();
+        let mut result = Vec::new();
+
+        for pattern in relative_patterns {
+            // Remove the leading `.` to get the relative path
+            let relative_path = &pattern[1..];
+
+            for namespace in &namespaces {
+                let full_pattern = match namespace {
+                    Some(ns) => format!("{}.{}", ns, relative_path),
+                    None => relative_path.to_string(),
+                };
+
+                // If the full pattern contains glob, expand it against available keys
+                if is_glob_pattern(&full_pattern) {
+                    let expanded = expand_glob_pattern(&full_pattern, self.available_keys);
+                    if expanded.is_empty() {
+                        // No matches - keep the pattern for missing-key reporting
+                        result.push(full_pattern);
+                    } else {
+                        result.extend(expanded);
+                    }
+                } else {
+                    result.push(full_pattern);
+                }
+            }
+        }
+
+        result
+    }
+
     /// Process a ternary expression: t(cond ? "keyA" : "keyB")
     /// If both branches are string literals, extract both keys.
     /// Otherwise, emit a dynamic key warning with appropriate reason.
@@ -198,7 +279,7 @@ impl<'a> MissingKeyChecker<'a> {
         &mut self,
         cond: &CondExpr,
         loc: Loc,
-        namespace: &Option<String>,
+        translation_source: &TranslationSource,
         is_resolvable: bool,
     ) {
         let cons_key = Self::extract_string_key(&cond.cons);
@@ -207,10 +288,8 @@ impl<'a> MissingKeyChecker<'a> {
         match (cons_key, alt_key) {
             (Some(k1), Some(k2)) => {
                 // Both branches are string literals - add both as used keys
-                let full_key1 = resolve_full_key(namespace, &k1);
-                let full_key2 = resolve_full_key(namespace, &k2);
-                self.add_used_key(loc.clone(), full_key1);
-                self.add_used_key(loc, full_key2);
+                self.add_used_keys_with_namespaces(loc.clone(), &k1, translation_source);
+                self.add_used_keys_with_namespaces(loc, &k2, translation_source);
             }
             _ if !is_resolvable => {
                 // At least one branch is dynamic and new ValueAnalyzer can't resolve
@@ -327,6 +406,82 @@ impl<'a> MissingKeyChecker<'a> {
         None
     }
 
+    /// Register translation function bindings from function parameters.
+    ///
+    /// Checks if the component exists in the TranslationPropRegistry and
+    /// registers any matching prop names as FromProps bindings.
+    fn register_translation_props_from_params(
+        &mut self,
+        component_name: &str,
+        params: &[swc_ecma_ast::Param],
+    ) {
+        // Get the first parameter - typically the props object in React components
+        let Some(first_param) = params.first() else {
+            return;
+        };
+
+        self.register_translation_props_from_pat(component_name, &first_param.pat);
+    }
+
+    /// Register translation props from a pattern (handles destructuring).
+    fn register_translation_props_from_pat(&mut self, component_name: &str, pat: &Pat) {
+        match pat {
+            // Destructured props: function Component({ t, features }) { ... }
+            Pat::Object(obj_pat) => {
+                for prop in &obj_pat.props {
+                    if let ObjectPatProp::KeyValue(kv) = prop
+                        && let swc_ecma_ast::PropName::Ident(key_ident) = &kv.key
+                    {
+                        let prop_name = key_ident.sym.to_string();
+                        self.try_register_translation_prop(component_name, &prop_name);
+                    } else if let ObjectPatProp::Assign(assign) = prop {
+                        let prop_name = assign.key.sym.to_string();
+                        self.try_register_translation_prop(component_name, &prop_name);
+                    }
+                }
+            }
+            // Non-destructured props: function Component(props) { ... }
+            // We can't easily track `props.t` calls, so skip for now
+            Pat::Ident(_) => {}
+            _ => {}
+        }
+    }
+
+    /// Try to register a translation prop binding if it exists in the registry.
+    fn try_register_translation_prop(&mut self, component_name: &str, prop_name: &str) {
+        let key = make_translation_prop_key(component_name, prop_name);
+
+        if let Some(translation_prop) = self.registries.translation_prop.get(&key) {
+            // Register this prop as a translation function binding with FromProps source
+            self.bindings.insert(
+                prop_name.to_string(),
+                TranslationSource::FromProps {
+                    namespaces: translation_prop.namespaces.clone(),
+                },
+            );
+        }
+    }
+
+    /// Check if a variable declarator is an arrow function component and register its props.
+    fn check_arrow_component(&mut self, decl: &VarDeclarator) {
+        let Pat::Ident(binding_ident) = &decl.name else {
+            return;
+        };
+        let Some(init) = &decl.init else {
+            return;
+        };
+        let Expr::Arrow(arrow) = &**init else {
+            return;
+        };
+
+        let component_name = binding_ident.id.sym.to_string();
+
+        // Check first parameter for destructured props
+        if let Some(first_param) = arrow.params.first() {
+            self.register_translation_props_from_pat(&component_name, first_param);
+        }
+    }
+
     pub fn check(mut self, module: &Module) -> MissingKeyResult {
         self.visit_module(module);
         MissingKeyResult {
@@ -374,8 +529,22 @@ impl<'a> Visit for MissingKeyChecker<'a> {
         node.closing.visit_with(self);
     }
 
+    /// Visit function declarations to detect translation function parameters.
+    /// e.g., `function AdultLandingPage({ t }: Props) { ... }`
+    fn visit_fn_decl(&mut self, node: &FnDecl) {
+        let component_name = node.ident.sym.to_string();
+        self.register_translation_props_from_params(&component_name, &node.function.params);
+        node.visit_children_with(self);
+    }
+
+    /// Visit variable declarations to detect:
+    /// 1. Translation hook bindings: `const t = useTranslations("Ns")`
+    /// 2. Arrow function components: `const MyComponent = ({ t }: Props) => { ... }`
     fn visit_var_decl(&mut self, node: &VarDecl) {
         for decl in &node.decls {
+            // Check for arrow function components
+            self.check_arrow_component(decl);
+
             if let Some(init) = &decl.init {
                 let call_expr = match &**init {
                     Expr::Call(call) => Some(call),
@@ -396,7 +565,8 @@ impl<'a> Visit for MissingKeyChecker<'a> {
                     {
                         let var_name = binding_ident.id.sym.to_string();
                         let namespace = extract_namespace_from_call(call);
-                        self.bindings.insert(var_name, namespace);
+                        self.bindings
+                            .insert(var_name, TranslationSource::Direct { namespace });
                     }
                 }
 
@@ -419,7 +589,9 @@ impl<'a> Visit for MissingKeyChecker<'a> {
         {
             let fn_name = ident.sym.as_str();
 
-            if let Some(namespace) = self.bindings.get(fn_name).cloned() {
+            if let Some(translation_source) = self.bindings.get(fn_name).cloned() {
+                let namespace = translation_source.primary_namespace();
+                let _is_from_props = translation_source.is_from_props();
                 let loc = self.source_map.lookup_char_pos(node.span.lo);
 
                 if let Some(arg) = node.args.first() {
@@ -448,8 +620,7 @@ impl<'a> Visit for MissingKeyChecker<'a> {
                         // Static string key: t("submit")
                         Expr::Lit(Lit::Str(s)) => {
                             if let Some(key) = s.value.as_str() {
-                                let full_key = resolve_full_key(&namespace, key);
-                                self.add_used_key(loc, full_key);
+                                self.add_used_keys_with_namespaces(loc, key, &translation_source);
                             }
                         }
                         // Template literal without expressions: t(`submit`)
@@ -458,25 +629,33 @@ impl<'a> Visit for MissingKeyChecker<'a> {
                                 && let Some(cooked) = &quasi.cooked
                                 && let Some(key) = cooked.as_str()
                             {
-                                let full_key = resolve_full_key(&namespace, key);
-                                self.add_used_key(loc, full_key);
+                                self.add_used_keys_with_namespaces(loc, key, &translation_source);
                             }
                         }
                         // Ternary with string literal branches: t(cond ? "keyA" : "keyB")
                         Expr::Cond(cond) => {
-                            self.process_ternary_arg(cond, loc, &namespace, is_resolvable);
+                            self.process_ternary_arg(cond, loc, &translation_source, is_resolvable);
                         }
                         // Dynamic keys: check for glot-message-keys annotation first
                         _ if !is_resolvable => {
                             // Check for glot-message-keys annotation on current or previous line
-                            // Clone the keys to avoid borrow checker issues
-                            let annotated_keys = self
+                            // Clone the data to avoid borrow checker issues
+                            let annotation_data = self
                                 .get_glot_annotation(loc.line)
-                                .map(|ann| ann.keys.clone());
+                                .map(|ann| (ann.keys.clone(), ann.relative_patterns.clone()));
 
-                            if let Some(keys) = annotated_keys {
-                                // Use annotated keys as used_keys (keys must be fully-qualified)
+                            if let Some((keys, relative_patterns)) = annotation_data {
+                                // Use absolute annotated keys as used_keys
                                 for key in keys {
+                                    self.add_used_key(loc.clone(), key);
+                                }
+
+                                // Expand relative patterns with namespace(s)
+                                let expanded_relative = self.expand_relative_patterns(
+                                    &relative_patterns,
+                                    &translation_source,
+                                );
+                                for key in expanded_relative {
                                     self.add_used_key(loc.clone(), key);
                                 }
                             } else {
@@ -525,7 +704,9 @@ impl<'a> Visit for MissingKeyChecker<'a> {
                     let namespace = match &*arg.expr {
                         Expr::Ident(t_ident) => {
                             let t_var = t_ident.sym.as_str();
-                            self.bindings.get(t_var).cloned().flatten()
+                            self.bindings
+                                .get(t_var)
+                                .and_then(|src| src.primary_namespace())
                         }
                         _ => None,
                     };
@@ -553,9 +734,10 @@ impl<'a> Visit for MissingKeyChecker<'a> {
 
             // Check if this is a translation method call (t.raw, t.rich, t.markup)
             if matches!(method_name, "raw" | "rich" | "markup")
-                && let Some(namespace) = self.bindings.get(obj_name).cloned()
+                && let Some(translation_source) = self.bindings.get(obj_name).cloned()
                 && let Some(arg) = node.args.first()
             {
+                let namespace = translation_source.primary_namespace();
                 let loc = self.source_map.lookup_char_pos(node.span.lo);
 
                 // For t.raw/t.rich/t.markup, extract the key from first argument

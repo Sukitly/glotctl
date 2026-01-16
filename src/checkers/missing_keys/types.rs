@@ -50,6 +50,54 @@ pub struct DynamicKeyWarning {
 /// Stores glot-message-keys annotation data for a line.
 #[derive(Debug, Clone)]
 pub(super) struct GlotAnnotation {
-    /// Keys after glob expansion (without namespace prefix)
+    /// Absolute keys after glob expansion (fully qualified keys).
     pub keys: Vec<String>,
+    /// Relative patterns (starting with `.`) that need namespace expansion.
+    /// e.g., `.features.*.title` will become `Namespace.features.*.title`
+    pub relative_patterns: Vec<String>,
+}
+
+/// Source of a translation function binding.
+///
+/// Distinguishes between translation functions obtained directly via
+/// `useTranslations()`/`getTranslations()` vs those passed as props.
+#[derive(Debug, Clone)]
+pub enum TranslationSource {
+    /// Direct binding: `const t = useTranslations("Namespace")`
+    /// Has a single, known namespace.
+    Direct { namespace: Option<String> },
+    /// From props: `function Component({ t }: Props)`
+    /// May have multiple possible namespaces from different call sites.
+    FromProps {
+        /// All possible namespaces from call sites.
+        /// Empty if no call sites found (will still generate warnings).
+        namespaces: Vec<Option<String>>,
+    },
+}
+
+impl TranslationSource {
+    /// Returns true if this is from props.
+    pub fn is_from_props(&self) -> bool {
+        matches!(self, TranslationSource::FromProps { .. })
+    }
+
+    /// Get all possible namespaces.
+    /// For Direct, returns a single-element vector.
+    /// For FromProps, returns all namespaces from call sites.
+    pub fn namespaces(&self) -> Vec<Option<String>> {
+        match self {
+            TranslationSource::Direct { namespace } => vec![namespace.clone()],
+            TranslationSource::FromProps { namespaces } => namespaces.clone(),
+        }
+    }
+
+    /// Get the primary namespace (for backward compatibility).
+    /// For Direct, returns the namespace.
+    /// For FromProps, returns None (namespace is dynamic).
+    pub fn primary_namespace(&self) -> Option<String> {
+        match self {
+            TranslationSource::Direct { namespace } => namespace.clone(),
+            TranslationSource::FromProps { .. } => None,
+        }
+    }
 }

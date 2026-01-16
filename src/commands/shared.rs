@@ -9,7 +9,7 @@ use swc_ecma_visit::VisitWith;
 
 use crate::{
     checkers::{
-        key_objects::{KeyObjectCollector, make_registry_key},
+        key_objects::{KeyObjectCollector, make_registry_key, make_translation_prop_key},
         schema::{SchemaFunctionCollector, expand_schema_keys},
         value_source::ValueSource,
     },
@@ -32,6 +32,7 @@ pub fn build_registries(ctx: &CheckContext) -> (Registries, AllFileImports, Vec<
     let mut key_object = HashMap::new();
     let mut key_array = HashMap::new();
     let mut string_array = HashMap::new();
+    let mut translation_prop = HashMap::new();
     let mut file_imports: AllFileImports = HashMap::new();
     let mut errors = Vec::new();
 
@@ -75,6 +76,24 @@ pub fn build_registries(ctx: &CheckContext) -> (Registries, AllFileImports, Vec<
             let key = make_registry_key(&str_arr.file_path, &str_arr.name);
             string_array.insert(key, str_arr);
         }
+
+        // Translation prop registry: merge namespaces for same component.prop
+        for prop in key_collector.translation_props {
+            let key = make_translation_prop_key(&prop.component_name, &prop.prop_name);
+            translation_prop
+                .entry(key)
+                .and_modify(
+                    |existing: &mut crate::checkers::key_objects::TranslationProp| {
+                        // Merge namespaces from different call sites
+                        for ns in &prop.namespaces {
+                            if !existing.namespaces.contains(ns) {
+                                existing.namespaces.push(ns.clone());
+                            }
+                        }
+                    },
+                )
+                .or_insert(prop);
+        }
     }
 
     let registries = Registries {
@@ -82,6 +101,7 @@ pub fn build_registries(ctx: &CheckContext) -> (Registries, AllFileImports, Vec<
         key_object,
         key_array,
         string_array,
+        translation_prop,
     };
 
     (registries, file_imports, errors)
