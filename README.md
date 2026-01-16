@@ -1,56 +1,181 @@
 # glot
 
-Find hardcoded strings and missing i18n keys in your Next.js app.
+A fast CLI for checking internationalization (i18n) issues in Next.js projects using [next-intl](https://next-intl.dev/).
 
-## Install
+📖 **[Full Documentation](https://glotctl.mintlify.app/)**
+
+## Features
+
+- 🔍 **Hardcoded Text Detection** - Find untranslated text in JSX/TSX
+- 🔑 **Missing Key Detection** - Identify keys used in code but missing from locale files
+- 🧹 **Orphan Key Detection** - Find unused keys in locale files
+- 🤖 **AI Integration** - MCP server for AI coding agents
+
+## Installation
 
 ```bash
 npm install -D glotctl
+```
+
+> The npm package is `glotctl`, but the CLI command is `glot`.
+
+## Quick Start
+
+```bash
+# Initialize configuration
 npx glot init
+
+# Check for all i18n issues
 npx glot check
 ```
 
-## What it catches
+## What Glot Detects
 
-**Hardcoded text** — forgot to use `t()`
+### Hardcoded Text
+
+Untranslated strings in JSX that should use translation functions:
+
+```tsx
+// ❌ Detected by glot
+<button>Submit</button>
+<input placeholder="Enter email" />
+
+// ✅ Using next-intl
+<button>{t("submit")}</button>
+<input placeholder={t("emailPlaceholder")} />
+```
 
 ```
 error: "Submit"  hardcoded-text
-  --> src/components/Button.tsx:3:22
+  --> ./src/components/Button.tsx:5:22
   |
-3 |       return <button>Submit</button>;
-  |                      ^^^^^^
+5 |     return <button>Submit</button>;
+  |                    ^
 ```
 
-**Missing keys** — used in code but not in locale files
+### Missing Keys
+
+Translation keys used in code but not defined in locale files:
+
+```tsx
+// Code uses this key
+const t = useTranslations("common");
+return <button>{t("submit")}</button>;
+```
+
+```json
+// messages/en.json - key is missing!
+{
+  "common": {
+    "cancel": "Cancel"
+  }
+}
+```
 
 ```
-error: "Common.submit"  missing-key
-  --> src/app.tsx:4:23
+error: common.submit  missing-key
+  --> ./src/components/Button.tsx:3
   |
-4 |       return <button>{t("submit")}</button>;
-  |                       ^^^^^^^^^^^
+  | Translation key "common.submit" is used but not defined
 ```
 
-**Orphan keys** — exists in some locales but not others
+### Orphan Keys
+
+Keys defined in locale files but never used in code:
+
+```json
+// messages/en.json
+{
+  "common": {
+    "submit": "Submit",
+    "oldButton": "Old Text" // Never used
+  }
+}
+```
 
 ```
-warning: "Common.oldKey"  orphan-key
-  --> messages/es.json:1:0
-  = note: in es ("Enviar")
+warning: common.oldButton  orphan-key
+  --> ./messages/en.json
+  |
+  | Key exists in locale file but is not used in code
 ```
 
-## AI Agents
-
-Works as an MCP server for Claude, Cursor, etc:
+Clean up orphan keys:
 
 ```bash
-npx glot serve
+npx glot clean         # Preview
+npx glot clean --apply # Apply
 ```
 
-## Docs
+## Existing Projects
 
-https://glotctl.mintlify.app/
+For projects with many existing hardcoded strings, use `baseline` to suppress current warnings and prevent new ones:
+
+```bash
+npx glot baseline         # Preview
+npx glot baseline --apply # Apply
+```
+
+This inserts `// glot-disable-next-line` comments, allowing you to:
+
+1. Add glot to CI immediately
+2. Gradually fix existing issues over time
+
+## AI Integration (MCP)
+
+Glot provides an [MCP server](https://modelcontextprotocol.io/) for AI coding agents.
+
+### OpenCode
+
+Add to `opencode.json`:
+
+```json
+{
+  "mcp": {
+    "glot": {
+      "type": "local",
+      "command": ["npx", "glot", "serve"],
+      "enabled": true
+    }
+  }
+}
+```
+
+### Claude Code
+
+```bash
+claude mcp add --transport stdio glot -- npx glot serve
+```
+
+Or create `.mcp.json` in your project root:
+
+```json
+{
+  "mcpServers": {
+    "glot": {
+      "command": "npx",
+      "args": ["glot", "serve"]
+    }
+  }
+}
+```
+
+### Cursor
+
+Create `.cursor/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "glot": {
+      "command": "npx",
+      "args": ["glot", "serve"]
+    }
+  }
+}
+```
+
+See [MCP Server Documentation](https://glotctl.mintlify.app/agents/mcp) for available tools and workflow.
 
 ## License
 
