@@ -63,7 +63,7 @@ const t = useTranslations("common");
 return <button>{t("submit")}</button>;
 ```
 
-```json
+```jsonc
 // messages/en.json - key is missing!
 {
   "common": {
@@ -83,7 +83,7 @@ error: common.submit  missing-key
 
 Keys defined in locale files but never used in code:
 
-```json
+```jsonc
 // messages/en.json
 {
   "common": {
