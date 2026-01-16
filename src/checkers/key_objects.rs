@@ -1,7 +1,8 @@
 use std::{collections::HashMap, path::Path};
 
 use swc_ecma_ast::{
-    ArrayLit, ArrowExpr, Decl, Expr, ExprOrSpread, Function, ImportSpecifier, Lit,
+    ArrayLit, ArrowExpr, Callee, Decl, Expr, ExprOrSpread, Function, ImportSpecifier, JSXAttr,
+    JSXAttrName, JSXAttrOrSpread, JSXAttrValue, JSXElement, JSXElementName, JSXExpr, Lit,
     ModuleExportName, ObjectLit, Pat, Prop, PropName, PropOrSpread, VarDecl,
 };
 use swc_ecma_visit::{Visit, VisitWith};
@@ -67,15 +68,59 @@ pub struct StringArray {
 /// Key format: "file_path.array_name"
 pub type StringArrayRegistry = HashMap<String, StringArray>;
 
-/// Collects object literals, arrays, and imports from TypeScript/TSX files
+/// Represents a translation function passed as a JSX prop.
+/// Used to track: `<ComponentName t={translationVar} />`
+#[derive(Debug, Clone)]
+pub struct TranslationProp {
+    /// Component name (e.g., "AdultLandingPage")
+    pub component_name: String,
+    /// Prop name (e.g., "t")
+    pub prop_name: String,
+    /// List of possible namespaces from different call sites
+    /// None means no namespace (e.g., `useTranslations()` without argument)
+    pub namespaces: Vec<Option<String>>,
+}
+
+/// Registry of translation functions passed as JSX props.
+/// Key format: "ComponentName.propName"
+pub type TranslationPropRegistry = HashMap<String, TranslationProp>;
+
+/// Create registry key for TranslationPropRegistry
+pub fn make_translation_prop_key(component_name: &str, prop_name: &str) -> String {
+    format!("{}.{}", component_name, prop_name)
+}
+
+/// Collects object literals, arrays, imports, and translation props from TypeScript/TSX files
 pub struct KeyObjectCollector {
     pub file_path: String,
     pub objects: Vec<KeyObject>,
     pub arrays: Vec<KeyArray>,
     pub string_arrays: Vec<StringArray>,
     pub imports: FileImports,
+    /// Translation functions passed as JSX props
+    pub translation_props: Vec<TranslationProp>,
     /// Tracks nesting depth: 0 = module level, >0 = inside function/arrow
     scope_depth: usize,
+    /// Stack of translation function bindings scoped by function/arrow.
+    /// Used to detect when a translation function is passed as a prop.
+    translation_bindings_stack: Vec<HashMap<String, Option<String>>>,
+}
+
+const TRANSLATION_HOOKS: &[&str] = &["useTranslations", "getTranslations"];
+
+fn is_translation_hook(name: &str) -> bool {
+    TRANSLATION_HOOKS.contains(&name)
+}
+
+/// Extract namespace from translation hook call: useTranslations("MyNamespace") -> Some("MyNamespace")
+fn extract_namespace_from_call(call: &swc_ecma_ast::CallExpr) -> Option<String> {
+    call.args.first().and_then(|arg| {
+        if let Expr::Lit(Lit::Str(s)) = &*arg.expr {
+            s.value.as_str().map(|s| s.to_string())
+        } else {
+            None
+        }
+    })
 }
 
 impl KeyObjectCollector {
@@ -86,8 +131,33 @@ impl KeyObjectCollector {
             arrays: Vec::new(),
             string_arrays: Vec::new(),
             imports: Vec::new(),
+            translation_props: Vec::new(),
             scope_depth: 0,
+            translation_bindings_stack: vec![HashMap::new()],
         }
+    }
+
+    fn enter_binding_scope(&mut self) {
+        self.translation_bindings_stack.push(HashMap::new());
+    }
+
+    fn exit_binding_scope(&mut self) {
+        self.translation_bindings_stack.pop();
+    }
+
+    fn insert_translation_binding(&mut self, name: String, namespace: Option<String>) {
+        if let Some(scope) = self.translation_bindings_stack.last_mut() {
+            scope.insert(name, namespace);
+        }
+    }
+
+    fn get_translation_binding(&self, name: &str) -> Option<Option<String>> {
+        for scope in self.translation_bindings_stack.iter().rev() {
+            if let Some(namespace) = scope.get(name) {
+                return Some(namespace.clone());
+            }
+        }
+        None
     }
 
     /// Extract all string values from an object literal
@@ -230,6 +300,10 @@ impl KeyObjectCollector {
             };
 
             let Some(init) = &decl.init else { continue };
+
+            // Track translation function bindings: const t = useTranslations("Ns")
+            self.check_translation_binding(&name, init);
+
             let inner_expr = Self::unwrap_ts_expr(init);
 
             match inner_expr {
@@ -270,18 +344,46 @@ impl KeyObjectCollector {
             }
         }
     }
+
+    /// Check if this is a translation function binding and track it.
+    /// Handles: const t = useTranslations("Ns") or const t = await getTranslations("Ns")
+    fn check_translation_binding(&mut self, var_name: &str, init: &Expr) {
+        let call_expr = match init {
+            Expr::Call(call) => Some(call),
+            Expr::Await(await_expr) => match &*await_expr.arg {
+                Expr::Call(call) => Some(call),
+                _ => None,
+            },
+            _ => None,
+        };
+
+        if let Some(call) = call_expr
+            && let Callee::Expr(expr) = &call.callee
+            && let Expr::Ident(ident) = &**expr
+        {
+            let fn_name = ident.sym.as_str();
+            if is_translation_hook(fn_name) {
+                let namespace = extract_namespace_from_call(call);
+                self.insert_translation_binding(var_name.to_string(), namespace);
+            }
+        }
+    }
 }
 
 impl Visit for KeyObjectCollector {
     fn visit_function(&mut self, node: &Function) {
         self.scope_depth += 1;
+        self.enter_binding_scope();
         node.visit_children_with(self);
+        self.exit_binding_scope();
         self.scope_depth -= 1;
     }
 
     fn visit_arrow_expr(&mut self, node: &ArrowExpr) {
         self.scope_depth += 1;
+        self.enter_binding_scope();
         node.visit_children_with(self);
+        self.exit_binding_scope();
         self.scope_depth -= 1;
     }
 
@@ -341,6 +443,104 @@ impl Visit for KeyObjectCollector {
                     }
                 }
             }
+        }
+    }
+
+    /// Visit JSX elements to detect translation functions passed as props.
+    /// e.g., <AdultLandingPage t={t} /> where t is a translation function
+    fn visit_jsx_element(&mut self, node: &JSXElement) {
+        // Extract component name
+        let component_name = match &node.opening.name {
+            JSXElementName::Ident(ident) => {
+                let name = ident.sym.to_string();
+                // Only process PascalCase components (user-defined components)
+                // Skip lowercase elements like <div>, <span>
+                if name.chars().next().is_some_and(|c| c.is_uppercase()) {
+                    Some(name)
+                } else {
+                    None
+                }
+            }
+            JSXElementName::JSXMemberExpr(member) => {
+                // Handle Foo.Bar -> "Foo.Bar"
+                Some(Self::extract_jsx_member_name(member))
+            }
+            JSXElementName::JSXNamespacedName(_) => {
+                // Namespaced names like xml:space are rare, skip for now
+                None
+            }
+        };
+
+        // Process props if we have a valid component name
+        if let Some(comp_name) = component_name {
+            for attr in &node.opening.attrs {
+                if let JSXAttrOrSpread::JSXAttr(JSXAttr {
+                    name: JSXAttrName::Ident(prop_ident),
+                    value: Some(JSXAttrValue::JSXExprContainer(container)),
+                    ..
+                }) = attr
+                {
+                    let prop_name = prop_ident.sym.to_string();
+
+                    // Check if the value is a known translation function
+                    if let JSXExpr::Expr(expr) = &container.expr
+                        && let Expr::Ident(value_ident) = &**expr
+                    {
+                        let var_name = value_ident.sym.to_string();
+
+                        // If this variable is a tracked translation function, record it
+                        if let Some(namespace) = self.get_translation_binding(&var_name) {
+                            self.add_or_update_translation_prop(
+                                &comp_name,
+                                &prop_name,
+                                namespace.clone(),
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
+        // Continue visiting children
+        node.visit_children_with(self);
+    }
+}
+
+impl KeyObjectCollector {
+    /// Extract full member expression name: Foo.Bar.Baz
+    fn extract_jsx_member_name(member: &swc_ecma_ast::JSXMemberExpr) -> String {
+        let object_name = match &member.obj {
+            swc_ecma_ast::JSXObject::Ident(ident) => ident.sym.to_string(),
+            swc_ecma_ast::JSXObject::JSXMemberExpr(nested) => Self::extract_jsx_member_name(nested),
+        };
+        format!("{}.{}", object_name, member.prop.sym)
+    }
+
+    /// Add or update a translation prop entry.
+    /// If the same component.prop already exists, merge the namespace.
+    fn add_or_update_translation_prop(
+        &mut self,
+        component_name: &str,
+        prop_name: &str,
+        namespace: Option<String>,
+    ) {
+        // Check if we already have an entry for this component.prop
+        if let Some(existing) = self
+            .translation_props
+            .iter_mut()
+            .find(|p| p.component_name == component_name && p.prop_name == prop_name)
+        {
+            // Only add if this namespace isn't already tracked
+            if !existing.namespaces.contains(&namespace) {
+                existing.namespaces.push(namespace);
+            }
+        } else {
+            // Create new entry
+            self.translation_props.push(TranslationProp {
+                component_name: component_name.to_string(),
+                prop_name: prop_name.to_string(),
+                namespaces: vec![namespace],
+            });
         }
     }
 }
@@ -833,5 +1033,232 @@ mod tests {
             .find(|a| a.name == "INNER")
             .unwrap();
         assert!(!inner.is_module_level);
+    }
+
+    // ============================================================
+    // Translation prop collection tests
+    // ============================================================
+
+    #[test]
+    fn test_collect_translation_prop_basic() {
+        let code = r#"
+            const t = useTranslations("MyNamespace");
+            <MyComponent t={t} />;
+        "#;
+        let collector = parse_and_collect(code);
+
+        assert_eq!(collector.translation_props.len(), 1);
+        let prop = &collector.translation_props[0];
+        assert_eq!(prop.component_name, "MyComponent");
+        assert_eq!(prop.prop_name, "t");
+        assert_eq!(prop.namespaces, vec![Some("MyNamespace".to_string())]);
+    }
+
+    #[test]
+    fn test_collect_translation_prop_without_namespace() {
+        let code = r#"
+            const t = useTranslations();
+            <MyComponent translate={t} />;
+        "#;
+        let collector = parse_and_collect(code);
+
+        assert_eq!(collector.translation_props.len(), 1);
+        let prop = &collector.translation_props[0];
+        assert_eq!(prop.component_name, "MyComponent");
+        assert_eq!(prop.prop_name, "translate");
+        assert_eq!(prop.namespaces, vec![None]);
+    }
+
+    #[test]
+    fn test_collect_translation_prop_with_await() {
+        let code = r#"
+            const t = await getTranslations("ServerNs");
+            <ServerComponent t={t} />;
+        "#;
+        let collector = parse_and_collect(code);
+
+        assert_eq!(collector.translation_props.len(), 1);
+        let prop = &collector.translation_props[0];
+        assert_eq!(prop.component_name, "ServerComponent");
+        assert_eq!(prop.prop_name, "t");
+        assert_eq!(prop.namespaces, vec![Some("ServerNs".to_string())]);
+    }
+
+    #[test]
+    fn test_collect_multiple_translation_props() {
+        let code = r#"
+            const t1 = useTranslations("Namespace1");
+            const t2 = useTranslations("Namespace2");
+            <ComponentA t={t1} />;
+            <ComponentB translate={t2} />;
+        "#;
+        let collector = parse_and_collect(code);
+
+        assert_eq!(collector.translation_props.len(), 2);
+
+        let prop_a = collector
+            .translation_props
+            .iter()
+            .find(|p| p.component_name == "ComponentA")
+            .unwrap();
+        assert_eq!(prop_a.prop_name, "t");
+        assert_eq!(prop_a.namespaces, vec![Some("Namespace1".to_string())]);
+
+        let prop_b = collector
+            .translation_props
+            .iter()
+            .find(|p| p.component_name == "ComponentB")
+            .unwrap();
+        assert_eq!(prop_b.prop_name, "translate");
+        assert_eq!(prop_b.namespaces, vec![Some("Namespace2".to_string())]);
+    }
+
+    #[test]
+    fn test_collect_same_component_multiple_namespaces() {
+        // Same component called from different places with different namespaces
+        let code = r#"
+            function Page1() {
+                const t = useTranslations("NS1");
+                return <SharedComponent t={t} />;
+            }
+            function Page2() {
+                const t = useTranslations("NS2");
+                return <SharedComponent t={t} />;
+            }
+        "#;
+        let collector = parse_and_collect(code);
+
+        assert_eq!(collector.translation_props.len(), 1);
+        let prop = &collector.translation_props[0];
+        assert_eq!(prop.component_name, "SharedComponent");
+        assert_eq!(prop.prop_name, "t");
+        assert_eq!(
+            prop.namespaces,
+            vec![Some("NS1".to_string()), Some("NS2".to_string())]
+        );
+    }
+
+    #[test]
+    fn test_skip_non_translation_prop() {
+        let code = r#"
+            const t = useTranslations("MyNs");
+            const name = "John";
+            <MyComponent t={t} name={name} />;
+        "#;
+        let collector = parse_and_collect(code);
+
+        // Only 't' should be collected, not 'name'
+        assert_eq!(collector.translation_props.len(), 1);
+        let prop = &collector.translation_props[0];
+        assert_eq!(prop.prop_name, "t");
+    }
+
+    #[test]
+    fn test_skip_lowercase_elements() {
+        let code = r#"
+            const t = useTranslations("MyNs");
+            <div t={t} />;
+        "#;
+        let collector = parse_and_collect(code);
+
+        // Lowercase elements are not user components, should be skipped
+        assert!(collector.translation_props.is_empty());
+    }
+
+    #[test]
+    fn test_collect_jsx_member_expression() {
+        let code = r#"
+            const t = useTranslations("MyNs");
+            <UI.Button t={t} />;
+        "#;
+        let collector = parse_and_collect(code);
+
+        assert_eq!(collector.translation_props.len(), 1);
+        let prop = &collector.translation_props[0];
+        assert_eq!(prop.component_name, "UI.Button");
+        assert_eq!(prop.prop_name, "t");
+    }
+
+    #[test]
+    fn test_collect_nested_jsx_children() {
+        let code = r#"
+            const t = useTranslations("MyNs");
+            <Parent>
+                <Child t={t} />
+            </Parent>;
+        "#;
+        let collector = parse_and_collect(code);
+
+        // Should collect from Child, not Parent
+        assert_eq!(collector.translation_props.len(), 1);
+        let prop = &collector.translation_props[0];
+        assert_eq!(prop.component_name, "Child");
+    }
+
+    #[test]
+    fn test_translation_binding_tracking() {
+        let code = r#"
+            const t = useTranslations("NS1");
+            const translate = useTranslations("NS2");
+            const notTranslation = someOtherFunction();
+        "#;
+        let collector = parse_and_collect(code);
+
+        // Should track both translation bindings
+        assert_eq!(collector.translation_bindings_stack.len(), 1);
+        let scope = collector.translation_bindings_stack.last().unwrap();
+        assert_eq!(scope.len(), 2);
+        assert_eq!(scope.get("t"), Some(&Some("NS1".to_string())));
+        assert_eq!(scope.get("translate"), Some(&Some("NS2".to_string())));
+        // Should not track non-translation function
+        assert!(!scope.contains_key("notTranslation"));
+    }
+
+    #[test]
+    fn test_translation_binding_scope_isolated() {
+        let code = r#"
+            function Page() {
+                const t = useTranslations("Page");
+                return null;
+            }
+            <Child t={t} />;
+        "#;
+        let collector = parse_and_collect(code);
+
+        // Binding inside function should not leak to module-level JSX
+        assert!(collector.translation_props.is_empty());
+    }
+
+    #[test]
+    fn test_nested_arrow_binding_scope() {
+        // Test that nested arrow functions have isolated scopes
+        let code = r#"
+            const outer = () => {
+                const t = useTranslations("Outer");
+                const inner = () => {
+                    const t = useTranslations("Inner");
+                    return <Child t={t} />;
+                };
+                return <Parent t={t} />;
+            };
+        "#;
+        let collector = parse_and_collect(code);
+
+        // Should collect both Parent and Child translation props
+        assert_eq!(collector.translation_props.len(), 2);
+
+        let parent = collector
+            .translation_props
+            .iter()
+            .find(|p| p.component_name == "Parent")
+            .unwrap();
+        assert_eq!(parent.namespaces, vec![Some("Outer".to_string())]);
+
+        let child = collector
+            .translation_props
+            .iter()
+            .find(|p| p.component_name == "Child")
+            .unwrap();
+        assert_eq!(child.namespaces, vec![Some("Inner".to_string())]);
     }
 }

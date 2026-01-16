@@ -1034,3 +1034,223 @@ FEATURE_KEYS.map((k) => t(`prefix.${k}`));
 
     Ok(())
 }
+
+// ============================================
+// Translation Props Tests
+// ============================================
+
+#[test]
+fn test_translation_prop_keys_tracked_as_used() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    // All keys defined
+    test.write_file(
+        "messages/en.json",
+        r#"{
+            "Landing": {
+                "title": "Welcome",
+                "description": "This is a description"
+            }
+        }"#,
+    )?;
+
+    // Parent component passes t to child
+    test.write_file(
+        "src/page.tsx",
+        r#"
+const t = useTranslations("Landing");
+export function Page() {
+    return <LandingContent t={t} />;
+}
+"#,
+    )?;
+
+    // Child component receives t as prop and uses it
+    test.write_file(
+        "src/landing-content.tsx",
+        r#"
+export function LandingContent({ t }: Props) {
+    return (
+        <div>
+            <h1>{t("title")}</h1>
+            <p>{t("description")}</p>
+        </div>
+    );
+}
+"#,
+    )?;
+
+    // Keys should be tracked as used via the prop, no unused warnings
+    assert_cmd_snapshot!(test.check_command());
+
+    Ok(())
+}
+
+#[test]
+fn test_translation_prop_missing_key_reported() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    // Missing "subtitle" key
+    test.write_file(
+        "messages/en.json",
+        r#"{
+            "Landing": {
+                "title": "Welcome"
+            }
+        }"#,
+    )?;
+
+    // Parent component passes t to child
+    test.write_file(
+        "src/page.tsx",
+        r#"
+const t = useTranslations("Landing");
+export function Page() {
+    return <LandingContent t={t} />;
+}
+"#,
+    )?;
+
+    // Child component uses a key that doesn't exist
+    test.write_file(
+        "src/landing-content.tsx",
+        r#"
+export function LandingContent({ t }: Props) {
+    return (
+        <div>
+            <h1>{t("title")}</h1>
+            <p>{t("subtitle")}</p>
+        </div>
+    );
+}
+"#,
+    )?;
+
+    // Should report missing key "subtitle"
+    assert_cmd_snapshot!(test.check_command());
+
+    Ok(())
+}
+
+#[test]
+fn test_translation_prop_arrow_function_component() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    test.write_file(
+        "messages/en.json",
+        r#"{
+            "Card": {
+                "title": "Card Title"
+            }
+        }"#,
+    )?;
+
+    // Parent passes t to arrow function child
+    test.write_file(
+        "src/page.tsx",
+        r#"
+const t = useTranslations("Card");
+export function Page() {
+    return <CardComponent t={t} />;
+}
+"#,
+    )?;
+
+    // Arrow function component
+    test.write_file(
+        "src/card.tsx",
+        r#"
+export const CardComponent = ({ t }: Props) => {
+    return <div>{t("title")}</div>;
+};
+"#,
+    )?;
+
+    // Should pass - key is tracked via prop
+    assert_cmd_snapshot!(test.check_command());
+
+    Ok(())
+}
+
+#[test]
+fn test_translation_prop_with_relative_glot_message_keys() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    // All dynamic keys exist
+    test.write_file(
+        "messages/en.json",
+        r#"{
+            "Features": {
+                "items": {
+                    "save": { "title": "Save" },
+                    "load": { "title": "Load" }
+                }
+            }
+        }"#,
+    )?;
+
+    // Parent passes t to child
+    test.write_file(
+        "src/page.tsx",
+        r#"
+const t = useTranslations("Features");
+export function Page() {
+    return <FeatureList t={t} items={items} />;
+}
+"#,
+    )?;
+
+    // Child uses dynamic keys with relative glot-message-keys annotation
+    test.write_file(
+        "src/feature-list.tsx",
+        r#"
+export function FeatureList({ t, items }: Props) {
+    return items.map(item => {
+        // glot-message-keys ".items.*.title"
+        return <span>{t(`items.${item.key}.title`)}</span>;
+    });
+}
+"#,
+    )?;
+
+    // Should pass - relative pattern expanded with namespace from prop
+    assert_cmd_snapshot!(test.check_command());
+
+    Ok(())
+}

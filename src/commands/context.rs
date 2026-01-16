@@ -8,7 +8,9 @@ use anyhow::{Context as _, Result, anyhow};
 
 use crate::{
     args::CommonArgs,
-    checkers::key_objects::{KeyArrayRegistry, KeyObjectRegistry, StringArrayRegistry},
+    checkers::key_objects::{
+        KeyArrayRegistry, KeyObjectRegistry, StringArrayRegistry, TranslationPropRegistry,
+    },
     checkers::missing_keys::MissingKeyResult,
     checkers::schema::SchemaRegistry,
     commands::shared,
@@ -28,13 +30,15 @@ pub type AllFileImports = HashMap<String, crate::checkers::key_objects::FileImpo
 /// Type alias for all extraction results (one per file).
 pub type AllExtractions = HashMap<String, MissingKeyResult>;
 
-/// Registry of parsed symbol information (schemas, objects, arrays).
+/// Registry of parsed symbol information (schemas, objects, arrays, translation props).
 /// Does NOT contain file_imports - that's stored separately.
 pub struct Registries {
     pub schema: SchemaRegistry,
     pub key_object: KeyObjectRegistry,
     pub key_array: KeyArrayRegistry,
     pub string_array: StringArrayRegistry,
+    /// Translation functions passed as JSX props (e.g., `<Component t={t} />`)
+    pub translation_prop: TranslationPropRegistry,
 }
 
 /// Aggregated message data from all locale files.

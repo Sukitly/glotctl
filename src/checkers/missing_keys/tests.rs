@@ -8,7 +8,7 @@ use swc_ecma_visit::Visit;
 use super::*;
 use crate::checkers::key_objects::{
     FileImports, KeyArray, KeyArrayRegistry, KeyObject, KeyObjectRegistry, StringArrayRegistry,
-    make_registry_key,
+    TranslationProp, TranslationPropRegistry, make_registry_key, make_translation_prop_key,
 };
 use crate::checkers::schema::SchemaRegistry;
 use crate::commands::context::Registries;
@@ -19,6 +19,7 @@ fn create_empty_registries() -> Registries {
         key_object: KeyObjectRegistry::new(),
         key_array: KeyArrayRegistry::new(),
         string_array: StringArrayRegistry::new(),
+        translation_prop: TranslationPropRegistry::new(),
     }
 }
 
@@ -28,6 +29,7 @@ fn create_registries_with_key_objects(key_object: KeyObjectRegistry) -> Registri
         key_object,
         key_array: KeyArrayRegistry::new(),
         string_array: StringArrayRegistry::new(),
+        translation_prop: TranslationPropRegistry::new(),
     }
 }
 
@@ -46,14 +48,14 @@ fn parse_and_check(code: &str) -> MissingKeyChecker<'static> {
     let file_path = Box::leak(Box::new("test.tsx".to_string()));
     let registries = Box::leak(Box::new(create_empty_registries()));
     let file_imports = Box::leak(Box::new(FileImports::new()));
-    let available_keys = HashSet::new();
+    let available_keys = Box::leak(Box::new(HashSet::new()));
     let mut checker = MissingKeyChecker::new(
         file_path,
         source_map,
         registries,
         file_imports,
         code,
-        &available_keys,
+        available_keys,
     );
     checker.visit_module(&module);
     checker
@@ -361,14 +363,14 @@ fn parse_and_check_with_registries(
 
     let file_path = Box::leak(Box::new("test.tsx".to_string()));
     let file_imports = Box::leak(Box::new(FileImports::new()));
-    let available_keys = HashSet::new();
+    let available_keys = Box::leak(Box::new(HashSet::new()));
     let mut checker = MissingKeyChecker::new(
         file_path,
         source_map,
         registries,
         file_imports,
         code,
-        &available_keys,
+        available_keys,
     );
     checker.visit_module(&module);
     checker
@@ -516,6 +518,7 @@ fn create_registries_with_key_arrays(key_array: KeyArrayRegistry) -> Registries 
         key_object: KeyObjectRegistry::new(),
         key_array,
         string_array: StringArrayRegistry::new(),
+        translation_prop: TranslationPropRegistry::new(),
     }
 }
 
@@ -735,17 +738,18 @@ mod value_source_tests {
             key_object,
             key_array,
             string_array,
+            translation_prop: TranslationPropRegistry::new(),
         }));
         let file_imports = Box::leak(Box::new(collector.imports));
 
-        let available_keys = HashSet::new();
+        let available_keys = Box::leak(Box::new(HashSet::new()));
         let mut checker = MissingKeyChecker::new(
             file_path,
             source_map,
             registries,
             file_imports,
             code,
-            &available_keys,
+            available_keys,
         );
         checker.visit_module(&module);
         checker
@@ -1302,4 +1306,710 @@ fn test_t_raw_with_dynamic_key_not_detected() {
         checker.used_keys.is_empty(),
         "t.raw() with dynamic key should not be detected as used key"
     );
+}
+
+// ============================================================
+// Translation Props Tests
+// ============================================================
+
+fn create_registries_with_translation_props(
+    translation_prop: TranslationPropRegistry,
+) -> Registries {
+    Registries {
+        schema: SchemaRegistry::new(),
+        key_object: KeyObjectRegistry::new(),
+        key_array: KeyArrayRegistry::new(),
+        string_array: StringArrayRegistry::new(),
+        translation_prop,
+    }
+}
+
+#[test]
+fn test_translation_prop_function_declaration() {
+    // Create registry with a translation prop for AdultLandingPage.t
+    let mut translation_prop = TranslationPropRegistry::new();
+    translation_prop.insert(
+        make_translation_prop_key("AdultLandingPage", "t"),
+        TranslationProp {
+            component_name: "AdultLandingPage".to_string(),
+            prop_name: "t".to_string(),
+            namespaces: vec![Some("NSFWAIStoryGenerator".to_string())],
+        },
+    );
+    let registries = Box::leak(Box::new(create_registries_with_translation_props(
+        translation_prop,
+    )));
+
+    // Component that receives t as a prop
+    let code = r#"
+        function AdultLandingPage({ t }: Props) {
+            return <div>{t("features.title")}</div>;
+        }
+    "#;
+
+    let checker = parse_and_check_with_registries(code, registries);
+
+    // The key should be detected with the namespace from the registry
+    assert_eq!(checker.used_keys.len(), 1);
+    assert_eq!(
+        checker.used_keys[0].full_key,
+        "NSFWAIStoryGenerator.features.title"
+    );
+}
+
+#[test]
+fn test_translation_prop_arrow_function() {
+    // Create registry with a translation prop for MyComponent.translate
+    let mut translation_prop = TranslationPropRegistry::new();
+    translation_prop.insert(
+        make_translation_prop_key("MyComponent", "translate"),
+        TranslationProp {
+            component_name: "MyComponent".to_string(),
+            prop_name: "translate".to_string(),
+            namespaces: vec![Some("Dashboard".to_string())],
+        },
+    );
+    let registries = Box::leak(Box::new(create_registries_with_translation_props(
+        translation_prop,
+    )));
+
+    // Arrow function component
+    let code = r#"
+        const MyComponent = ({ translate }: Props) => {
+            return <span>{translate("welcome")}</span>;
+        };
+    "#;
+
+    let checker = parse_and_check_with_registries(code, registries);
+
+    assert_eq!(checker.used_keys.len(), 1);
+    assert_eq!(checker.used_keys[0].full_key, "Dashboard.welcome");
+}
+
+#[test]
+fn test_translation_prop_not_in_registry() {
+    // Empty registry - no translation props registered
+    let registries = Box::leak(Box::new(create_empty_registries()));
+
+    // Component with t prop that is NOT in registry
+    let code = r#"
+        function UnknownComponent({ t }: Props) {
+            return <div>{t("hello")}</div>;
+        }
+    "#;
+
+    let checker = parse_and_check_with_registries(code, registries);
+
+    // t is not recognized as a translation function, so no keys detected
+    assert!(
+        checker.used_keys.is_empty(),
+        "Unregistered translation prop should not detect keys"
+    );
+}
+
+#[test]
+fn test_translation_prop_scope_isolated() {
+    // Only ComponentA.t is registered
+    let mut translation_prop = TranslationPropRegistry::new();
+    translation_prop.insert(
+        make_translation_prop_key("ComponentA", "t"),
+        TranslationProp {
+            component_name: "ComponentA".to_string(),
+            prop_name: "t".to_string(),
+            namespaces: vec![Some("A".to_string())],
+        },
+    );
+    let registries = Box::leak(Box::new(create_registries_with_translation_props(
+        translation_prop,
+    )));
+
+    let code = r#"
+        function ComponentA({ t }: Props) {
+            return <div>{t("keyA")}</div>;
+        }
+
+        function ComponentB({ t }: Props) {
+            return <div>{t("keyB")}</div>;
+        }
+    "#;
+
+    let checker = parse_and_check_with_registries(code, registries);
+
+    assert_eq!(checker.used_keys.len(), 1);
+    assert_eq!(checker.used_keys[0].full_key, "A.keyA");
+}
+
+#[test]
+fn test_translation_prop_with_direct_binding_same_name() {
+    // Create registry with a translation prop
+    let mut translation_prop = TranslationPropRegistry::new();
+    translation_prop.insert(
+        make_translation_prop_key("ChildComponent", "t"),
+        TranslationProp {
+            component_name: "ChildComponent".to_string(),
+            prop_name: "t".to_string(),
+            namespaces: vec![Some("Child".to_string())],
+        },
+    );
+    let registries = Box::leak(Box::new(create_registries_with_translation_props(
+        translation_prop,
+    )));
+
+    // Both direct binding and prop binding with same name 't'
+    // Direct binding should take precedence within its scope
+    let code = r#"
+        const t = useTranslations("Parent");
+        
+        function Parent() {
+            return <div>{t("parentKey")}</div>;
+        }
+        
+        function ChildComponent({ t }: Props) {
+            return <div>{t("childKey")}</div>;
+        }
+    "#;
+
+    let checker = parse_and_check_with_registries(code, registries);
+
+    assert_eq!(checker.used_keys.len(), 2);
+    // Parent's t is Direct with "Parent" namespace
+    assert!(
+        checker
+            .used_keys
+            .iter()
+            .any(|k| k.full_key == "Parent.parentKey")
+    );
+    // Child's t is FromProps with "Child" namespace from registry
+    assert!(
+        checker
+            .used_keys
+            .iter()
+            .any(|k| k.full_key == "Child.childKey")
+    );
+}
+
+#[test]
+fn test_translation_prop_multiple_keys() {
+    let mut translation_prop = TranslationPropRegistry::new();
+    translation_prop.insert(
+        make_translation_prop_key("Feature", "t"),
+        TranslationProp {
+            component_name: "Feature".to_string(),
+            prop_name: "t".to_string(),
+            namespaces: vec![Some("Features".to_string())],
+        },
+    );
+    let registries = Box::leak(Box::new(create_registries_with_translation_props(
+        translation_prop,
+    )));
+
+    let code = r#"
+        function Feature({ t }: Props) {
+            return (
+                <div>
+                    <h1>{t("title")}</h1>
+                    <p>{t("description")}</p>
+                    <button>{t("cta")}</button>
+                </div>
+            );
+        }
+    "#;
+
+    let checker = parse_and_check_with_registries(code, registries);
+
+    assert_eq!(checker.used_keys.len(), 3);
+    let keys: Vec<&str> = checker
+        .used_keys
+        .iter()
+        .map(|k| k.full_key.as_str())
+        .collect();
+    assert!(keys.contains(&"Features.title"));
+    assert!(keys.contains(&"Features.description"));
+    assert!(keys.contains(&"Features.cta"));
+}
+
+#[test]
+fn test_translation_prop_method_calls_with_multiple_namespaces() {
+    let mut translation_prop = TranslationPropRegistry::new();
+    translation_prop.insert(
+        make_translation_prop_key("SharedComponent", "t"),
+        TranslationProp {
+            component_name: "SharedComponent".to_string(),
+            prop_name: "t".to_string(),
+            namespaces: vec![Some("PageA".to_string()), Some("PageB".to_string())],
+        },
+    );
+    let registries = Box::leak(Box::new(create_registries_with_translation_props(
+        translation_prop,
+    )));
+
+    let code = r#"
+        function SharedComponent({ t }: Props) {
+            t.raw("benefits");
+            t.rich("benefits");
+            t.markup(`benefits`);
+        }
+    "#;
+
+    let checker = parse_and_check_with_registries(code, registries);
+
+    let keys: HashSet<&str> = checker
+        .used_keys
+        .iter()
+        .map(|k| k.full_key.as_str())
+        .collect();
+    let expected = ["PageA.benefits", "PageB.benefits"];
+    for key in expected {
+        assert!(keys.contains(key));
+    }
+    // Each method call should record keys for both namespaces.
+    assert_eq!(checker.used_keys.len(), 6);
+}
+
+#[test]
+fn test_translation_prop_exported_function() {
+    let mut translation_prop = TranslationPropRegistry::new();
+    translation_prop.insert(
+        make_translation_prop_key("ExportedPage", "t"),
+        TranslationProp {
+            component_name: "ExportedPage".to_string(),
+            prop_name: "t".to_string(),
+            namespaces: vec![Some("Page".to_string())],
+        },
+    );
+    let registries = Box::leak(Box::new(create_registries_with_translation_props(
+        translation_prop,
+    )));
+
+    let code = r#"
+        export function ExportedPage({ t }: Props) {
+            return <div>{t("content")}</div>;
+        }
+    "#;
+
+    let checker = parse_and_check_with_registries(code, registries);
+
+    assert_eq!(checker.used_keys.len(), 1);
+    assert_eq!(checker.used_keys[0].full_key, "Page.content");
+}
+
+#[test]
+fn test_translation_prop_dynamic_key_hint_uses_relative_path() {
+    // When a translation prop has a dynamic key, the hint should suggest
+    // using a relative path (starting with .) instead of absolute path
+    let mut translation_prop = TranslationPropRegistry::new();
+    translation_prop.insert(
+        make_translation_prop_key("AdultLandingPage", "t"),
+        TranslationProp {
+            component_name: "AdultLandingPage".to_string(),
+            prop_name: "t".to_string(),
+            namespaces: vec![Some("NSFWAIStoryGenerator".to_string())],
+        },
+    );
+    let registries = Box::leak(Box::new(create_registries_with_translation_props(
+        translation_prop,
+    )));
+
+    let code = r#"
+        function AdultLandingPage({ t }: Props) {
+            return <div>{t(`howItWorks.step${step}.description`)}</div>;
+        }
+    "#;
+
+    let checker = parse_and_check_with_registries(code, registries);
+
+    // Should have a warning for dynamic key
+    assert_eq!(checker.warnings.len(), 1);
+    let hint = checker.warnings[0].hint.as_ref().unwrap();
+
+    // Hint should suggest relative path starting with .
+    assert!(
+        hint.contains(".howItWorks.step*.description"),
+        "Expected hint to contain '.howItWorks.step*.description', got: {}",
+        hint
+    );
+    // Should NOT contain the absolute namespace path
+    assert!(
+        !hint.contains("NSFWAIStoryGenerator.howItWorks"),
+        "Hint should not contain absolute namespace path, got: {}",
+        hint
+    );
+}
+
+#[test]
+fn test_direct_binding_dynamic_key_hint_uses_absolute_path() {
+    // When a direct binding (useTranslations) has a dynamic key, the hint should
+    // suggest using an absolute path with namespace
+    let registries = Box::leak(Box::new(create_empty_registries()));
+
+    let code = r#"
+        import {useTranslations} from 'next-intl';
+        function Component() {
+            const t = useTranslations("Common");
+            return <div>{t(`items.${id}.title`)}</div>;
+        }
+    "#;
+
+    let checker = parse_and_check_with_registries(code, registries);
+
+    assert_eq!(checker.warnings.len(), 1);
+    let hint = checker.warnings[0].hint.as_ref().unwrap();
+
+    // Hint should suggest absolute path with namespace
+    assert!(
+        hint.contains("Common.items.*.title"),
+        "Expected hint to contain 'Common.items.*.title', got: {}",
+        hint
+    );
+    // Should NOT start with dot (relative path)
+    assert!(
+        !hint.contains("\".items"),
+        "Hint should not suggest relative path, got: {}",
+        hint
+    );
+}
+
+#[test]
+fn test_nested_function_binding_shadowing() {
+    // Test that inner function's t shadows outer t
+    let code = r#"
+        const t = useTranslations("Outer");
+
+        function Parent() {
+            // Uses outer t
+            return <div>{t("outerKey")}</div>;
+        }
+
+        function Child() {
+            const t = useTranslations("Inner");  // shadows module-level t
+            return <div>{t("innerKey")}</div>;
+        }
+    "#;
+    let checker = parse_and_check(code);
+
+    assert_eq!(checker.used_keys.len(), 2);
+    assert!(
+        checker
+            .used_keys
+            .iter()
+            .any(|k| k.full_key == "Outer.outerKey")
+    );
+    assert!(
+        checker
+            .used_keys
+            .iter()
+            .any(|k| k.full_key == "Inner.innerKey")
+    );
+}
+
+#[test]
+fn test_translation_binding_does_not_leak_between_siblings() {
+    // Test that t defined in one function doesn't affect sibling functions
+    let code = r#"
+        function ComponentA() {
+            const t = useTranslations("A");
+            return <div>{t("keyA")}</div>;
+        }
+
+        function ComponentB() {
+            // No t defined here - t("keyB") should NOT be detected
+            return <div>{t("keyB")}</div>;
+        }
+    "#;
+    let checker = parse_and_check(code);
+
+    // Only ComponentA's key should be detected
+    assert_eq!(checker.used_keys.len(), 1);
+    assert_eq!(checker.used_keys[0].full_key, "A.keyA");
+}
+
+// ============================================================
+// Relative glot-message-keys Tests
+// ============================================================
+
+#[test]
+fn test_relative_pattern_with_direct_namespace() {
+    let code = r#"
+        const t = useTranslations("Features");
+        // glot-message-keys ".items.*.title"
+        const title = t(`items.${key}.title`);
+    "#;
+    let checker = parse_and_check(code);
+
+    // The relative pattern `.items.*.title` should be expanded to `Features.items.*.title`
+    assert_eq!(checker.used_keys.len(), 1);
+    assert_eq!(checker.used_keys[0].full_key, "Features.items.*.title");
+}
+
+#[test]
+fn test_relative_pattern_without_namespace() {
+    let code = r#"
+        const t = useTranslations();
+        // glot-message-keys ".items.title"
+        const title = t(`items.${key}.title`);
+    "#;
+    let checker = parse_and_check(code);
+
+    // Without namespace, the relative pattern `.items.title` becomes just `items.title`
+    assert_eq!(checker.used_keys.len(), 1);
+    assert_eq!(checker.used_keys[0].full_key, "items.title");
+}
+
+#[test]
+fn test_mixed_absolute_and_relative_patterns() {
+    let code = r#"
+        const t = useTranslations("Page");
+        // glot-message-keys "Common.button", ".features.title"
+        const label = t(dynamic);
+    "#;
+    let checker = parse_and_check(code);
+
+    assert_eq!(checker.used_keys.len(), 2);
+    let keys: Vec<&str> = checker
+        .used_keys
+        .iter()
+        .map(|k| k.full_key.as_str())
+        .collect();
+    assert!(keys.contains(&"Common.button")); // Absolute pattern
+    assert!(keys.contains(&"Page.features.title")); // Relative pattern expanded
+}
+
+#[test]
+fn test_relative_pattern_with_from_props_single_namespace() {
+    let mut translation_prop = TranslationPropRegistry::new();
+    translation_prop.insert(
+        make_translation_prop_key("FeatureList", "t"),
+        TranslationProp {
+            component_name: "FeatureList".to_string(),
+            prop_name: "t".to_string(),
+            namespaces: vec![Some("Features".to_string())],
+        },
+    );
+    let registries = Box::leak(Box::new(create_registries_with_translation_props(
+        translation_prop,
+    )));
+
+    let code = r#"
+        function FeatureList({ t }: Props) {
+            // glot-message-keys ".items.*.title"
+            return items.map(item => t(`items.${item.key}.title`));
+        }
+    "#;
+
+    let checker = parse_and_check_with_registries(code, registries);
+
+    // The relative pattern should be expanded with the namespace from the registry
+    assert_eq!(checker.used_keys.len(), 1);
+    assert_eq!(checker.used_keys[0].full_key, "Features.items.*.title");
+}
+
+#[test]
+fn test_relative_pattern_with_from_props_multiple_namespaces() {
+    let mut translation_prop = TranslationPropRegistry::new();
+    translation_prop.insert(
+        make_translation_prop_key("SharedComponent", "t"),
+        TranslationProp {
+            component_name: "SharedComponent".to_string(),
+            prop_name: "t".to_string(),
+            namespaces: vec![Some("PageA".to_string()), Some("PageB".to_string())],
+        },
+    );
+    let registries = Box::leak(Box::new(create_registries_with_translation_props(
+        translation_prop,
+    )));
+
+    let code = r#"
+        function SharedComponent({ t }: Props) {
+            // glot-message-keys ".features.title"
+            return t(dynamicKey);
+        }
+    "#;
+
+    let checker = parse_and_check_with_registries(code, registries);
+
+    // The relative pattern should be expanded with ALL namespaces from the registry
+    assert_eq!(checker.used_keys.len(), 2);
+    let keys: Vec<&str> = checker
+        .used_keys
+        .iter()
+        .map(|k| k.full_key.as_str())
+        .collect();
+    assert!(keys.contains(&"PageA.features.title"));
+    assert!(keys.contains(&"PageB.features.title"));
+}
+
+// ============================================================
+// Destructuring Pattern Edge Cases
+// ============================================================
+
+#[test]
+fn test_translation_prop_renamed_destructuring() {
+    // Test: { t: translate } - prop name is "t", but binding name is "translate"
+    let mut translation_prop = TranslationPropRegistry::new();
+    translation_prop.insert(
+        make_translation_prop_key("MyComponent", "t"),
+        TranslationProp {
+            component_name: "MyComponent".to_string(),
+            prop_name: "t".to_string(),
+            namespaces: vec![Some("Namespace".to_string())],
+        },
+    );
+    let registries = Box::leak(Box::new(create_registries_with_translation_props(
+        translation_prop,
+    )));
+
+    let code = r#"
+        function MyComponent({ t: translate }: Props) {
+            return <div>{translate("key")}</div>;
+        }
+    "#;
+
+    let checker = parse_and_check_with_registries(code, registries);
+
+    // The key should be detected using the renamed binding "translate"
+    assert_eq!(checker.used_keys.len(), 1);
+    assert_eq!(checker.used_keys[0].full_key, "Namespace.key");
+}
+
+#[test]
+fn test_translation_prop_renamed_destructuring_arrow_function() {
+    // Test arrow function with renamed destructuring
+    let mut translation_prop = TranslationPropRegistry::new();
+    translation_prop.insert(
+        make_translation_prop_key("Card", "t"),
+        TranslationProp {
+            component_name: "Card".to_string(),
+            prop_name: "t".to_string(),
+            namespaces: vec![Some("Cards".to_string())],
+        },
+    );
+    let registries = Box::leak(Box::new(create_registries_with_translation_props(
+        translation_prop,
+    )));
+
+    let code = r#"
+        const Card = ({ t: i18n }: Props) => {
+            return <span>{i18n("title")}</span>;
+        };
+    "#;
+
+    let checker = parse_and_check_with_registries(code, registries);
+
+    assert_eq!(checker.used_keys.len(), 1);
+    assert_eq!(checker.used_keys[0].full_key, "Cards.title");
+}
+
+#[test]
+fn test_translation_prop_with_default_value() {
+    // Test: { t = defaultT } - shorthand with default value
+    let mut translation_prop = TranslationPropRegistry::new();
+    translation_prop.insert(
+        make_translation_prop_key("OptionalTranslation", "t"),
+        TranslationProp {
+            component_name: "OptionalTranslation".to_string(),
+            prop_name: "t".to_string(),
+            namespaces: vec![Some("Optional".to_string())],
+        },
+    );
+    let registries = Box::leak(Box::new(create_registries_with_translation_props(
+        translation_prop,
+    )));
+
+    let code = r#"
+        function OptionalTranslation({ t = defaultT }: Props) {
+            return <div>{t("message")}</div>;
+        }
+    "#;
+
+    let checker = parse_and_check_with_registries(code, registries);
+
+    // Should detect the key even with default value
+    assert_eq!(checker.used_keys.len(), 1);
+    assert_eq!(checker.used_keys[0].full_key, "Optional.message");
+}
+
+#[test]
+fn test_translation_prop_renamed_with_default_value() {
+    // Test: { t: translate = defaultT } - renamed with default value
+    let mut translation_prop = TranslationPropRegistry::new();
+    translation_prop.insert(
+        make_translation_prop_key("ComplexComponent", "t"),
+        TranslationProp {
+            component_name: "ComplexComponent".to_string(),
+            prop_name: "t".to_string(),
+            namespaces: vec![Some("Complex".to_string())],
+        },
+    );
+    let registries = Box::leak(Box::new(create_registries_with_translation_props(
+        translation_prop,
+    )));
+
+    let code = r#"
+        function ComplexComponent({ t: translate = defaultTranslate }: Props) {
+            return <div>{translate("label")}</div>;
+        }
+    "#;
+
+    let checker = parse_and_check_with_registries(code, registries);
+
+    // Should detect the key with the renamed binding
+    assert_eq!(checker.used_keys.len(), 1);
+    assert_eq!(checker.used_keys[0].full_key, "Complex.label");
+}
+
+#[test]
+fn test_translation_prop_with_rest_pattern() {
+    // Test: { t, ...rest } - translation prop with rest pattern
+    let mut translation_prop = TranslationPropRegistry::new();
+    translation_prop.insert(
+        make_translation_prop_key("WithRest", "t"),
+        TranslationProp {
+            component_name: "WithRest".to_string(),
+            prop_name: "t".to_string(),
+            namespaces: vec![Some("Rest".to_string())],
+        },
+    );
+    let registries = Box::leak(Box::new(create_registries_with_translation_props(
+        translation_prop,
+    )));
+
+    let code = r#"
+        function WithRest({ t, ...rest }: Props) {
+            return <div {...rest}>{t("content")}</div>;
+        }
+    "#;
+
+    let checker = parse_and_check_with_registries(code, registries);
+
+    // Should detect the key from the 't' prop
+    assert_eq!(checker.used_keys.len(), 1);
+    assert_eq!(checker.used_keys[0].full_key, "Rest.content");
+}
+
+#[test]
+fn test_translation_prop_multiple_props_with_rename() {
+    // Test multiple props where one is renamed
+    let mut translation_prop = TranslationPropRegistry::new();
+    translation_prop.insert(
+        make_translation_prop_key("MultiProp", "t"),
+        TranslationProp {
+            component_name: "MultiProp".to_string(),
+            prop_name: "t".to_string(),
+            namespaces: vec![Some("Multi".to_string())],
+        },
+    );
+    let registries = Box::leak(Box::new(create_registries_with_translation_props(
+        translation_prop,
+    )));
+
+    let code = r#"
+        function MultiProp({ t: translate, name, onClick }: Props) {
+            return <button onClick={onClick}>{translate("click")} {name}</button>;
+        }
+    "#;
+
+    let checker = parse_and_check_with_registries(code, registries);
+
+    assert_eq!(checker.used_keys.len(), 1);
+    assert_eq!(checker.used_keys[0].full_key, "Multi.click");
 }

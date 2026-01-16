@@ -90,8 +90,21 @@ pub fn extract_glot_message_keys(source: &str, file_path: &str) -> ExtractResult
 }
 
 /// Validate a pattern. Returns Some(warning_message) if invalid.
+///
+/// Valid patterns:
+/// - Absolute: `Namespace.key.path` or `key.path`
+/// - Relative: `.key.path` (will be expanded with namespace at runtime)
+/// - Glob: `Namespace.features.*` or `.features.*`
 fn validate_pattern(pattern: &str) -> Option<String> {
-    let segments: Vec<&str> = pattern.split('.').collect();
+    // Handle relative patterns (starting with `.`)
+    let pattern_to_check = if let Some(stripped) = pattern.strip_prefix('.') {
+        // For relative patterns, validate the part after the leading `.`
+        stripped
+    } else {
+        pattern
+    };
+
+    let segments: Vec<&str> = pattern_to_check.split('.').collect();
 
     // Check for prefix wildcard pattern like "*.suffix"
     if let Some(first) = segments.first()
@@ -104,7 +117,7 @@ fn validate_pattern(pattern: &str) -> Option<String> {
         ));
     }
 
-    // Check for empty segments
+    // Check for empty segments (but allow the first empty segment for relative patterns)
     if segments.iter().any(|s| s.is_empty()) {
         return Some(format!(
             "Invalid pattern '{}': contains empty segment",
@@ -232,5 +245,52 @@ function renderForm() {}
             result.annotations[0].patterns,
             vec!["CharacterForm.genderOptions.*"]
         );
+    }
+
+    // ============================================================
+    // Relative pattern tests
+    // ============================================================
+
+    #[test]
+    fn test_relative_pattern_simple() {
+        let source = r#"// glot-message-keys ".features.title""#;
+        let result = extract_glot_message_keys(source, "test.tsx");
+
+        assert_eq!(result.annotations.len(), 1);
+        assert_eq!(result.annotations[0].patterns, vec![".features.title"]);
+        assert!(result.warnings.is_empty());
+    }
+
+    #[test]
+    fn test_relative_pattern_with_glob() {
+        let source = r#"// glot-message-keys ".features.*.title""#;
+        let result = extract_glot_message_keys(source, "test.tsx");
+
+        assert_eq!(result.annotations.len(), 1);
+        assert_eq!(result.annotations[0].patterns, vec![".features.*.title"]);
+        assert!(result.warnings.is_empty());
+    }
+
+    #[test]
+    fn test_relative_pattern_jsx_comment() {
+        let source = r#"{/* glot-message-keys ".items.*" */}"#;
+        let result = extract_glot_message_keys(source, "test.tsx");
+
+        assert_eq!(result.annotations.len(), 1);
+        assert_eq!(result.annotations[0].patterns, vec![".items.*"]);
+        assert!(result.warnings.is_empty());
+    }
+
+    #[test]
+    fn test_mixed_absolute_and_relative_patterns() {
+        let source = r#"// glot-message-keys "Common.title", ".features.*""#;
+        let result = extract_glot_message_keys(source, "test.tsx");
+
+        assert_eq!(result.annotations.len(), 1);
+        assert_eq!(
+            result.annotations[0].patterns,
+            vec!["Common.title", ".features.*"]
+        );
+        assert!(result.warnings.is_empty());
     }
 }
