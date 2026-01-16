@@ -1162,3 +1162,144 @@ mod value_source_tests {
         assert!(keys.contains(&"updateNovel".to_string()));
     }
 }
+
+#[test]
+fn test_t_raw_method_call() {
+    // Test that t.raw("key") is detected as a translation key usage
+    let code = r#"
+        const t = useTranslations("HomePage");
+        const benefits = t.raw("creationMethods.benefits") as string[];
+    "#;
+    let checker = parse_and_check(code);
+
+    assert_eq!(
+        checker.used_keys.len(),
+        1,
+        "t.raw() should be detected as a used key"
+    );
+    assert_eq!(
+        checker.used_keys[0].full_key,
+        "HomePage.creationMethods.benefits"
+    );
+}
+
+#[test]
+fn test_t_rich_method_call() {
+    // Test that t.rich("key", {...}) is detected as a translation key usage
+    let code = r#"
+        const t = useTranslations("Common");
+        const content = t.rich("welcome", { bold: (text) => <b>{text}</b> });
+    "#;
+    let checker = parse_and_check(code);
+
+    assert_eq!(
+        checker.used_keys.len(),
+        1,
+        "t.rich() should be detected as a used key"
+    );
+    assert_eq!(checker.used_keys[0].full_key, "Common.welcome");
+}
+
+#[test]
+fn test_t_markup_method_call() {
+    // Test that t.markup("key") is detected as a translation key usage
+    let code = r#"
+        const t = useTranslations("Common");
+        const html = t.markup("richText");
+    "#;
+    let checker = parse_and_check(code);
+
+    assert_eq!(
+        checker.used_keys.len(),
+        1,
+        "t.markup() should be detected as a used key"
+    );
+    assert_eq!(checker.used_keys[0].full_key, "Common.richText");
+}
+
+#[test]
+fn test_t_raw_with_await_get_translations() {
+    // Test that async getTranslations + t.raw() works
+    let code = r#"
+        const t = await getTranslations("HomePage");
+        const benefits = t.raw("features.list") as string[];
+    "#;
+    let checker = parse_and_check(code);
+
+    assert_eq!(
+        checker.used_keys.len(),
+        1,
+        "t.raw() with async getTranslations should be detected"
+    );
+    assert_eq!(checker.used_keys[0].full_key, "HomePage.features.list");
+}
+
+#[test]
+fn test_t_raw_without_namespace() {
+    // Test t.raw() when useTranslations has no namespace
+    let code = r#"
+        const t = useTranslations();
+        const items = t.raw("Page.items") as string[];
+    "#;
+    let checker = parse_and_check(code);
+
+    assert_eq!(
+        checker.used_keys.len(),
+        1,
+        "t.raw() without namespace should be detected"
+    );
+    // Without namespace, key should be used as-is
+    assert_eq!(checker.used_keys[0].full_key, "Page.items");
+}
+
+#[test]
+fn test_unrelated_raw_method_not_detected() {
+    // Test that .raw() on non-translation objects is NOT detected
+    let code = r#"
+        const t = useTranslations("Common");
+        const someObj = { raw: (key) => key };
+        const result = someObj.raw("notATranslationKey");
+    "#;
+    let checker = parse_and_check(code);
+
+    // Only t("...") calls should be detected, not someObj.raw()
+    assert!(
+        checker.used_keys.is_empty(),
+        "Non-translation .raw() should not be detected as used key"
+    );
+}
+
+#[test]
+fn test_t_raw_with_template_literal() {
+    // Test t.raw() with template literal (no expressions)
+    let code = r#"
+        const t = useTranslations("Page");
+        const items = t.raw(`benefits.list`);
+    "#;
+    let checker = parse_and_check(code);
+
+    assert_eq!(
+        checker.used_keys.len(),
+        1,
+        "t.raw() with template literal should be detected"
+    );
+    assert_eq!(checker.used_keys[0].full_key, "Page.benefits.list");
+}
+
+#[test]
+fn test_t_raw_with_dynamic_key_not_detected() {
+    // Test that t.raw(variable) is NOT detected as a used key
+    // (consistent with t(variable) behavior)
+    let code = r#"
+        const t = useTranslations("Common");
+        const key = "dynamic.key";
+        const result = t.raw(key);
+    "#;
+    let checker = parse_and_check(code);
+
+    // Dynamic keys should not be reported as used_keys
+    assert!(
+        checker.used_keys.is_empty(),
+        "t.raw() with dynamic key should not be detected as used key"
+    );
+}

@@ -541,6 +541,49 @@ impl<'a> Visit for MissingKeyChecker<'a> {
             }
         }
 
+        // Handle method calls on translation function: t.raw("key"), t.rich("key"), t.markup("key")
+        // These are MemberExpr calls where obj is the translation function variable
+        if let Callee::Expr(expr) = &node.callee
+            && let Expr::Member(member) = &**expr
+            && let Expr::Ident(obj_ident) = &*member.obj
+            && let MemberProp::Ident(method_ident) = &member.prop
+        {
+            let obj_name = obj_ident.sym.as_str();
+            let method_name = method_ident.sym.as_str();
+
+            // Check if this is a translation method call (t.raw, t.rich, t.markup)
+            if matches!(method_name, "raw" | "rich" | "markup")
+                && let Some(namespace) = self.bindings.get(obj_name).cloned()
+                && let Some(arg) = node.args.first()
+            {
+                let loc = self.source_map.lookup_char_pos(node.span.lo);
+
+                // For t.raw/t.rich/t.markup, extract the key from first argument
+                match crate::checkers::unwrap_paren(&arg.expr) {
+                    // Static string key: t.raw("benefits")
+                    Expr::Lit(Lit::Str(s)) => {
+                        if let Some(key) = s.value.as_str() {
+                            let full_key = resolve_full_key(&namespace, key);
+                            self.add_used_key(loc, full_key);
+                        }
+                    }
+                    // Template literal without expressions: t.raw(`benefits`)
+                    Expr::Tpl(tpl) if tpl.exprs.is_empty() => {
+                        if let Some(quasi) = tpl.quasis.first()
+                            && let Some(cooked) = &quasi.cooked
+                            && let Some(key) = cooked.as_str()
+                        {
+                            let full_key = resolve_full_key(&namespace, key);
+                            self.add_used_key(loc, full_key);
+                        }
+                    }
+                    _ => {
+                        // Dynamic keys in t.raw() etc are not common, skip for now
+                    }
+                }
+            }
+        }
+
         // Detect iterator patterns: array.map(item => ...) or array.forEach(item => ...)
         // Enter a new scope for the callback to properly handle nested iterators
         let entered_scope = if let Callee::Expr(callee_expr) = &node.callee
