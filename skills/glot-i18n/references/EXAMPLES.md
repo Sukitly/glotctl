@@ -28,9 +28,9 @@ export function LoginForm() {
     <form onSubmit={handleSubmit}>
       <h1>Sign In</h1>
       <p>Welcome back! Please enter your credentials.</p>
-      
+
       {error && <div className="error">{error}</div>}
-      
+
       <label>
         Email
         <input
@@ -40,7 +40,7 @@ export function LoginForm() {
           onChange={(e) => setEmail(e.target.value)}
         />
       </label>
-      
+
       <label>
         Password
         <input
@@ -50,11 +50,11 @@ export function LoginForm() {
           onChange={(e) => setPassword(e.target.value)}
         />
       </label>
-      
+
       <button type="submit" disabled={isLoading}>
         {isLoading ? "Signing in..." : "Sign In"}
       </button>
-      
+
       <p>
         Don't have an account? <a href="/register">Create one</a>
       </p>
@@ -89,9 +89,9 @@ export function LoginForm() {
     <form onSubmit={handleSubmit}>
       <h1>{t("title")}</h1>
       <p>{t("subtitle")}</p>
-      
+
       {error && <div className="error">{error}</div>}
-      
+
       <label>
         {t("emailLabel")}
         <input
@@ -101,7 +101,7 @@ export function LoginForm() {
           onChange={(e) => setEmail(e.target.value)}
         />
       </label>
-      
+
       <label>
         {t("passwordLabel")}
         <input
@@ -111,11 +111,11 @@ export function LoginForm() {
           onChange={(e) => setPassword(e.target.value)}
         />
       </label>
-      
+
       <button type="submit" disabled={isLoading}>
         {isLoading ? t("signingIn") : t("signInButton")}
       </button>
-      
+
       <p>
         {t("noAccount")} <a href="/register">{t("createAccount")}</a>
       </p>
@@ -176,16 +176,21 @@ export function LoginForm() {
 ### With Variables
 
 **Before:**
+
 ```tsx
-<p>Hello, {user.name}! You have {count} new messages.</p>
+<p>
+  Hello, {user.name}! You have {count} new messages.
+</p>
 ```
 
 **After:**
+
 ```tsx
 <p>{t("greeting", { name: user.name, count })}</p>
 ```
 
 **Locale file:**
+
 ```json
 {
   "greeting": "Hello, {name}! You have {count} new messages."
@@ -195,6 +200,7 @@ export function LoginForm() {
 ### With Plurals
 
 **Before:**
+
 ```tsx
 <span>
   {items.length === 0 && "No items"}
@@ -204,11 +210,13 @@ export function LoginForm() {
 ```
 
 **After:**
+
 ```tsx
 <span>{t("itemCount", { count: items.length })}</span>
 ```
 
 **Locale file:**
+
 ```json
 {
   "itemCount": "{count, plural, =0 {No items} =1 {1 item} other {# items}}"
@@ -218,6 +226,7 @@ export function LoginForm() {
 ### With Rich Text (HTML-like)
 
 **Before:**
+
 ```tsx
 <p>
   By continuing, you agree to our <a href="/terms">Terms of Service</a> and{" "}
@@ -226,6 +235,7 @@ export function LoginForm() {
 ```
 
 **After:**
+
 ```tsx
 <p>
   {t.rich("legal", {
@@ -236,6 +246,7 @@ export function LoginForm() {
 ```
 
 **Locale file:**
+
 ```json
 {
   "legal": "By continuing, you agree to our <terms>Terms of Service</terms> and <privacy>Privacy Policy</privacy>."
@@ -252,7 +263,7 @@ import { getTranslations } from "next-intl/server";
 
 export default async function HomePage() {
   const t = await getTranslations("homePage");
-  
+
   return (
     <main>
       <h1>{t("title")}</h1>
@@ -270,7 +281,7 @@ import { useTranslations } from "next-intl";
 
 export function ClientComponent() {
   const t = useTranslations("component");
-  
+
   return <div>{t("message")}</div>;
 }
 ```
@@ -278,6 +289,7 @@ export function ClientComponent() {
 ### With Namespace vs Without
 
 **With namespace (recommended for components with many keys):**
+
 ```tsx
 const t = useTranslations("auth.login");
 // Use: t("title"), t("submit")
@@ -285,6 +297,7 @@ const t = useTranslations("auth.login");
 ```
 
 **Without namespace (for scattered keys):**
+
 ```tsx
 const t = useTranslations();
 // Use: t("auth.login.title"), t("common.submit")
@@ -339,28 +352,32 @@ When syncing translations to multiple locales:
 
 glot checks these attributes for hardcoded text:
 
-| Attribute | Example |
-|-----------|---------|
-| `placeholder` | `<input placeholder={t("search")} />` |
-| `title` | `<button title={t("tooltip")} />` |
-| `alt` | `<img alt={t("imageDesc")} />` |
-| `aria-label` | `<button aria-label={t("close")} />` |
-| `aria-description` | `<div aria-description={t("desc")} />` |
-| `aria-placeholder` | `<input aria-placeholder={t("hint")} />` |
+| Attribute              | Example                                    |
+| ---------------------- | ------------------------------------------ |
+| `placeholder`          | `<input placeholder={t("search")} />`      |
+| `title`                | `<button title={t("tooltip")} />`          |
+| `alt`                  | `<img alt={t("imageDesc")} />`             |
+| `aria-label`           | `<button aria-label={t("close")} />`       |
+| `aria-description`     | `<div aria-description={t("desc")} />`     |
+| `aria-placeholder`     | `<input aria-placeholder={t("hint")} />`   |
 | `aria-roledescription` | `<div aria-roledescription={t("role")} />` |
-| `aria-valuetext` | `<input aria-valuetext={t("value")} />` |
+| `aria-valuetext`       | `<input aria-valuetext={t("value")} />`    |
 
 ## Ignoring Specific Text
 
 If some hardcoded text should NOT be translated (e.g., brand names, code):
 
 **Option 1: glot-disable-next-line comment**
+
 ```tsx
-{/* glot-disable-next-line */}
-<span>ACME Corp</span>
+{
+  /* glot-disable-next-line */
+}
+<span>ACME Corp</span>;
 ```
 
 **Option 2: Add to ignore_texts in .glotrc.json**
+
 ```json
 {
   "ignore_texts": ["ACME Corp", "GitHub", "TypeScript"]
