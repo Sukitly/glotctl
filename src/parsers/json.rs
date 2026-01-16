@@ -146,6 +146,42 @@ fn flatten_json(
                 },
             );
         }
+        Value::Array(arr) => {
+            // Empty arrays don't produce any keys
+            if arr.is_empty() {
+                return;
+            }
+
+            // Check if this is a string-only array (used with t.raw() or similar)
+            // vs an array of objects (accessed with indexed keys like items.0.question)
+            let is_string_array = arr.iter().all(|v| matches!(v, Value::String(_)));
+
+            if is_string_array && !prefix.is_empty() {
+                // String arrays are accessed as a whole (e.g., t.raw("benefits"))
+                // Store as a single key with joined value for display
+                let values: Vec<&str> = arr.iter().filter_map(|v| v.as_str()).collect();
+                let line = find_key_line(content, &prefix, line_index);
+                result.insert(
+                    prefix,
+                    MessageEntry {
+                        value: values.join(", "),
+                        file_path: file_path.to_string(),
+                        line,
+                    },
+                );
+            } else {
+                // Object arrays or mixed arrays: expand with indices
+                // (e.g., faq.items.0.question, faq.items.1.question)
+                for (index, val) in arr.iter().enumerate() {
+                    let new_prefix = if prefix.is_empty() {
+                        index.to_string()
+                    } else {
+                        format!("{}.{}", prefix, index)
+                    };
+                    flatten_json(val, new_prefix, file_path, content, line_index, result);
+                }
+            }
+        }
         _ => {}
     }
 }
@@ -419,5 +455,263 @@ mod tests {
         let err = result.unwrap_err().to_string();
         assert!(err.contains("does not exist"));
         assert!(err.contains("messagesDir"));
+    }
+
+    #[test]
+    fn test_flatten_array() {
+        let content = r#"{"faq": {"items": [{"question": "Q1", "answer": "A1"}, {"question": "Q2", "answer": "A2"}]}}"#;
+        let json: Value = serde_json::from_str(content).unwrap();
+        let line_index = build_line_index(content);
+
+        let mut result = MessageMap::new();
+        flatten_json(
+            &json,
+            String::new(),
+            "test.json",
+            content,
+            &line_index,
+            &mut result,
+        );
+
+        assert_eq!(
+            result.get("faq.items.0.question").map(|e| &e.value),
+            Some(&"Q1".to_string())
+        );
+        assert_eq!(
+            result.get("faq.items.0.answer").map(|e| &e.value),
+            Some(&"A1".to_string())
+        );
+        assert_eq!(
+            result.get("faq.items.1.question").map(|e| &e.value),
+            Some(&"Q2".to_string())
+        );
+        assert_eq!(
+            result.get("faq.items.1.answer").map(|e| &e.value),
+            Some(&"A2".to_string())
+        );
+    }
+
+    #[test]
+    fn test_flatten_root_array() {
+        let content = r#"["first", "second", "third"]"#;
+        let json: Value = serde_json::from_str(content).unwrap();
+        let line_index = build_line_index(content);
+
+        let mut result = MessageMap::new();
+        flatten_json(
+            &json,
+            String::new(),
+            "test.json",
+            content,
+            &line_index,
+            &mut result,
+        );
+
+        assert_eq!(
+            result.get("0").map(|e| &e.value),
+            Some(&"first".to_string())
+        );
+        assert_eq!(
+            result.get("1").map(|e| &e.value),
+            Some(&"second".to_string())
+        );
+        assert_eq!(
+            result.get("2").map(|e| &e.value),
+            Some(&"third".to_string())
+        );
+    }
+
+    #[test]
+    fn test_flatten_nested_array() {
+        let content = r#"{"Page": {"steps": [{"title": "Step 1"}, {"title": "Step 2"}]}}"#;
+        let json: Value = serde_json::from_str(content).unwrap();
+        let line_index = build_line_index(content);
+
+        let mut result = MessageMap::new();
+        flatten_json(
+            &json,
+            String::new(),
+            "test.json",
+            content,
+            &line_index,
+            &mut result,
+        );
+
+        assert_eq!(
+            result.get("Page.steps.0.title").map(|e| &e.value),
+            Some(&"Step 1".to_string())
+        );
+        assert_eq!(
+            result.get("Page.steps.1.title").map(|e| &e.value),
+            Some(&"Step 2".to_string())
+        );
+    }
+
+    #[test]
+    fn test_flatten_string_array_not_expanded() {
+        // String arrays should be treated as a single key (accessed via t.raw())
+        // NOT expanded into individual indexed keys
+        let content = r#"{"Page": {"benefits": ["Fast", "Easy", "Reliable"]}}"#;
+        let json: Value = serde_json::from_str(content).unwrap();
+        let line_index = build_line_index(content);
+
+        let mut result = MessageMap::new();
+        flatten_json(
+            &json,
+            String::new(),
+            "test.json",
+            content,
+            &line_index,
+            &mut result,
+        );
+
+        // String array should be a single key, not expanded
+        assert!(
+            result.contains_key("Page.benefits"),
+            "String array should be stored as single key"
+        );
+        assert_eq!(
+            result.get("Page.benefits").map(|e| &e.value),
+            Some(&"Fast, Easy, Reliable".to_string())
+        );
+
+        // Should NOT have indexed keys
+        assert!(
+            !result.contains_key("Page.benefits.0"),
+            "String array should NOT be expanded to indexed keys"
+        );
+        assert!(
+            !result.contains_key("Page.benefits.1"),
+            "String array should NOT be expanded to indexed keys"
+        );
+    }
+
+    #[test]
+    fn test_flatten_mixed_array_expanded() {
+        // Arrays with non-string elements should be expanded
+        let content = r#"{"Page": {"items": [{"name": "A"}, {"name": "B"}]}}"#;
+        let json: Value = serde_json::from_str(content).unwrap();
+        let line_index = build_line_index(content);
+
+        let mut result = MessageMap::new();
+        flatten_json(
+            &json,
+            String::new(),
+            "test.json",
+            content,
+            &line_index,
+            &mut result,
+        );
+
+        // Object array should be expanded
+        assert!(result.contains_key("Page.items.0.name"));
+        assert!(result.contains_key("Page.items.1.name"));
+        // Should NOT have the array as a single key
+        assert!(!result.contains_key("Page.items"));
+    }
+
+    #[test]
+    fn test_flatten_empty_array() {
+        // Empty arrays should not produce any keys
+        let content = r#"{"Page": {"items": []}}"#;
+        let json: Value = serde_json::from_str(content).unwrap();
+        let line_index = build_line_index(content);
+
+        let mut result = MessageMap::new();
+        flatten_json(
+            &json,
+            String::new(),
+            "test.json",
+            content,
+            &line_index,
+            &mut result,
+        );
+
+        // Empty array should not create any keys
+        assert!(result.is_empty(), "Empty array should not produce any keys");
+    }
+
+    #[test]
+    fn test_flatten_single_element_string_array() {
+        // Single element string array should still be treated as string array
+        let content = r#"{"Page": {"tags": ["only-tag"]}}"#;
+        let json: Value = serde_json::from_str(content).unwrap();
+        let line_index = build_line_index(content);
+
+        let mut result = MessageMap::new();
+        flatten_json(
+            &json,
+            String::new(),
+            "test.json",
+            content,
+            &line_index,
+            &mut result,
+        );
+
+        // Should be stored as single key
+        assert!(result.contains_key("Page.tags"));
+        assert_eq!(
+            result.get("Page.tags").map(|e| &e.value),
+            Some(&"only-tag".to_string())
+        );
+        // Should NOT be expanded
+        assert!(!result.contains_key("Page.tags.0"));
+    }
+
+    #[test]
+    fn test_flatten_mixed_type_array_expanded() {
+        // Arrays with mixed types (not all strings) should be expanded
+        let content = r#"{"Page": {"data": ["text", 123, true]}}"#;
+        let json: Value = serde_json::from_str(content).unwrap();
+        let line_index = build_line_index(content);
+
+        let mut result = MessageMap::new();
+        flatten_json(
+            &json,
+            String::new(),
+            "test.json",
+            content,
+            &line_index,
+            &mut result,
+        );
+
+        // Mixed array should be expanded, but only string elements create entries
+        // (numbers and booleans are ignored by flatten_json)
+        assert!(
+            result.contains_key("Page.data.0"),
+            "String element should be expanded"
+        );
+        assert_eq!(
+            result.get("Page.data.0").map(|e| &e.value),
+            Some(&"text".to_string())
+        );
+        // Non-string elements don't create keys
+        assert!(!result.contains_key("Page.data.1"));
+        assert!(!result.contains_key("Page.data.2"));
+    }
+
+    #[test]
+    fn test_flatten_empty_string_in_array() {
+        // Array with empty strings should still be treated as string array
+        let content = r#"{"Page": {"values": ["", "valid", ""]}}"#;
+        let json: Value = serde_json::from_str(content).unwrap();
+        let line_index = build_line_index(content);
+
+        let mut result = MessageMap::new();
+        flatten_json(
+            &json,
+            String::new(),
+            "test.json",
+            content,
+            &line_index,
+            &mut result,
+        );
+
+        // Should be stored as single key (all elements are strings)
+        assert!(result.contains_key("Page.values"));
+        assert_eq!(
+            result.get("Page.values").map(|e| &e.value),
+            Some(&", valid, ".to_string())
+        );
     }
 }
