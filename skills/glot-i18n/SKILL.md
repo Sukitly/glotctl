@@ -1,7 +1,7 @@
 ---
 name: glot-i18n
 description: Fix i18n issues in Next.js + next-intl projects using glot MCP server. Use when user needs to fix hardcoded text, missing translation keys, or sync translations across locales.
-compatibility: Requires glot MCP server configured (command: glot serve)
+compatibility: Requires glot MCP server configured
 metadata:
   author: glot
   version: "1.0"
@@ -20,6 +20,7 @@ This skill guides you through detecting and fixing internationalization (i18n) i
 ## When to Use This Skill
 
 Activate this skill when:
+
 - User asks to fix i18n, internationalization, or translation issues
 - User mentions hardcoded text that should be translated
 - User wants to find missing translation keys
@@ -33,26 +34,27 @@ Activate this skill when:
 ```
 1. scan_overview     → Understand the overall state
 2. Fix hardcoded    → Replace text with t() calls, add keys to primary locale
-3. Fix primary_missing → Add missing keys to primary locale  
+3. Fix primary_missing → Add missing keys to primary locale
 4. Fix replica_lag   → Sync keys to other locales
 ```
 
 Why this order matters:
+
 - Fixing hardcoded issues may create new primary_missing issues
 - Fixing primary_missing may create new replica_lag issues
 - Following this order prevents duplicate work
 
 ## Available Tools
 
-| Tool | Purpose | When to Use |
-|------|---------|-------------|
-| `get_config` | Get project configuration | First, to understand project setup |
-| `get_locales` | List available locale files | To see which languages are configured |
-| `scan_overview` | Get statistics of all issues | Always start here to understand scope |
-| `scan_hardcoded` | List hardcoded text issues | When fixing hardcoded text |
-| `scan_primary_missing` | List keys missing from primary locale | After fixing hardcoded issues |
-| `scan_replica_lag` | List keys missing from other locales | After fixing primary_missing |
-| `add_translations` | Add keys to locale files | When adding new translation keys |
+| Tool                   | Purpose                               | When to Use                           |
+| ---------------------- | ------------------------------------- | ------------------------------------- |
+| `get_config`           | Get project configuration             | First, to understand project setup    |
+| `get_locales`          | List available locale files           | To see which languages are configured |
+| `scan_overview`        | Get statistics of all issues          | Always start here to understand scope |
+| `scan_hardcoded`       | List hardcoded text issues            | When fixing hardcoded text            |
+| `scan_primary_missing` | List keys missing from primary locale | After fixing hardcoded issues         |
+| `scan_replica_lag`     | List keys missing from other locales  | After fixing primary_missing          |
+| `add_translations`     | Add keys to locale files              | When adding new translation keys      |
 
 ## Step-by-Step: Fixing Hardcoded Text
 
@@ -68,11 +70,12 @@ Check the `hardcoded.total_count` to understand scope.
 ### 2. Get Detailed Hardcoded Issues
 
 ```
-Call: scan_hardcoded  
+Call: scan_hardcoded
 Parameters: { "project_root_path": "<project_path>", "limit": 20 }
 ```
 
 Each item contains:
+
 - `file_path`: The TSX/JSX file
 - `line`, `col`: Location
 - `text`: The hardcoded text found
@@ -81,6 +84,7 @@ Each item contains:
 ### 3. For Each Issue, Determine the Key Name
 
 Follow key naming conventions:
+
 - Use **camelCase** for keys
 - Organize by **component or page namespace**
 - Be **descriptive but concise**
@@ -98,6 +102,7 @@ Examples:
 Replace hardcoded text with `t()` calls:
 
 **Before:**
+
 ```tsx
 <button>Submit</button>
 <input placeholder="Enter email" />
@@ -105,6 +110,7 @@ Replace hardcoded text with `t()` calls:
 ```
 
 **After:**
+
 ```tsx
 <button>{t("common.submit")}</button>
 <input placeholder={t("auth.emailPlaceholder")} />
@@ -112,6 +118,7 @@ Replace hardcoded text with `t()` calls:
 ```
 
 Ensure the component has `useTranslations` hook:
+
 ```tsx
 import { useTranslations } from "next-intl";
 
@@ -119,7 +126,7 @@ export function MyComponent() {
   const t = useTranslations();
   // ... or with namespace:
   // const t = useTranslations("homePage");
-  
+
   return <p>{t("hero.welcomeMessage")}</p>;
 }
 ```
@@ -166,6 +173,7 @@ Parameters: { "project_root_path": "<project_path>" }
 ```
 
 Each item shows:
+
 - `key`: The missing key name
 - `file_path`: Where it's used
 - `line`: Line number
@@ -202,6 +210,7 @@ Parameters: { "project_root_path": "<project_path>" }
 ```
 
 Each item shows:
+
 - `key`: The key name
 - `value`: Value in primary locale
 - `exists_in`: Primary locale code
@@ -235,6 +244,7 @@ If the user can provide translations, use their values. Otherwise, copy the prim
 ```
 
 Examples:
+
 - `common.buttons.submit` - Shared UI elements
 - `auth.login.title` - Authentication pages
 - `dashboard.sidebar.menuItem` - Dashboard specific
@@ -250,6 +260,7 @@ Examples:
 ### Special Cases
 
 **Plurals** (if using next-intl plural support):
+
 ```json
 {
   "items": "{count, plural, =0 {No items} =1 {One item} other {# items}}"
@@ -257,6 +268,7 @@ Examples:
 ```
 
 **Variables**:
+
 ```json
 {
   "greeting": "Hello, {name}!"
@@ -266,15 +278,17 @@ Examples:
 ## Common Patterns
 
 ### JSX Text Content
+
 ```tsx
 // Before
 <h1>Welcome</h1>
 
-// After  
+// After
 <h1>{t("page.welcome")}</h1>
 ```
 
-### Attributes (placeholder, title, alt, aria-*)
+### Attributes (placeholder, title, alt, aria-\*)
+
 ```tsx
 // Before
 <input placeholder="Search..." />
@@ -286,15 +300,21 @@ Examples:
 ```
 
 ### Conditional Text
+
 ```tsx
 // Before
-{isLoading ? "Loading..." : "Submit"}
+{
+  isLoading ? "Loading..." : "Submit";
+}
 
 // After
-{isLoading ? t("common.loading") : t("common.submit")}
+{
+  isLoading ? t("common.loading") : t("common.submit");
+}
 ```
 
 ### Template Literals
+
 ```tsx
 // Before
 <p>{`Welcome, ${userName}`}</p>
@@ -316,10 +336,13 @@ Examples:
 ## Troubleshooting
 
 ### "Config file not found"
+
 Run `glot init` in the project root to create `.glotrc.json`
 
 ### Keys not being detected
+
 Check that `messages_dir` in config points to correct locale files directory
 
 ### Some text not detected as hardcoded
+
 The text must contain at least one alphabetic character. Pure numbers/symbols are ignored.
