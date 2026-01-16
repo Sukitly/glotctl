@@ -13,7 +13,17 @@ Unlike MCP tools which give agents direct access to functions, skills teach agen
 
 ## Installation
 
-### Option 1: Copy to Your Project
+### Recommended: Using add-skill
+
+The easiest way to install the glot-i18n skill is using [add-skill](https://github.com/vercel-labs/add-skill):
+
+```bash
+npx add-skill Sukitly/glotctl
+```
+
+This will automatically add the skill to your project's `.skills/` directory.
+
+### Option 2: Copy to Your Project
 
 Copy the `glot-i18n` skill folder to your project:
 
@@ -24,7 +34,7 @@ cp -r .skills/glot-i18n /path/to/your/project/.skills/
 
 Or create a `.skills/glot-i18n/` directory in your project and copy the `SKILL.md` file.
 
-### Option 2: Reference from glot
+### Option 3: Reference from glot
 
 If your agent supports loading skills from installed packages, the skill is available in the glotctl package:
 
