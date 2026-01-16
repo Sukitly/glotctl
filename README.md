@@ -1,51 +1,56 @@
 # glot
 
-A fast CLI tool for checking internationalization (i18n) issues in Next.js projects using [next-intl](https://next-intl.dev/).
+Find hardcoded strings and missing i18n keys in your Next.js app.
 
-📖 **[Full Documentation](https://glotctl.mintlify.app/)**
-
-## Features
-
-- 🔍 **Hardcoded Text Detection** - Find untranslated text in JSX/TSX files
-- 🔑 **Missing Key Detection** - Identify keys used in code but missing from locale files
-- 🧹 **Orphan Key Detection** - Find unused keys in locale files
-- 🤖 **AI Integration** - MCP server for AI coding agents
-
-## Quick Example
-
-```tsx
-// ❌ Detected by glot
-<button>Submit</button>
-<input placeholder="Enter email" />
-
-// ✅ Using next-intl
-<button>{t("submit")}</button>
-<input placeholder={t("emailPlaceholder")} />
-```
-
-## Installation
+## Install
 
 ```bash
 npm install -D glotctl
+npx glot init
+npx glot check
 ```
 
-> The npm package is `glotctl`, but the CLI command is `glot`.
+## What it catches
 
-## Quick Start
+**Hardcoded text** — forgot to use `t()`
+
+```
+error: "Submit"  hardcoded-text
+  --> src/components/Button.tsx:3:22
+  |
+3 |       return <button>Submit</button>;
+  |                      ^^^^^^
+```
+
+**Missing keys** — used in code but not in locale files
+
+```
+error: "Common.submit"  missing-key
+  --> src/app.tsx:4:23
+  |
+4 |       return <button>{t("submit")}</button>;
+  |                       ^^^^^^^^^^^
+```
+
+**Orphan keys** — exists in some locales but not others
+
+```
+warning: "Common.oldKey"  orphan-key
+  --> messages/es.json:1:0
+  = note: in es ("Enviar")
+```
+
+## AI Agents
+
+Works as an MCP server for Claude, Cursor, etc:
 
 ```bash
-# Initialize configuration
-npx glot init
-
-# Check for i18n issues
-npx glot check
-
-# Clean unused keys (preview)
-npx glot clean
-
-# Clean unused keys (apply)
-npx glot clean --apply
+npx glot serve
 ```
+
+## Docs
+
+https://glotctl.mintlify.app/
 
 ## License
 
