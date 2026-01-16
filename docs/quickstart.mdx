@@ -211,6 +211,86 @@ Each issue shows:
 - File path and location
 - Source code context with a pointer
 
+## Existing Projects: Establish a Baseline
+
+If your project already has many hardcoded strings, fixing them all at once isn't practical. Use the `baseline` command to suppress existing warnings and start fresh.
+
+### Preview Changes (Dry Run)
+
+First, see what comments would be inserted:
+
+<CodeGroup>
+```bash npm
+npx glot baseline
+```
+
+```bash pnpm
+pnpm exec glot baseline
+```
+
+```bash yarn
+yarn glot baseline
+```
+
+```bash bun
+bunx glot baseline
+```
+
+</CodeGroup>
+
+Output:
+
+```
+Dry-run mode: showing comments that would be inserted
+
+./src/components/Button.tsx:5
+  Would add: // glot-disable-next-line
+  Before: return <button>Submit</button>;
+
+2 comments would be inserted. Run with --apply to insert.
+```
+
+### Apply the Baseline
+
+Insert the suppression comments:
+
+<CodeGroup>
+```bash npm
+npx glot baseline --apply
+```
+
+```bash pnpm
+pnpm exec glot baseline --apply
+```
+
+```bash yarn
+yarn glot baseline --apply
+```
+
+```bash bun
+bunx glot baseline --apply
+```
+
+</CodeGroup>
+
+This inserts `// glot-disable-next-line` comments above each hardcoded text:
+
+```tsx
+export function Button() {
+  // glot-disable-next-line
+  return <button>Submit</button>;
+}
+```
+
+Now you can:
+
+1. Add glot to CI immediately - new hardcoded text will be caught
+2. Gradually fix existing issues and remove the suppression comments over time
+
+<Tip>
+  See [Baseline Command](/commands/baseline) for more options and details.
+</Tip>
+
 ## Fixing Issues
 
 Replace hardcoded text with translation function calls:
