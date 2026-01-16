@@ -638,7 +638,6 @@ impl<'a> Visit for MissingKeyChecker<'a> {
 
             if let Some(translation_source) = self.get_binding(fn_name) {
                 let namespace = translation_source.primary_namespace();
-                let _is_from_props = translation_source.is_from_props();
                 let loc = self.source_map.lookup_char_pos(node.span.lo);
 
                 if let Some(arg) = node.args.first() {
@@ -783,7 +782,6 @@ impl<'a> Visit for MissingKeyChecker<'a> {
                 && let Some(translation_source) = self.get_binding(obj_name)
                 && let Some(arg) = node.args.first()
             {
-                let namespace = translation_source.primary_namespace();
                 let loc = self.source_map.lookup_char_pos(node.span.lo);
 
                 // For t.raw/t.rich/t.markup, extract the key from first argument
@@ -791,8 +789,11 @@ impl<'a> Visit for MissingKeyChecker<'a> {
                     // Static string key: t.raw("benefits")
                     Expr::Lit(Lit::Str(s)) => {
                         if let Some(key) = s.value.as_str() {
-                            let full_key = resolve_full_key(&namespace, key);
-                            self.add_used_key(loc, full_key);
+                            self.add_used_keys_with_namespaces(
+                                loc.clone(),
+                                key,
+                                &translation_source,
+                            );
                         }
                     }
                     // Template literal without expressions: t.raw(`benefits`)
@@ -801,8 +802,11 @@ impl<'a> Visit for MissingKeyChecker<'a> {
                             && let Some(cooked) = &quasi.cooked
                             && let Some(key) = cooked.as_str()
                         {
-                            let full_key = resolve_full_key(&namespace, key);
-                            self.add_used_key(loc, full_key);
+                            self.add_used_keys_with_namespaces(
+                                loc.clone(),
+                                key,
+                                &translation_source,
+                            );
                         }
                     }
                     _ => {

@@ -1529,6 +1529,47 @@ fn test_translation_prop_multiple_keys() {
 }
 
 #[test]
+fn test_translation_prop_method_calls_with_multiple_namespaces() {
+    let mut translation_prop = TranslationPropRegistry::new();
+    translation_prop.insert(
+        make_translation_prop_key("SharedComponent", "t"),
+        TranslationProp {
+            component_name: "SharedComponent".to_string(),
+            prop_name: "t".to_string(),
+            namespaces: vec![Some("PageA".to_string()), Some("PageB".to_string())],
+        },
+    );
+    let registries = Box::leak(Box::new(create_registries_with_translation_props(
+        translation_prop,
+    )));
+
+    let code = r#"
+        function SharedComponent({ t }: Props) {
+            t.raw("benefits");
+            t.rich("benefits");
+            t.markup(`benefits`);
+        }
+    "#;
+
+    let checker = parse_and_check_with_registries(code, registries);
+
+    let keys: HashSet<&str> = checker
+        .used_keys
+        .iter()
+        .map(|k| k.full_key.as_str())
+        .collect();
+    let expected = [
+        "PageA.benefits",
+        "PageB.benefits",
+    ];
+    for key in expected {
+        assert!(keys.contains(key));
+    }
+    // Each method call should record keys for both namespaces.
+    assert_eq!(checker.used_keys.len(), 6);
+}
+
+#[test]
 fn test_translation_prop_exported_function() {
     let mut translation_prop = TranslationPropRegistry::new();
     translation_prop.insert(
