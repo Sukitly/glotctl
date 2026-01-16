@@ -1,0 +1,324 @@
+---
+title: MCP Server
+description: Configure glot as an MCP server for code agents
+---
+
+Glot provides a [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server that gives code agents direct access to i18n scanning and translation tools.
+
+## Setup
+
+### Claude Code
+
+Add glot to your MCP configuration in `~/.claude/mcp_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "glot": {
+      "command": "npx",
+      "args": ["glotctl", "serve"]
+    }
+  }
+}
+```
+
+### Cursor
+
+Configure glot in Cursor's MCP settings:
+
+```json
+{
+  "mcp": {
+    "servers": {
+      "glot": {
+        "command": "npx",
+        "args": ["glotctl", "serve"]
+      }
+    }
+  }
+}
+```
+
+### Other MCP-Compatible Agents
+
+For other agents that support MCP, run the glot server with:
+
+```bash
+npx glotctl serve
+```
+
+The server communicates over stdio using the MCP protocol.
+
+## Available Tools
+
+The MCP server provides 7 tools. All tools require the `project_root_path` parameter.
+
+### `get_config`
+
+Returns the current glot configuration.
+
+**Input:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `project_root_path` | string | Yes | Path to the project root directory |
+
+**Output:**
+
+```json
+{
+  "fromFile": true,
+  "config": {
+    "primaryLocale": "en",
+    "messagesDir": "./messages",
+    "includes": ["src/app/[locale]", "src/components"],
+    "ignores": [],
+    "ignoreTestFiles": true,
+    "ignoreTexts": [],
+    "checkedAttributes": ["placeholder", "title", "alt", "aria-label"]
+  }
+}
+```
+
+### `get_locales`
+
+Lists available locale files with key counts.
+
+**Input:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `project_root_path` | string | Yes | Path to the project root directory |
+
+**Output:**
+
+```json
+{
+  "messagesDir": "./messages",
+  "primaryLocale": "en",
+  "locales": [
+    { "locale": "en", "filePath": "./messages/en.json", "keyCount": 156 },
+    { "locale": "es", "filePath": "./messages/es.json", "keyCount": 152 }
+  ]
+}
+```
+
+### `scan_overview`
+
+Returns statistics of all i18n issues in the project. **Use this first** to understand the overall state.
+
+**Input:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `project_root_path` | string | Yes | Path to the project root directory |
+
+**Output:**
+
+```json
+{
+  "hardcoded": {
+    "totalCount": 12,
+    "fileCount": 5
+  },
+  "primaryMissing": {
+    "totalCount": 4
+  },
+  "replicaLag": {
+    "totalCount": 8,
+    "affectedLocales": ["es", "fr"]
+  }
+}
+```
+
+### `scan_hardcoded`
+
+Returns detailed hardcoded text issues with pagination support.
+
+**Input:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `project_root_path` | string | Yes | Path to the project root directory |
+| `limit` | number | No | Results per page (default: 20, max: 100) |
+| `offset` | number | No | Offset for pagination (default: 0) |
+
+**Output:**
+
+```json
+{
+  "totalCount": 12,
+  "totalFileCount": 5,
+  "items": [
+    {
+      "filePath": "./src/components/Button.tsx",
+      "line": 5,
+      "col": 22,
+      "text": "Submit",
+      "sourceLine": "    return <button>Submit</button>;"
+    }
+  ],
+  "pagination": {
+    "offset": 0,
+    "limit": 20,
+    "hasMore": false
+  }
+}
+```
+
+### `scan_primary_missing`
+
+Lists translation keys used in code but missing from the primary locale file.
+
+**Input:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `project_root_path` | string | Yes | Path to the project root directory |
+| `limit` | number | No | Results per page (default: 50, max: 100) |
+| `offset` | number | No | Offset for pagination (default: 0) |
+
+**Output:**
+
+```json
+{
+  "totalCount": 4,
+  "items": [
+    {
+      "key": "common.submit",
+      "filePath": "./src/components/Button.tsx",
+      "line": 15
+    }
+  ],
+  "pagination": {
+    "offset": 0,
+    "limit": 50,
+    "hasMore": false
+  }
+}
+```
+
+### `scan_replica_lag`
+
+Lists keys that exist in the primary locale but are missing from other locales.
+
+**Input:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `project_root_path` | string | Yes | Path to the project root directory |
+| `limit` | number | No | Results per page (default: 50, max: 100) |
+| `offset` | number | No | Offset for pagination (default: 0) |
+
+**Output:**
+
+```json
+{
+  "totalCount": 8,
+  "items": [
+    {
+      "key": "common.newFeature",
+      "value": "New Feature",
+      "existsIn": "en",
+      "missingIn": ["es", "fr"]
+    }
+  ],
+  "pagination": {
+    "offset": 0,
+    "limit": 50,
+    "hasMore": false
+  }
+}
+```
+
+### `add_translations`
+
+Adds new translation keys to one or more locale files. Supports nested keys (e.g., `common.buttons.submit`).
+
+**Input:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `project_root_path` | string | Yes | Path to the project root directory |
+| `translations` | array | Yes | Array of translation entries |
+
+Each translation entry:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `locale` | string | Locale code (e.g., "en", "zh-CN") |
+| `keys` | object | Key-value pairs to add |
+
+**Example Input:**
+
+```json
+{
+  "project_root_path": "/path/to/project",
+  "translations": [
+    {
+      "locale": "en",
+      "keys": {
+        "common.submit": "Submit",
+        "common.cancel": "Cancel"
+      }
+    },
+    {
+      "locale": "es",
+      "keys": {
+        "common.submit": "Enviar",
+        "common.cancel": "Cancelar"
+      }
+    }
+  ]
+}
+```
+
+**Output:**
+
+```json
+{
+  "success": true,
+  "results": [
+    {
+      "locale": "en",
+      "success": true,
+      "filePath": "./messages/en.json",
+      "addedCount": 2,
+      "updatedCount": 0
+    }
+  ],
+  "summary": {
+    "totalLocales": 2,
+    "successfulLocales": 2,
+    "failedLocales": 0,
+    "totalKeysAdded": 4,
+    "totalKeysUpdated": 0
+  }
+}
+```
+
+## Recommended Workflow
+
+The MCP server instructions guide code agents to follow this workflow:
+
+```
+1. scan_overview      → Understand the overall state
+2. Fix hardcoded     → Replace text with t() calls, add keys
+3. Fix primary_missing → Add missing keys to primary locale
+4. Fix replica_lag    → Sync keys to other locales
+```
+
+<Note>
+This order is important! Fixing hardcoded issues may create new primary_missing issues, and fixing those may create new replica_lag issues.
+</Note>
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Agent Skill" icon="brain" href="/agents/skill">
+    Install the glot-i18n skill for guided workflows
+  </Card>
+  <Card title="Configuration" icon="gear" href="/configuration">
+    Configure glot for your project
+  </Card>
+</CardGroup>

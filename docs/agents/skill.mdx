@@ -1,0 +1,166 @@
+---
+title: Agent Skill
+description: Install the glot-i18n skill to teach code agents how to fix i18n issues
+---
+
+The **glot-i18n** skill is an [Agent Skill](https://agentskills.io/) that teaches code agents the recommended workflow for fixing i18n issues in Next.js + next-intl projects.
+
+## What is an Agent Skill?
+
+Agent Skills are a lightweight, open format for extending code agent capabilities. A skill provides instructions that guide agents through complex tasks step by step.
+
+Unlike MCP tools which give agents direct access to functions, skills teach agents **how** to approach a problem using clear instructions and best practices.
+
+## Installation
+
+### Option 1: Copy to Your Project
+
+Copy the `glot-i18n` skill folder to your project:
+
+```bash
+# From the glot repository
+cp -r .skills/glot-i18n /path/to/your/project/.skills/
+```
+
+Or create a `.skills/glot-i18n/` directory in your project and copy the `SKILL.md` file.
+
+### Option 2: Reference from glot
+
+If your agent supports loading skills from installed packages, the skill is available in the glotctl package:
+
+```
+node_modules/glotctl/.skills/glot-i18n/
+```
+
+## Prerequisites
+
+The skill requires:
+
+1. **glot MCP server** - Must be configured and available (see [MCP Setup](/agents/mcp))
+2. **Project configuration** - A `.glotrc.json` file (run `glot init` if missing)
+3. **next-intl** - Your project should use next-intl for translations
+
+## How It Works
+
+When you ask a code agent to fix i18n issues, the skill guides it through this workflow:
+
+```
+1. scan_overview     → Understand the scope of issues
+2. Fix hardcoded    → Replace text with t() calls
+3. Fix primary_missing → Add keys to primary locale
+4. Fix replica_lag   → Sync to other locales
+```
+
+<Note>
+The skill emphasizes following this order because fixing hardcoded issues may create new primary_missing issues, and fixing those may create replica_lag issues.
+</Note>
+
+## What the Skill Teaches
+
+### Key Naming Conventions
+
+The skill teaches agents to use structured key names:
+
+```
+<area>.<section>.<element>
+```
+
+Examples:
+- `common.buttons.submit` - Shared UI elements
+- `auth.login.title` - Authentication pages  
+- `errors.validation.required` - Error messages
+
+### Code Transformation Patterns
+
+The skill provides patterns for common transformations:
+
+**JSX Text:**
+```tsx
+// Before
+<button>Submit</button>
+
+// After
+<button>{t("common.submit")}</button>
+```
+
+**Attributes:**
+```tsx
+// Before
+<input placeholder="Enter email" />
+
+// After
+<input placeholder={t("auth.emailPlaceholder")} />
+```
+
+### Best Practices
+
+The skill guides agents to:
+
+- Work in batches of 10-20 issues at a time
+- Re-scan after fixes to verify progress
+- Ensure `useTranslations` hook is imported
+- Handle pagination for large result sets
+- Preserve existing code style
+
+## Skill Contents
+
+The skill includes two files:
+
+| File | Purpose |
+|------|---------|
+| `SKILL.md` | Main instructions (~350 lines) |
+| `references/EXAMPLES.md` | Detailed code examples (~250 lines) |
+
+## Example Prompts
+
+Once the skill is installed, try these prompts:
+
+```
+"Use glot to fix all hardcoded text in this project"
+```
+
+```
+"Check for i18n issues and fix them following the glot workflow"
+```
+
+```
+"Add translations for the new signup form"
+```
+
+## Supported Agents
+
+Agent Skills are supported by:
+
+- Claude Code
+- Cursor
+- Gemini CLI
+- VS Code (with compatible extensions)
+- And [other compatible agents](https://agentskills.io/)
+
+## Troubleshooting
+
+### Skill not being loaded
+
+Ensure the skill is in a `.skills/` directory in your project root or in a location your agent searches.
+
+### Agent not following the workflow
+
+Make sure:
+1. The glot MCP server is configured and running
+2. The project has a valid `.glotrc.json`
+3. Your agent supports Agent Skills
+
+### Need more detailed instructions?
+
+View the full skill content in your project at `.skills/glot-i18n/SKILL.md`.
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="MCP Setup" icon="server" href="/agents/mcp">
+    Configure the glot MCP server
+  </Card>
+  <Card title="Agent Skills Spec" icon="book" href="https://agentskills.io/specification">
+    Learn about the Agent Skills format
+  </Card>
+</CardGroup>
