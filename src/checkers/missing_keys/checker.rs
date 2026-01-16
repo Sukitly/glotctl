@@ -56,9 +56,9 @@ pub(crate) fn resolve_full_key(namespace: &Option<String>, key: &str) -> String 
 pub struct MissingKeyChecker<'a> {
     file_path: &'a str,
     source_map: &'a SourceMap,
-    /// Maps translation function variable names to their source.
+    /// Stack of translation function bindings scoped by function/arrow.
     /// e.g., { "t" -> Direct { namespace: Some("Common") } }
-    bindings: HashMap<String, TranslationSource>,
+    bindings_stack: Vec<HashMap<String, TranslationSource>>,
     pub used_keys: Vec<UsedKey>,
     pub warnings: Vec<DynamicKeyWarning>,
     registries: &'a Registries,
@@ -93,7 +93,7 @@ impl<'a> MissingKeyChecker<'a> {
         Self {
             file_path,
             source_map,
-            bindings: HashMap::new(),
+            bindings_stack: vec![HashMap::new()],
             used_keys: Vec::new(),
             warnings: Vec::new(),
             registries,
@@ -157,6 +157,29 @@ impl<'a> MissingKeyChecker<'a> {
         }
 
         (annotations, extract_result.warnings)
+    }
+
+    fn enter_scope(&mut self) {
+        self.bindings_stack.push(HashMap::new());
+    }
+
+    fn exit_scope(&mut self) {
+        self.bindings_stack.pop();
+    }
+
+    fn insert_binding(&mut self, name: String, source: TranslationSource) {
+        if let Some(scope) = self.bindings_stack.last_mut() {
+            scope.insert(name, source);
+        }
+    }
+
+    fn get_binding(&self, name: &str) -> Option<TranslationSource> {
+        for scope in self.bindings_stack.iter().rev() {
+            if let Some(source) = scope.get(name) {
+                return Some(source.clone());
+            }
+        }
+        None
     }
 
     /// Check if a line has glot-message-keys coverage.
@@ -453,7 +476,7 @@ impl<'a> MissingKeyChecker<'a> {
 
         if let Some(translation_prop) = self.registries.translation_prop.get(&key) {
             // Register this prop as a translation function binding with FromProps source
-            self.bindings.insert(
+            self.insert_binding(
                 prop_name.to_string(),
                 TranslationSource::FromProps {
                     namespaces: translation_prop.namespaces.clone(),
@@ -462,24 +485,20 @@ impl<'a> MissingKeyChecker<'a> {
         }
     }
 
-    /// Check if a variable declarator is an arrow function component and register its props.
-    fn check_arrow_component(&mut self, decl: &VarDeclarator) {
+    /// Check if a variable declarator is an arrow function component.
+    fn extract_arrow_component(decl: &VarDeclarator) -> Option<(String, &swc_ecma_ast::ArrowExpr)> {
         let Pat::Ident(binding_ident) = &decl.name else {
-            return;
+            return None;
         };
         let Some(init) = &decl.init else {
-            return;
+            return None;
         };
         let Expr::Arrow(arrow) = &**init else {
-            return;
+            return None;
         };
 
         let component_name = binding_ident.id.sym.to_string();
-
-        // Check first parameter for destructured props
-        if let Some(first_param) = arrow.params.first() {
-            self.register_translation_props_from_pat(&component_name, first_param);
-        }
+        Some((component_name, arrow))
     }
 
     pub fn check(mut self, module: &Module) -> MissingKeyResult {
@@ -532,9 +551,23 @@ impl<'a> Visit for MissingKeyChecker<'a> {
     /// Visit function declarations to detect translation function parameters.
     /// e.g., `function AdultLandingPage({ t }: Props) { ... }`
     fn visit_fn_decl(&mut self, node: &FnDecl) {
+        self.enter_scope();
         let component_name = node.ident.sym.to_string();
         self.register_translation_props_from_params(&component_name, &node.function.params);
+        node.function.visit_children_with(self);
+        self.exit_scope();
+    }
+
+    fn visit_function(&mut self, node: &swc_ecma_ast::Function) {
+        self.enter_scope();
         node.visit_children_with(self);
+        self.exit_scope();
+    }
+
+    fn visit_arrow_expr(&mut self, node: &swc_ecma_ast::ArrowExpr) {
+        self.enter_scope();
+        node.visit_children_with(self);
+        self.exit_scope();
     }
 
     /// Visit variable declarations to detect:
@@ -542,8 +575,23 @@ impl<'a> Visit for MissingKeyChecker<'a> {
     /// 2. Arrow function components: `const MyComponent = ({ t }: Props) => { ... }`
     fn visit_var_decl(&mut self, node: &VarDecl) {
         for decl in &node.decls {
-            // Check for arrow function components
-            self.check_arrow_component(decl);
+            // Special handling for arrow function components:
+            // We need to manually manage scope here because:
+            // 1. Arrow components need to register props (like `t`) as translation bindings
+            //    BEFORE visiting the function body
+            // 2. Using `arrow.visit_children_with(self)` only visits the body/params,
+            //    it won't trigger `visit_arrow_expr` again (avoiding double scoping)
+            // 3. The `continue` skips the default `decl.visit_children_with(self)` to avoid
+            //    processing the same arrow expression twice
+            if let Some((component_name, arrow)) = Self::extract_arrow_component(decl) {
+                self.enter_scope();
+                if let Some(first_param) = arrow.params.first() {
+                    self.register_translation_props_from_pat(&component_name, first_param);
+                }
+                arrow.visit_children_with(self);
+                self.exit_scope();
+                continue;
+            }
 
             if let Some(init) = &decl.init {
                 let call_expr = match &**init {
@@ -565,8 +613,7 @@ impl<'a> Visit for MissingKeyChecker<'a> {
                     {
                         let var_name = binding_ident.id.sym.to_string();
                         let namespace = extract_namespace_from_call(call);
-                        self.bindings
-                            .insert(var_name, TranslationSource::Direct { namespace });
+                        self.insert_binding(var_name, TranslationSource::Direct { namespace });
                     }
                 }
 
@@ -579,8 +626,8 @@ impl<'a> Visit for MissingKeyChecker<'a> {
                         .register_object_access(&var_name, &object_name);
                 }
             }
+            decl.visit_children_with(self);
         }
-        node.visit_children_with(self);
     }
 
     fn visit_call_expr(&mut self, node: &CallExpr) {
@@ -589,7 +636,7 @@ impl<'a> Visit for MissingKeyChecker<'a> {
         {
             let fn_name = ident.sym.as_str();
 
-            if let Some(translation_source) = self.bindings.get(fn_name).cloned() {
+            if let Some(translation_source) = self.get_binding(fn_name) {
                 let namespace = translation_source.primary_namespace();
                 let _is_from_props = translation_source.is_from_props();
                 let loc = self.source_map.lookup_char_pos(node.span.lo);
@@ -695,7 +742,7 @@ impl<'a> Visit for MissingKeyChecker<'a> {
                 let should_record = match &*arg.expr {
                     Expr::Ident(t_ident) => {
                         let t_var = t_ident.sym.as_str();
-                        self.bindings.contains_key(t_var)
+                        self.get_binding(t_var).is_some()
                     }
                     _ => true,
                 };
@@ -704,8 +751,7 @@ impl<'a> Visit for MissingKeyChecker<'a> {
                     let namespace = match &*arg.expr {
                         Expr::Ident(t_ident) => {
                             let t_var = t_ident.sym.as_str();
-                            self.bindings
-                                .get(t_var)
+                            self.get_binding(t_var)
                                 .and_then(|src| src.primary_namespace())
                         }
                         _ => None,
@@ -734,7 +780,7 @@ impl<'a> Visit for MissingKeyChecker<'a> {
 
             // Check if this is a translation method call (t.raw, t.rich, t.markup)
             if matches!(method_name, "raw" | "rich" | "markup")
-                && let Some(translation_source) = self.bindings.get(obj_name).cloned()
+                && let Some(translation_source) = self.get_binding(obj_name)
                 && let Some(arg) = node.args.first()
             {
                 let namespace = translation_source.primary_namespace();

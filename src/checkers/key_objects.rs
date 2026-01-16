@@ -101,9 +101,9 @@ pub struct KeyObjectCollector {
     pub translation_props: Vec<TranslationProp>,
     /// Tracks nesting depth: 0 = module level, >0 = inside function/arrow
     scope_depth: usize,
-    /// Translation function bindings in current file: var_name -> namespace
-    /// Used to detect when a translation function is passed as a prop
-    translation_bindings: HashMap<String, Option<String>>,
+    /// Stack of translation function bindings scoped by function/arrow.
+    /// Used to detect when a translation function is passed as a prop.
+    translation_bindings_stack: Vec<HashMap<String, Option<String>>>,
 }
 
 const TRANSLATION_HOOKS: &[&str] = &["useTranslations", "getTranslations"];
@@ -133,8 +133,31 @@ impl KeyObjectCollector {
             imports: Vec::new(),
             translation_props: Vec::new(),
             scope_depth: 0,
-            translation_bindings: HashMap::new(),
+            translation_bindings_stack: vec![HashMap::new()],
         }
+    }
+
+    fn enter_binding_scope(&mut self) {
+        self.translation_bindings_stack.push(HashMap::new());
+    }
+
+    fn exit_binding_scope(&mut self) {
+        self.translation_bindings_stack.pop();
+    }
+
+    fn insert_translation_binding(&mut self, name: String, namespace: Option<String>) {
+        if let Some(scope) = self.translation_bindings_stack.last_mut() {
+            scope.insert(name, namespace);
+        }
+    }
+
+    fn get_translation_binding(&self, name: &str) -> Option<Option<String>> {
+        for scope in self.translation_bindings_stack.iter().rev() {
+            if let Some(namespace) = scope.get(name) {
+                return Some(namespace.clone());
+            }
+        }
+        None
     }
 
     /// Extract all string values from an object literal
@@ -341,8 +364,7 @@ impl KeyObjectCollector {
             let fn_name = ident.sym.as_str();
             if is_translation_hook(fn_name) {
                 let namespace = extract_namespace_from_call(call);
-                self.translation_bindings
-                    .insert(var_name.to_string(), namespace);
+                self.insert_translation_binding(var_name.to_string(), namespace);
             }
         }
     }
@@ -351,13 +373,17 @@ impl KeyObjectCollector {
 impl Visit for KeyObjectCollector {
     fn visit_function(&mut self, node: &Function) {
         self.scope_depth += 1;
+        self.enter_binding_scope();
         node.visit_children_with(self);
+        self.exit_binding_scope();
         self.scope_depth -= 1;
     }
 
     fn visit_arrow_expr(&mut self, node: &ArrowExpr) {
         self.scope_depth += 1;
+        self.enter_binding_scope();
         node.visit_children_with(self);
+        self.exit_binding_scope();
         self.scope_depth -= 1;
     }
 
@@ -463,7 +489,7 @@ impl Visit for KeyObjectCollector {
                         let var_name = value_ident.sym.to_string();
 
                         // If this variable is a tracked translation function, record it
-                        if let Some(namespace) = self.translation_bindings.get(&var_name) {
+                        if let Some(namespace) = self.get_translation_binding(&var_name) {
                             self.add_or_update_translation_prop(
                                 &comp_name,
                                 &prop_name,
@@ -1179,20 +1205,60 @@ mod tests {
         let collector = parse_and_collect(code);
 
         // Should track both translation bindings
-        assert_eq!(collector.translation_bindings.len(), 2);
-        assert_eq!(
-            collector.translation_bindings.get("t"),
-            Some(&Some("NS1".to_string()))
-        );
-        assert_eq!(
-            collector.translation_bindings.get("translate"),
-            Some(&Some("NS2".to_string()))
-        );
+        assert_eq!(collector.translation_bindings_stack.len(), 1);
+        let scope = collector.translation_bindings_stack.last().unwrap();
+        assert_eq!(scope.len(), 2);
+        assert_eq!(scope.get("t"), Some(&Some("NS1".to_string())));
+        assert_eq!(scope.get("translate"), Some(&Some("NS2".to_string())));
         // Should not track non-translation function
-        assert!(
-            !collector
-                .translation_bindings
-                .contains_key("notTranslation")
-        );
+        assert!(!scope.contains_key("notTranslation"));
+    }
+
+    #[test]
+    fn test_translation_binding_scope_isolated() {
+        let code = r#"
+            function Page() {
+                const t = useTranslations("Page");
+                return null;
+            }
+            <Child t={t} />;
+        "#;
+        let collector = parse_and_collect(code);
+
+        // Binding inside function should not leak to module-level JSX
+        assert!(collector.translation_props.is_empty());
+    }
+
+    #[test]
+    fn test_nested_arrow_binding_scope() {
+        // Test that nested arrow functions have isolated scopes
+        let code = r#"
+            const outer = () => {
+                const t = useTranslations("Outer");
+                const inner = () => {
+                    const t = useTranslations("Inner");
+                    return <Child t={t} />;
+                };
+                return <Parent t={t} />;
+            };
+        "#;
+        let collector = parse_and_collect(code);
+
+        // Should collect both Parent and Child translation props
+        assert_eq!(collector.translation_props.len(), 2);
+
+        let parent = collector
+            .translation_props
+            .iter()
+            .find(|p| p.component_name == "Parent")
+            .unwrap();
+        assert_eq!(parent.namespaces, vec![Some("Outer".to_string())]);
+
+        let child = collector
+            .translation_props
+            .iter()
+            .find(|p| p.component_name == "Child")
+            .unwrap();
+        assert_eq!(child.namespaces, vec![Some("Inner".to_string())]);
     }
 }

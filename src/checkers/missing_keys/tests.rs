@@ -1408,6 +1408,38 @@ fn test_translation_prop_not_in_registry() {
 }
 
 #[test]
+fn test_translation_prop_scope_isolated() {
+    // Only ComponentA.t is registered
+    let mut translation_prop = TranslationPropRegistry::new();
+    translation_prop.insert(
+        make_translation_prop_key("ComponentA", "t"),
+        TranslationProp {
+            component_name: "ComponentA".to_string(),
+            prop_name: "t".to_string(),
+            namespaces: vec![Some("A".to_string())],
+        },
+    );
+    let registries = Box::leak(Box::new(create_registries_with_translation_props(
+        translation_prop,
+    )));
+
+    let code = r#"
+        function ComponentA({ t }: Props) {
+            return <div>{t("keyA")}</div>;
+        }
+
+        function ComponentB({ t }: Props) {
+            return <div>{t("keyB")}</div>;
+        }
+    "#;
+
+    let checker = parse_and_check_with_registries(code, registries);
+
+    assert_eq!(checker.used_keys.len(), 1);
+    assert_eq!(checker.used_keys[0].full_key, "A.keyA");
+}
+
+#[test]
 fn test_translation_prop_with_direct_binding_same_name() {
     // Create registry with a translation prop
     let mut translation_prop = TranslationPropRegistry::new();
@@ -1521,6 +1553,60 @@ fn test_translation_prop_exported_function() {
 
     assert_eq!(checker.used_keys.len(), 1);
     assert_eq!(checker.used_keys[0].full_key, "Page.content");
+}
+
+#[test]
+fn test_nested_function_binding_shadowing() {
+    // Test that inner function's t shadows outer t
+    let code = r#"
+        const t = useTranslations("Outer");
+
+        function Parent() {
+            // Uses outer t
+            return <div>{t("outerKey")}</div>;
+        }
+
+        function Child() {
+            const t = useTranslations("Inner");  // shadows module-level t
+            return <div>{t("innerKey")}</div>;
+        }
+    "#;
+    let checker = parse_and_check(code);
+
+    assert_eq!(checker.used_keys.len(), 2);
+    assert!(
+        checker
+            .used_keys
+            .iter()
+            .any(|k| k.full_key == "Outer.outerKey")
+    );
+    assert!(
+        checker
+            .used_keys
+            .iter()
+            .any(|k| k.full_key == "Inner.innerKey")
+    );
+}
+
+#[test]
+fn test_translation_binding_does_not_leak_between_siblings() {
+    // Test that t defined in one function doesn't affect sibling functions
+    let code = r#"
+        function ComponentA() {
+            const t = useTranslations("A");
+            return <div>{t("keyA")}</div>;
+        }
+
+        function ComponentB() {
+            // No t defined here - t("keyB") should NOT be detected
+            return <div>{t("keyB")}</div>;
+        }
+    "#;
+    let checker = parse_and_check(code);
+
+    // Only ComponentA's key should be detected
+    assert_eq!(checker.used_keys.len(), 1);
+    assert_eq!(checker.used_keys[0].full_key, "A.keyA");
 }
 
 // ============================================================
