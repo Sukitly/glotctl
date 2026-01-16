@@ -7,16 +7,41 @@ Glot provides a [Model Context Protocol (MCP)](https://modelcontextprotocol.io/)
 
 ## Setup
 
+<Note>
+Before configuring the MCP server, make sure you have:
+1. Installed glotctl as a dev dependency (see [Quick Start](/quickstart#installation))
+2. Initialized the configuration with `glot init`
+</Note>
+
+Adjust the command based on your package manager:
+
+| Package Manager | Command |
+|-----------------|---------|
+| npm | `["npx", "glot", "serve"]` |
+| pnpm | `["pnpm", "exec", "glot", "serve"]` |
+| yarn | `["yarn", "glot", "serve"]` |
+| bun | `["bunx", "glot", "serve"]` |
+
+The examples below use npm. Replace the command with the appropriate one for your package manager.
+
 ### Claude Code
 
-Add glot to your MCP configuration in `~/.claude/mcp_config.json`:
+**Option 1: Using CLI (recommended)**
+
+```bash
+claude mcp add --transport stdio glot -- npx glot serve
+```
+
+**Option 2: Using project configuration**
+
+Create `.mcp.json` in your project root to share with your team:
 
 ```json
 {
   "mcpServers": {
     "glot": {
       "command": "npx",
-      "args": ["glotctl", "serve"]
+      "args": ["glot", "serve"]
     }
   }
 }
@@ -24,16 +49,31 @@ Add glot to your MCP configuration in `~/.claude/mcp_config.json`:
 
 ### Cursor
 
-Configure glot in Cursor's MCP settings:
+Add glot to your Cursor MCP configuration. Create `.cursor/mcp.json` in your project (or `~/.cursor/mcp.json` for global access):
 
 ```json
 {
+  "mcpServers": {
+    "glot": {
+      "command": "npx",
+      "args": ["glot", "serve"]
+    }
+  }
+}
+```
+
+### OpenCode
+
+Configure glot in your project's `opencode.json` file:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
   "mcp": {
-    "servers": {
-      "glot": {
-        "command": "npx",
-        "args": ["glotctl", "serve"]
-      }
+    "glot": {
+      "type": "local",
+      "command": ["npx", "glot", "serve"],
+      "enabled": true
     }
   }
 }
@@ -44,7 +84,7 @@ Configure glot in Cursor's MCP settings:
 For other agents that support MCP, run the glot server with:
 
 ```bash
-npx glotctl serve
+npx glot serve
 ```
 
 The server communicates over stdio using the MCP protocol.
