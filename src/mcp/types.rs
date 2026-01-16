@@ -1,5 +1,87 @@
 use schemars::JsonSchema;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+
+// ============================================================
+// Tool Input Parameters
+// ============================================================
+
+/// Parameters for scan_hardcoded tool
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ScanHardcodedParams {
+    /// Path to the project root directory
+    pub project_root_path: String,
+    /// Maximum number of items to return (default: 20, max: 100)
+    #[serde(default)]
+    pub limit: Option<u64>,
+    /// Number of items to skip (default: 0)
+    #[serde(default)]
+    pub offset: Option<u64>,
+}
+
+/// Parameters for scan_overview tool
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ScanOverviewParams {
+    /// Path to the project root directory
+    pub project_root_path: String,
+}
+
+/// Parameters for scan_primary_missing tool
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ScanPrimaryMissingParams {
+    /// Path to the project root directory
+    pub project_root_path: String,
+    /// Maximum number of items to return (default: 50, max: 100)
+    #[serde(default)]
+    pub limit: Option<u64>,
+    /// Number of items to skip (default: 0)
+    #[serde(default)]
+    pub offset: Option<u64>,
+}
+
+/// Parameters for scan_replica_lag tool
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ScanReplicaLagParams {
+    /// Path to the project root directory
+    pub project_root_path: String,
+    /// Maximum number of items to return (default: 50, max: 100)
+    #[serde(default)]
+    pub limit: Option<u64>,
+    /// Number of items to skip (default: 0)
+    #[serde(default)]
+    pub offset: Option<u64>,
+}
+
+/// Parameters for get_locales tool
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct GetLocalesParams {
+    /// Path to the project root directory
+    pub project_root_path: String,
+}
+
+/// Parameters for get_config tool
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct GetConfigParams {
+    /// Path to the project root directory
+    pub project_root_path: String,
+}
+
+/// Parameters for add_translations tool
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct AddTranslationsParams {
+    /// Path to the project root directory
+    pub project_root_path: String,
+    /// Array of translations to add
+    pub translations: Vec<TranslationEntry>,
+}
+
+/// A translation entry for a single locale
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct TranslationEntry {
+    /// Locale code (e.g., "en", "zh-CN")
+    pub locale: String,
+    /// Key-value pairs to add. Supports nested keys (e.g., "common.title") and string arrays.
+    pub keys: serde_json::Map<String, serde_json::Value>,
+}
 
 // ============================================================
 // Config Types (get_config)
@@ -278,4 +360,222 @@ pub struct Pagination {
     pub offset: usize,
     pub limit: usize,
     pub has_more: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    // ============================================================
+    // Parameter Deserialization Tests
+    // ============================================================
+
+    #[test]
+    fn test_scan_hardcoded_params_full() {
+        let json = json!({
+            "project_root_path": "/path/to/project",
+            "limit": 50,
+            "offset": 10
+        });
+        let params: ScanHardcodedParams = serde_json::from_value(json).unwrap();
+        assert_eq!(params.project_root_path, "/path/to/project");
+        assert_eq!(params.limit, Some(50));
+        assert_eq!(params.offset, Some(10));
+    }
+
+    #[test]
+    fn test_scan_hardcoded_params_minimal() {
+        let json = json!({
+            "project_root_path": "/path/to/project"
+        });
+        let params: ScanHardcodedParams = serde_json::from_value(json).unwrap();
+        assert_eq!(params.project_root_path, "/path/to/project");
+        assert_eq!(params.limit, None);
+        assert_eq!(params.offset, None);
+    }
+
+    #[test]
+    fn test_scan_hardcoded_params_missing_required() {
+        let json = json!({
+            "limit": 50
+        });
+        let result: Result<ScanHardcodedParams, _> = serde_json::from_value(json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_scan_overview_params() {
+        let json = json!({
+            "project_root_path": "/my/project"
+        });
+        let params: ScanOverviewParams = serde_json::from_value(json).unwrap();
+        assert_eq!(params.project_root_path, "/my/project");
+    }
+
+    #[test]
+    fn test_scan_primary_missing_params() {
+        let json = json!({
+            "project_root_path": "/path",
+            "limit": 100,
+            "offset": 25
+        });
+        let params: ScanPrimaryMissingParams = serde_json::from_value(json).unwrap();
+        assert_eq!(params.project_root_path, "/path");
+        assert_eq!(params.limit, Some(100));
+        assert_eq!(params.offset, Some(25));
+    }
+
+    #[test]
+    fn test_scan_replica_lag_params() {
+        let json = json!({
+            "project_root_path": "/path"
+        });
+        let params: ScanReplicaLagParams = serde_json::from_value(json).unwrap();
+        assert_eq!(params.project_root_path, "/path");
+        assert_eq!(params.limit, None);
+        assert_eq!(params.offset, None);
+    }
+
+    #[test]
+    fn test_get_locales_params() {
+        let json = json!({
+            "project_root_path": "/locales/path"
+        });
+        let params: GetLocalesParams = serde_json::from_value(json).unwrap();
+        assert_eq!(params.project_root_path, "/locales/path");
+    }
+
+    #[test]
+    fn test_get_config_params() {
+        let json = json!({
+            "project_root_path": "/config/path"
+        });
+        let params: GetConfigParams = serde_json::from_value(json).unwrap();
+        assert_eq!(params.project_root_path, "/config/path");
+    }
+
+    #[test]
+    fn test_add_translations_params() {
+        let json = json!({
+            "project_root_path": "/path",
+            "translations": [
+                {"locale": "en", "keys": {"title": "Hello", "desc": "World"}},
+                {"locale": "zh-CN", "keys": {"title": "你好"}}
+            ]
+        });
+        let params: AddTranslationsParams = serde_json::from_value(json).unwrap();
+        assert_eq!(params.project_root_path, "/path");
+        assert_eq!(params.translations.len(), 2);
+        assert_eq!(params.translations[0].locale, "en");
+        assert_eq!(params.translations[0].keys.len(), 2);
+        assert_eq!(params.translations[1].locale, "zh-CN");
+        assert_eq!(params.translations[1].keys.len(), 1);
+    }
+
+    #[test]
+    fn test_add_translations_params_empty_translations() {
+        let json = json!({
+            "project_root_path": "/path",
+            "translations": []
+        });
+        let params: AddTranslationsParams = serde_json::from_value(json).unwrap();
+        assert!(params.translations.is_empty());
+    }
+
+    #[test]
+    fn test_translation_entry_with_array_value() {
+        let json = json!({
+            "locale": "en",
+            "keys": {"items": ["one", "two", "three"]}
+        });
+        let entry: TranslationEntry = serde_json::from_value(json).unwrap();
+        assert_eq!(entry.locale, "en");
+        assert!(entry.keys["items"].is_array());
+    }
+
+    // ============================================================
+    // JSON Schema Validation Tests
+    // ============================================================
+
+    #[test]
+    fn test_scan_overview_params_schema_has_required_field() {
+        let schema = schemars::schema_for!(ScanOverviewParams);
+        let schema_json = serde_json::to_value(&schema).unwrap();
+
+        // Verify project_root_path is in required array
+        let required = schema_json["required"].as_array().unwrap();
+        assert!(required.contains(&json!("project_root_path")));
+
+        // Verify property exists
+        assert!(schema_json["properties"]["project_root_path"].is_object());
+    }
+
+    #[test]
+    fn test_scan_hardcoded_params_schema_optional_fields() {
+        let schema = schemars::schema_for!(ScanHardcodedParams);
+        let schema_json = serde_json::to_value(&schema).unwrap();
+
+        // Verify project_root_path is required
+        let required = schema_json["required"].as_array().unwrap();
+        assert!(required.contains(&json!("project_root_path")));
+
+        // Verify limit and offset are NOT required (optional fields)
+        assert!(!required.contains(&json!("limit")));
+        assert!(!required.contains(&json!("offset")));
+
+        // But they should exist as properties
+        assert!(schema_json["properties"]["limit"].is_object());
+        assert!(schema_json["properties"]["offset"].is_object());
+    }
+
+    #[test]
+    fn test_add_translations_params_schema() {
+        let schema = schemars::schema_for!(AddTranslationsParams);
+        let schema_json = serde_json::to_value(&schema).unwrap();
+
+        // Verify both fields are required
+        let required = schema_json["required"].as_array().unwrap();
+        assert!(required.contains(&json!("project_root_path")));
+        assert!(required.contains(&json!("translations")));
+
+        // Verify translations is an array type
+        let translations_prop = &schema_json["properties"]["translations"];
+        assert!(translations_prop.is_object());
+    }
+
+    #[test]
+    fn test_translation_entry_schema() {
+        let schema = schemars::schema_for!(TranslationEntry);
+        let schema_json = serde_json::to_value(&schema).unwrap();
+
+        // Verify both locale and keys are required
+        let required = schema_json["required"].as_array().unwrap();
+        assert!(required.contains(&json!("locale")));
+        assert!(required.contains(&json!("keys")));
+    }
+
+    #[test]
+    fn test_all_params_have_project_root_path_required() {
+        // Ensure all parameter types have project_root_path as required
+        let schemas = vec![
+            schemars::schema_for!(ScanHardcodedParams),
+            schemars::schema_for!(ScanOverviewParams),
+            schemars::schema_for!(ScanPrimaryMissingParams),
+            schemars::schema_for!(ScanReplicaLagParams),
+            schemars::schema_for!(GetLocalesParams),
+            schemars::schema_for!(GetConfigParams),
+            schemars::schema_for!(AddTranslationsParams),
+        ];
+
+        for schema in schemas {
+            let schema_json = serde_json::to_value(&schema).unwrap();
+            let required = schema_json["required"].as_array().unwrap();
+            assert!(
+                required.contains(&json!("project_root_path")),
+                "Schema missing required project_root_path: {:?}",
+                schema_json
+            );
+        }
+    }
 }

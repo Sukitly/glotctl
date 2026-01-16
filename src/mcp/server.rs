@@ -6,7 +6,8 @@ use anyhow::Result;
 use rmcp::{
     ErrorData as McpError, ServerHandler, ServiceExt,
     handler::server::tool::ToolRouter,
-    model::{CallToolResult, Content, JsonObject, ServerCapabilities, ServerInfo},
+    handler::server::wrapper::Parameters,
+    model::{CallToolResult, Content, ServerCapabilities, ServerInfo},
     tool, tool_handler, tool_router,
 };
 use serde_json;
@@ -21,10 +22,12 @@ use crate::{
 
 use super::helpers::{parse_missing_locales, process_locale_translation};
 use super::types::{
-    AddTranslationsResult, AddTranslationsSummary, ConfigDto, ConfigValues, HardcodedItem,
-    HardcodedScanResult, HardcodedStats, LocaleInfo, LocalesResult, Pagination, PrimaryMissingItem,
-    PrimaryMissingScanResult, PrimaryMissingStats, ReplicaLagItem, ReplicaLagScanResult,
-    ReplicaLagStats, ScanOverviewResult,
+    AddTranslationsParams, AddTranslationsResult, AddTranslationsSummary, ConfigDto, ConfigValues,
+    GetConfigParams, GetLocalesParams, HardcodedItem, HardcodedScanResult, HardcodedStats,
+    LocaleInfo, LocalesResult, Pagination, PrimaryMissingItem, PrimaryMissingScanResult,
+    PrimaryMissingStats, ReplicaLagItem, ReplicaLagScanResult, ReplicaLagStats,
+    ScanHardcodedParams, ScanOverviewParams, ScanOverviewResult, ScanPrimaryMissingParams,
+    ScanReplicaLagParams,
 };
 
 #[derive(Clone)]
@@ -42,28 +45,15 @@ impl GlotMcpServer {
 
     /// Scan for hardcoded text that should use translations
     #[tool(
-        description = "Scan for hardcoded text in JSX/TSX files that should use translations. Returns paginated list of issues. Input: {project_root_path: string, limit?: number, offset?: number}"
+        description = "Scan for hardcoded text in JSX/TSX files that should use translations. Returns paginated list of issues."
     )]
-    async fn scan_hardcoded(&self, params: JsonObject) -> Result<CallToolResult, McpError> {
-        let path = params
-            .get("project_root_path")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| {
-                McpError::invalid_params("Missing 'project_root_path' parameter", None)
-            })?;
-
-        let limit = params
-            .get("limit")
-            .and_then(|v| v.as_u64())
-            .map(|v| v as usize)
-            .unwrap_or(20)
-            .min(100);
-
-        let offset = params
-            .get("offset")
-            .and_then(|v| v.as_u64())
-            .map(|v| v as usize)
-            .unwrap_or(0);
+    async fn scan_hardcoded(
+        &self,
+        params: Parameters<ScanHardcodedParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let path = &params.0.project_root_path;
+        let limit = params.0.limit.map(|v| v as usize).unwrap_or(20).min(100);
+        let offset = params.0.offset.map(|v| v as usize).unwrap_or(0);
 
         let check_args = CheckArgs {
             common: CommonArgs {
@@ -128,15 +118,13 @@ impl GlotMcpServer {
 
     /// Get overview statistics of all i18n issues
     #[tool(
-        description = "Get statistics of all i18n issues without detailed items. Use this first to understand the overall state before diving into details. Input: {project_root_path: string}"
+        description = "Get statistics of all i18n issues without detailed items. Use this first to understand the overall state before diving into details."
     )]
-    async fn scan_overview(&self, params: JsonObject) -> Result<CallToolResult, McpError> {
-        let path = params
-            .get("project_root_path")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| {
-                McpError::invalid_params("Missing 'project_root_path' parameter", None)
-            })?;
+    async fn scan_overview(
+        &self,
+        params: Parameters<ScanOverviewParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let path = &params.0.project_root_path;
 
         let check_args = CheckArgs {
             common: CommonArgs {
@@ -215,28 +203,15 @@ impl GlotMcpServer {
 
     /// Scan for keys missing from primary locale
     #[tool(
-        description = "Scan for keys used in code but missing from primary locale. Returns paginated list. Input: {project_root_path: string, limit?: number, offset?: number}"
+        description = "Scan for keys used in code but missing from primary locale. Returns paginated list."
     )]
-    async fn scan_primary_missing(&self, params: JsonObject) -> Result<CallToolResult, McpError> {
-        let path = params
-            .get("project_root_path")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| {
-                McpError::invalid_params("Missing 'project_root_path' parameter", None)
-            })?;
-
-        let limit = params
-            .get("limit")
-            .and_then(|v| v.as_u64())
-            .map(|v| v as usize)
-            .unwrap_or(50)
-            .min(100);
-
-        let offset = params
-            .get("offset")
-            .and_then(|v| v.as_u64())
-            .map(|v| v as usize)
-            .unwrap_or(0);
+    async fn scan_primary_missing(
+        &self,
+        params: Parameters<ScanPrimaryMissingParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let path = &params.0.project_root_path;
+        let limit = params.0.limit.map(|v| v as usize).unwrap_or(50).min(100);
+        let offset = params.0.offset.map(|v| v as usize).unwrap_or(0);
 
         let check_args = CheckArgs {
             common: CommonArgs {
@@ -294,28 +269,15 @@ impl GlotMcpServer {
 
     /// Scan for keys missing from non-primary locales (replica lag)
     #[tool(
-        description = "Scan for keys that exist in primary locale but missing in other locales. Returns paginated list. Input: {project_root_path: string, limit?: number, offset?: number}"
+        description = "Scan for keys that exist in primary locale but missing in other locales. Returns paginated list."
     )]
-    async fn scan_replica_lag(&self, params: JsonObject) -> Result<CallToolResult, McpError> {
-        let path = params
-            .get("project_root_path")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| {
-                McpError::invalid_params("Missing 'project_root_path' parameter", None)
-            })?;
-
-        let limit = params
-            .get("limit")
-            .and_then(|v| v.as_u64())
-            .map(|v| v as usize)
-            .unwrap_or(50)
-            .min(100);
-
-        let offset = params
-            .get("offset")
-            .and_then(|v| v.as_u64())
-            .map(|v| v as usize)
-            .unwrap_or(0);
+    async fn scan_replica_lag(
+        &self,
+        params: Parameters<ScanReplicaLagParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let path = &params.0.project_root_path;
+        let limit = params.0.limit.map(|v| v as usize).unwrap_or(50).min(100);
+        let offset = params.0.offset.map(|v| v as usize).unwrap_or(0);
 
         let check_args = CheckArgs {
             common: CommonArgs {
@@ -392,29 +354,14 @@ impl GlotMcpServer {
 
     /// Add translation keys to multiple locale files
     #[tool(
-        description = r#"Add translation keys to multiple locale files. Supports nested keys (e.g., 'common.title') and string arrays.
-
-Example:
-{
-  "project_root_path": "/path/to/project",
-  "translations": [
-    {"locale": "en", "keys": {"common.title": "Hello", "items": ["One", "Two"]}},
-    {"locale": "zh-CN", "keys": {"common.title": "你好", "items": ["一", "二"]}}
-  ]
-}"#
+        description = "Add translation keys to multiple locale files. Supports nested keys (e.g., 'common.title') and string arrays."
     )]
-    async fn add_translations(&self, params: JsonObject) -> Result<CallToolResult, McpError> {
-        let path = params
-            .get("project_root_path")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| {
-                McpError::invalid_params("Missing 'project_root_path' parameter", None)
-            })?;
-
-        let translations = params
-            .get("translations")
-            .and_then(|v| v.as_array())
-            .ok_or_else(|| McpError::invalid_params("Missing 'translations' parameter", None))?;
+    async fn add_translations(
+        &self,
+        params: Parameters<AddTranslationsParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let path = &params.0.project_root_path;
+        let translations = &params.0.translations;
 
         // Validate translations is not empty
         if translations.is_empty() {
@@ -437,7 +384,11 @@ Example:
         let mut failed_locales = 0;
 
         for translation in translations {
-            let locale_result = process_locale_translation(translation, &messages_dir);
+            // Convert TranslationEntry to serde_json::Value for process_locale_translation
+            let translation_value = serde_json::to_value(translation).map_err(|e| {
+                McpError::internal_error(format!("Failed to serialize translation: {}", e), None)
+            })?;
+            let locale_result = process_locale_translation(&translation_value, &messages_dir);
 
             match &locale_result {
                 Ok(result) => {
@@ -475,16 +426,12 @@ Example:
     }
 
     /// Get available locales and their file paths
-    #[tool(
-        description = "Get available locales and their file paths. Input: {project_root_path: string}"
-    )]
-    async fn get_locales(&self, params: JsonObject) -> Result<CallToolResult, McpError> {
-        let path = params
-            .get("project_root_path")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| {
-                McpError::invalid_params("Missing 'project_root_path' parameter", None)
-            })?;
+    #[tool(description = "Get available locales and their file paths.")]
+    async fn get_locales(
+        &self,
+        params: Parameters<GetLocalesParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let path = &params.0.project_root_path;
 
         // Load config to get messages_dir and primary_locale
         let config = load_config(Path::new(path))
@@ -545,16 +492,12 @@ Example:
     }
 
     /// Get the current glot configuration
-    #[tool(description = "Get the current glot configuration. Input: {project_root_path: string}")]
-    async fn get_config(&self, params: JsonObject) -> Result<CallToolResult, McpError> {
-        let path_str = params
-            .get("project_root_path")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| {
-                McpError::invalid_params("Missing 'project_root_path' parameter", None)
-            })?;
-
-        let path = Path::new(path_str);
+    #[tool(description = "Get the current glot configuration.")]
+    async fn get_config(
+        &self,
+        params: Parameters<GetConfigParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let path = Path::new(&params.0.project_root_path);
 
         let result = load_config(path)
             .map_err(|e| McpError::internal_error(format!("Failed to load config: {}", e), None))?;
