@@ -1558,10 +1558,7 @@ fn test_translation_prop_method_calls_with_multiple_namespaces() {
         .iter()
         .map(|k| k.full_key.as_str())
         .collect();
-    let expected = [
-        "PageA.benefits",
-        "PageB.benefits",
-    ];
+    let expected = ["PageA.benefits", "PageB.benefits"];
     for key in expected {
         assert!(keys.contains(key));
     }
@@ -1594,6 +1591,82 @@ fn test_translation_prop_exported_function() {
 
     assert_eq!(checker.used_keys.len(), 1);
     assert_eq!(checker.used_keys[0].full_key, "Page.content");
+}
+
+#[test]
+fn test_translation_prop_dynamic_key_hint_uses_relative_path() {
+    // When a translation prop has a dynamic key, the hint should suggest
+    // using a relative path (starting with .) instead of absolute path
+    let mut translation_prop = TranslationPropRegistry::new();
+    translation_prop.insert(
+        make_translation_prop_key("AdultLandingPage", "t"),
+        TranslationProp {
+            component_name: "AdultLandingPage".to_string(),
+            prop_name: "t".to_string(),
+            namespaces: vec![Some("NSFWAIStoryGenerator".to_string())],
+        },
+    );
+    let registries = Box::leak(Box::new(create_registries_with_translation_props(
+        translation_prop,
+    )));
+
+    let code = r#"
+        function AdultLandingPage({ t }: Props) {
+            return <div>{t(`howItWorks.step${step}.description`)}</div>;
+        }
+    "#;
+
+    let checker = parse_and_check_with_registries(code, registries);
+
+    // Should have a warning for dynamic key
+    assert_eq!(checker.warnings.len(), 1);
+    let hint = checker.warnings[0].hint.as_ref().unwrap();
+
+    // Hint should suggest relative path starting with .
+    assert!(
+        hint.contains(".howItWorks.step*.description"),
+        "Expected hint to contain '.howItWorks.step*.description', got: {}",
+        hint
+    );
+    // Should NOT contain the absolute namespace path
+    assert!(
+        !hint.contains("NSFWAIStoryGenerator.howItWorks"),
+        "Hint should not contain absolute namespace path, got: {}",
+        hint
+    );
+}
+
+#[test]
+fn test_direct_binding_dynamic_key_hint_uses_absolute_path() {
+    // When a direct binding (useTranslations) has a dynamic key, the hint should
+    // suggest using an absolute path with namespace
+    let registries = Box::leak(Box::new(create_empty_registries()));
+
+    let code = r#"
+        import {useTranslations} from 'next-intl';
+        function Component() {
+            const t = useTranslations("Common");
+            return <div>{t(`items.${id}.title`)}</div>;
+        }
+    "#;
+
+    let checker = parse_and_check_with_registries(code, registries);
+
+    assert_eq!(checker.warnings.len(), 1);
+    let hint = checker.warnings[0].hint.as_ref().unwrap();
+
+    // Hint should suggest absolute path with namespace
+    assert!(
+        hint.contains("Common.items.*.title"),
+        "Expected hint to contain 'Common.items.*.title', got: {}",
+        hint
+    );
+    // Should NOT start with dot (relative path)
+    assert!(
+        !hint.contains("\".items"),
+        "Hint should not suggest relative path, got: {}",
+        hint
+    );
 }
 
 #[test]

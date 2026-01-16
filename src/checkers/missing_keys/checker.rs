@@ -708,8 +708,14 @@ impl<'a> Visit for MissingKeyChecker<'a> {
                                 // No annotation - emit warning with hint if applicable
                                 let unwrapped = crate::checkers::unwrap_paren(&arg.expr);
                                 let (reason, hint) = if let Expr::Tpl(tpl) = unwrapped {
-                                    let pattern =
-                                        Self::infer_pattern_from_template(tpl, &namespace);
+                                    // For FromProps, suggest relative pattern (starting with .)
+                                    // For Direct, use absolute pattern with namespace
+                                    let pattern = if translation_source.is_from_props() {
+                                        Self::infer_pattern_from_template(tpl, &None)
+                                            .map(|p| format!(".{}", p))
+                                    } else {
+                                        Self::infer_pattern_from_template(tpl, &namespace)
+                                    };
                                     let hint = pattern.map(|p| {
                                         if self.in_jsx_context {
                                             format!(
