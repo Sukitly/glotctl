@@ -1837,3 +1837,179 @@ fn test_relative_pattern_with_from_props_multiple_namespaces() {
     assert!(keys.contains(&"PageA.features.title"));
     assert!(keys.contains(&"PageB.features.title"));
 }
+
+// ============================================================
+// Destructuring Pattern Edge Cases
+// ============================================================
+
+#[test]
+fn test_translation_prop_renamed_destructuring() {
+    // Test: { t: translate } - prop name is "t", but binding name is "translate"
+    let mut translation_prop = TranslationPropRegistry::new();
+    translation_prop.insert(
+        make_translation_prop_key("MyComponent", "t"),
+        TranslationProp {
+            component_name: "MyComponent".to_string(),
+            prop_name: "t".to_string(),
+            namespaces: vec![Some("Namespace".to_string())],
+        },
+    );
+    let registries = Box::leak(Box::new(create_registries_with_translation_props(
+        translation_prop,
+    )));
+
+    let code = r#"
+        function MyComponent({ t: translate }: Props) {
+            return <div>{translate("key")}</div>;
+        }
+    "#;
+
+    let checker = parse_and_check_with_registries(code, registries);
+
+    // The key should be detected using the renamed binding "translate"
+    assert_eq!(checker.used_keys.len(), 1);
+    assert_eq!(checker.used_keys[0].full_key, "Namespace.key");
+}
+
+#[test]
+fn test_translation_prop_renamed_destructuring_arrow_function() {
+    // Test arrow function with renamed destructuring
+    let mut translation_prop = TranslationPropRegistry::new();
+    translation_prop.insert(
+        make_translation_prop_key("Card", "t"),
+        TranslationProp {
+            component_name: "Card".to_string(),
+            prop_name: "t".to_string(),
+            namespaces: vec![Some("Cards".to_string())],
+        },
+    );
+    let registries = Box::leak(Box::new(create_registries_with_translation_props(
+        translation_prop,
+    )));
+
+    let code = r#"
+        const Card = ({ t: i18n }: Props) => {
+            return <span>{i18n("title")}</span>;
+        };
+    "#;
+
+    let checker = parse_and_check_with_registries(code, registries);
+
+    assert_eq!(checker.used_keys.len(), 1);
+    assert_eq!(checker.used_keys[0].full_key, "Cards.title");
+}
+
+#[test]
+fn test_translation_prop_with_default_value() {
+    // Test: { t = defaultT } - shorthand with default value
+    let mut translation_prop = TranslationPropRegistry::new();
+    translation_prop.insert(
+        make_translation_prop_key("OptionalTranslation", "t"),
+        TranslationProp {
+            component_name: "OptionalTranslation".to_string(),
+            prop_name: "t".to_string(),
+            namespaces: vec![Some("Optional".to_string())],
+        },
+    );
+    let registries = Box::leak(Box::new(create_registries_with_translation_props(
+        translation_prop,
+    )));
+
+    let code = r#"
+        function OptionalTranslation({ t = defaultT }: Props) {
+            return <div>{t("message")}</div>;
+        }
+    "#;
+
+    let checker = parse_and_check_with_registries(code, registries);
+
+    // Should detect the key even with default value
+    assert_eq!(checker.used_keys.len(), 1);
+    assert_eq!(checker.used_keys[0].full_key, "Optional.message");
+}
+
+#[test]
+fn test_translation_prop_renamed_with_default_value() {
+    // Test: { t: translate = defaultT } - renamed with default value
+    let mut translation_prop = TranslationPropRegistry::new();
+    translation_prop.insert(
+        make_translation_prop_key("ComplexComponent", "t"),
+        TranslationProp {
+            component_name: "ComplexComponent".to_string(),
+            prop_name: "t".to_string(),
+            namespaces: vec![Some("Complex".to_string())],
+        },
+    );
+    let registries = Box::leak(Box::new(create_registries_with_translation_props(
+        translation_prop,
+    )));
+
+    let code = r#"
+        function ComplexComponent({ t: translate = defaultTranslate }: Props) {
+            return <div>{translate("label")}</div>;
+        }
+    "#;
+
+    let checker = parse_and_check_with_registries(code, registries);
+
+    // Should detect the key with the renamed binding
+    assert_eq!(checker.used_keys.len(), 1);
+    assert_eq!(checker.used_keys[0].full_key, "Complex.label");
+}
+
+#[test]
+fn test_translation_prop_with_rest_pattern() {
+    // Test: { t, ...rest } - translation prop with rest pattern
+    let mut translation_prop = TranslationPropRegistry::new();
+    translation_prop.insert(
+        make_translation_prop_key("WithRest", "t"),
+        TranslationProp {
+            component_name: "WithRest".to_string(),
+            prop_name: "t".to_string(),
+            namespaces: vec![Some("Rest".to_string())],
+        },
+    );
+    let registries = Box::leak(Box::new(create_registries_with_translation_props(
+        translation_prop,
+    )));
+
+    let code = r#"
+        function WithRest({ t, ...rest }: Props) {
+            return <div {...rest}>{t("content")}</div>;
+        }
+    "#;
+
+    let checker = parse_and_check_with_registries(code, registries);
+
+    // Should detect the key from the 't' prop
+    assert_eq!(checker.used_keys.len(), 1);
+    assert_eq!(checker.used_keys[0].full_key, "Rest.content");
+}
+
+#[test]
+fn test_translation_prop_multiple_props_with_rename() {
+    // Test multiple props where one is renamed
+    let mut translation_prop = TranslationPropRegistry::new();
+    translation_prop.insert(
+        make_translation_prop_key("MultiProp", "t"),
+        TranslationProp {
+            component_name: "MultiProp".to_string(),
+            prop_name: "t".to_string(),
+            namespaces: vec![Some("Multi".to_string())],
+        },
+    );
+    let registries = Box::leak(Box::new(create_registries_with_translation_props(
+        translation_prop,
+    )));
+
+    let code = r#"
+        function MultiProp({ t: translate, name, onClick }: Props) {
+            return <button onClick={onClick}>{translate("click")} {name}</button>;
+        }
+    "#;
+
+    let checker = parse_and_check_with_registries(code, registries);
+
+    assert_eq!(checker.used_keys.len(), 1);
+    assert_eq!(checker.used_keys[0].full_key, "Multi.click");
+}

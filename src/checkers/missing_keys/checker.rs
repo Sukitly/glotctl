@@ -455,11 +455,23 @@ impl<'a> MissingKeyChecker<'a> {
                     if let ObjectPatProp::KeyValue(kv) = prop
                         && let swc_ecma_ast::PropName::Ident(key_ident) = &kv.key
                     {
+                        // Renamed destructuring: { t: translate }
+                        // - prop_name: "t" (original prop name, for registry lookup)
+                        // - binding_name: "translate" (actual variable name in code)
                         let prop_name = key_ident.sym.to_string();
-                        self.try_register_translation_prop(component_name, &prop_name);
+                        let binding_name = Self::extract_binding_name_from_pat(&kv.value);
+                        if let Some(binding) = binding_name {
+                            self.try_register_translation_prop(
+                                component_name,
+                                &prop_name,
+                                &binding,
+                            );
+                        }
                     } else if let ObjectPatProp::Assign(assign) = prop {
+                        // Shorthand destructuring: { t } or { t = defaultValue }
+                        // prop_name and binding_name are the same
                         let prop_name = assign.key.sym.to_string();
-                        self.try_register_translation_prop(component_name, &prop_name);
+                        self.try_register_translation_prop(component_name, &prop_name, &prop_name);
                     }
                 }
             }
@@ -470,14 +482,40 @@ impl<'a> MissingKeyChecker<'a> {
         }
     }
 
+    /// Extract the binding name from a pattern.
+    /// For `{ t: translate }`, the value pattern is `Ident("translate")`.
+    /// For `{ t: translate = defaultValue }`, the value pattern is `Assign` with left being `Ident("translate")`.
+    fn extract_binding_name_from_pat(pat: &Pat) -> Option<String> {
+        match pat {
+            Pat::Ident(ident) => Some(ident.id.sym.to_string()),
+            Pat::Assign(assign) => {
+                // { t: translate = defaultValue }
+                if let Pat::Ident(ident) = &*assign.left {
+                    Some(ident.id.sym.to_string())
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
+
     /// Try to register a translation prop binding if it exists in the registry.
-    fn try_register_translation_prop(&mut self, component_name: &str, prop_name: &str) {
+    ///
+    /// - `prop_name`: The original prop name (e.g., "t"), used for registry lookup
+    /// - `binding_name`: The actual variable name in code (e.g., "translate" for `{ t: translate }`)
+    fn try_register_translation_prop(
+        &mut self,
+        component_name: &str,
+        prop_name: &str,
+        binding_name: &str,
+    ) {
         let key = make_translation_prop_key(component_name, prop_name);
 
         if let Some(translation_prop) = self.registries.translation_prop.get(&key) {
             // Register this prop as a translation function binding with FromProps source
             self.insert_binding(
-                prop_name.to_string(),
+                binding_name.to_string(),
                 TranslationSource::FromProps {
                     namespaces: translation_prop.namespaces.clone(),
                 },
