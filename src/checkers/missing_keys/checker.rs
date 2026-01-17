@@ -18,7 +18,9 @@ use super::types::{
 };
 use crate::checkers::{
     glob_matcher::{expand_glob_pattern, is_glob_pattern},
-    key_objects::{FileImports, make_translation_fn_call_key, make_translation_prop_key},
+    key_objects::{
+        FileImports, extract_binding_names, make_translation_fn_call_key, make_translation_prop_key,
+    },
     schema::SchemaCallInfo,
     value_analyzer::ValueAnalyzer,
     value_source::ResolvedKey,
@@ -533,10 +535,11 @@ impl<'a> MissingKeyChecker<'a> {
     /// const labels = usageLabels(t);  // t passed as function argument
     /// ```
     ///
-    /// Register translation function parameters for a function.
-    /// If the function is in the translation_fn_call registry, register parameters with FromFnCall.
-    /// For any parameter that shadows an outer translation binding but isn't registered,
-    /// insert a Shadowed marker to prevent the outer binding from leaking in.
+    /// Two-pass approach:
+    /// 1. First pass: Register FromFnCall bindings for simple identifier params
+    ///    (only Pat::Ident can be matched against registry by arg_index)
+    /// 2. Second pass: Shadow all parameter names (including destructured) that
+    ///    have outer bindings but weren't registered in this function's scope
     ///
     /// Also handles default exports: if this function is the default export of the file,
     /// we also check for registry entries with "default" as the function name.
@@ -544,6 +547,18 @@ impl<'a> MissingKeyChecker<'a> {
     /// - `fn_name`: The function name (e.g., "usageLabels")
     /// - `params`: The function parameters
     fn register_translation_fn_params(&mut self, fn_name: &str, params: &[Pat]) {
+        // Check if this function is the default export (for fallback registry lookup)
+        let is_default_export = self
+            .registries
+            .default_exports
+            .get(self.file_path)
+            .map(|s| s.as_str())
+            == Some(fn_name);
+
+        // Track which names we register in first pass (to avoid shadowing them in second pass)
+        let mut registered_names = HashSet::new();
+
+        // First pass: register FromFnCall bindings for simple identifier params
         for (idx, param) in params.iter().enumerate() {
             if let Pat::Ident(ident) = param {
                 let param_name = ident.id.sym.to_string();
@@ -552,13 +567,7 @@ impl<'a> MissingKeyChecker<'a> {
                 let key = make_translation_fn_call_key(self.file_path, fn_name, idx);
 
                 // Also check with "default" if this function is the default export
-                let default_key = if self
-                    .registries
-                    .default_exports
-                    .get(self.file_path)
-                    .map(|s| s.as_str())
-                    == Some(fn_name)
-                {
+                let default_key = if is_default_export {
                     Some(make_translation_fn_call_key(self.file_path, "default", idx))
                 } else {
                     None
@@ -574,15 +583,48 @@ impl<'a> MissingKeyChecker<'a> {
                 if let Some(fn_call) = fn_call {
                     // Register this parameter as a translation function binding
                     self.insert_binding(
-                        param_name,
+                        param_name.clone(),
                         TranslationSource::FromFnCall {
                             namespaces: fn_call.namespaces.clone(),
                         },
                     );
-                } else if self.get_binding(&param_name).is_some() {
-                    // Not in registry, but there's an outer binding with this name.
-                    // Shadow it to prevent incorrect tracking.
-                    self.insert_binding(param_name, TranslationSource::Shadowed);
+                    registered_names.insert(param_name);
+                }
+            }
+        }
+
+        // Second pass: shadow all parameter names (including destructured) that
+        // have OUTER bindings but weren't registered in this function's scope.
+        // This handles cases like:
+        //   const outer = (t) => { const inner = ({t}) => t("key") }
+        // where inner's destructured `t` should shadow outer's `t`.
+        for param in params {
+            for name in extract_binding_names(param) {
+                // Skip if we already registered this name in the first pass
+                if registered_names.contains(&name) {
+                    continue;
+                }
+
+                // Skip if this name was already registered in the current scope
+                // (e.g., by register_translation_props_from_params)
+                let already_in_current_scope = self
+                    .bindings_stack
+                    .last()
+                    .is_some_and(|scope| scope.contains_key(&name));
+                if already_in_current_scope {
+                    continue;
+                }
+
+                // Check if there's an OUTER binding (not in current scope) that should be shadowed
+                let has_outer_binding = self
+                    .bindings_stack
+                    .iter()
+                    .rev()
+                    .skip(1) // Skip current scope
+                    .any(|scope| scope.contains_key(&name));
+
+                if has_outer_binding {
+                    self.insert_binding(name, TranslationSource::Shadowed);
                 }
             }
         }
@@ -671,14 +713,20 @@ impl<'a> Visit for MissingKeyChecker<'a> {
     }
 
     /// Visit export default declarations to detect translation function parameters.
-    /// e.g., `export default function buildLabels(t) { ... }`
+    /// Handles both named and anonymous default exports:
+    /// - `export default function buildLabels(t) { ... }` (named)
+    /// - `export default function(t) { ... }` (anonymous)
     fn visit_export_default_decl(&mut self, node: &swc_ecma_ast::ExportDefaultDecl) {
-        // Handle default exported functions with names
-        if let swc_ecma_ast::DefaultDecl::Fn(fn_expr) = &node.decl
-            && let Some(ident) = &fn_expr.ident
-        {
+        // Handle default exported functions (both named and anonymous)
+        if let swc_ecma_ast::DefaultDecl::Fn(fn_expr) = &node.decl {
             self.enter_scope();
-            let fn_name = ident.sym.to_string();
+
+            // Use function name if available, otherwise use "default" for anonymous functions
+            let fn_name = fn_expr
+                .ident
+                .as_ref()
+                .map(|i| i.sym.to_string())
+                .unwrap_or_else(|| "default".to_string());
 
             // Try to register translation props (for React components)
             self.register_translation_props_from_params(&fn_name, &fn_expr.function.params);
@@ -693,6 +741,28 @@ impl<'a> Visit for MissingKeyChecker<'a> {
             self.register_translation_fn_params(&fn_name, &params);
 
             fn_expr.function.visit_children_with(self);
+            self.exit_scope();
+            return;
+        }
+
+        // Default: visit children normally (for classes, etc.)
+        node.visit_children_with(self);
+    }
+
+    /// Visit export default expressions to detect translation function parameters.
+    /// Handles anonymous arrow function exports: `export default (t) => t("key")`
+    fn visit_export_default_expr(&mut self, node: &swc_ecma_ast::ExportDefaultExpr) {
+        // Handle: export default (t) => { ... }
+        if let Expr::Arrow(arrow) = &*node.expr {
+            self.enter_scope();
+
+            // Use "default" as the function name for anonymous arrow exports
+            let fn_name = "default";
+
+            // Try to register translation function parameters
+            self.register_translation_fn_params(fn_name, &arrow.params);
+
+            arrow.visit_children_with(self);
             self.exit_scope();
             return;
         }

@@ -1398,6 +1398,95 @@ fn test_translation_prop_arrow_function() {
 }
 
 #[test]
+fn test_translation_fn_call_destructured_param_shadows_in_checker() {
+    // Test that destructured parameters properly shadow outer translation bindings
+    let mut translation_fn_call = TranslationFnCallRegistry::new();
+    translation_fn_call.insert(
+        make_translation_fn_call_key("test.tsx", "outerFunc", 0),
+        TranslationFnCall {
+            fn_file_path: "test.tsx".to_string(),
+            fn_name: "outerFunc".to_string(),
+            arg_index: 0,
+            namespaces: vec![Some("Outer".to_string())],
+        },
+    );
+    let registries = Box::leak(Box::new(create_registries_with_translation_fn_calls(
+        translation_fn_call,
+    )));
+
+    let code = r#"
+        const outerFunc = (t) => {
+            const innerFunc = ({ t }) => {
+                return t("innerKey");
+            };
+            return t("outerKey");
+        };
+    "#;
+
+    let checker = parse_and_check_with_registries(code, registries);
+
+    // Only outerKey should be tracked, innerKey should be shadowed
+    assert_eq!(checker.used_keys.len(), 1);
+    assert_eq!(checker.used_keys[0].full_key, "Outer.outerKey");
+}
+
+#[test]
+fn test_translation_fn_call_anonymous_default_export_function() {
+    // Test anonymous default export function: export default function(t) { ... }
+    let mut translation_fn_call = TranslationFnCallRegistry::new();
+    translation_fn_call.insert(
+        make_translation_fn_call_key("test.tsx", "default", 0),
+        TranslationFnCall {
+            fn_file_path: "test.tsx".to_string(),
+            fn_name: "default".to_string(),
+            arg_index: 0,
+            namespaces: vec![Some("MyNs".to_string())],
+        },
+    );
+    let registries = Box::leak(Box::new(create_registries_with_translation_fn_calls(
+        translation_fn_call,
+    )));
+
+    let code = r#"
+        export default function(t) {
+            return t("title");
+        }
+    "#;
+
+    let checker = parse_and_check_with_registries(code, registries);
+
+    assert_eq!(checker.used_keys.len(), 1);
+    assert_eq!(checker.used_keys[0].full_key, "MyNs.title");
+}
+
+#[test]
+fn test_translation_fn_call_anonymous_default_export_arrow() {
+    // Test anonymous default export arrow: export default (t) => ...
+    let mut translation_fn_call = TranslationFnCallRegistry::new();
+    translation_fn_call.insert(
+        make_translation_fn_call_key("test.tsx", "default", 0),
+        TranslationFnCall {
+            fn_file_path: "test.tsx".to_string(),
+            fn_name: "default".to_string(),
+            arg_index: 0,
+            namespaces: vec![Some("MyNs".to_string())],
+        },
+    );
+    let registries = Box::leak(Box::new(create_registries_with_translation_fn_calls(
+        translation_fn_call,
+    )));
+
+    let code = r#"
+        export default (t) => t("title");
+    "#;
+
+    let checker = parse_and_check_with_registries(code, registries);
+
+    assert_eq!(checker.used_keys.len(), 1);
+    assert_eq!(checker.used_keys[0].full_key, "MyNs.title");
+}
+
+#[test]
 fn test_translation_fn_call_default_export_matched() {
     // Setup: registry has "test.tsx.default.0" entry (from default import call site)
     // File test.tsx has `export default function buildLabels(t) { t("key") }`

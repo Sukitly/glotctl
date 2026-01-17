@@ -131,7 +131,7 @@ enum TranslationBindingValue {
 /// Extract all identifier names from a pattern (handles destructuring).
 /// Supports: simple ident, object destructuring, array destructuring,
 /// default values, rest patterns, and renamed destructuring.
-fn extract_binding_names(pat: &Pat) -> Vec<String> {
+pub fn extract_binding_names(pat: &Pat) -> Vec<String> {
     match pat {
         Pat::Ident(ident) => vec![ident.id.sym.to_string()],
         Pat::Object(obj) => obj
