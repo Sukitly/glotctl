@@ -8,7 +8,8 @@ use swc_ecma_visit::Visit;
 use super::*;
 use crate::checkers::key_objects::{
     FileImports, KeyArray, KeyArrayRegistry, KeyObject, KeyObjectRegistry, StringArrayRegistry,
-    TranslationProp, TranslationPropRegistry, make_registry_key, make_translation_prop_key,
+    TranslationFnCallRegistry, TranslationProp, TranslationPropRegistry, make_registry_key,
+    make_translation_prop_key,
 };
 use crate::checkers::schema::SchemaRegistry;
 use crate::commands::context::Registries;
@@ -20,6 +21,8 @@ fn create_empty_registries() -> Registries {
         key_array: KeyArrayRegistry::new(),
         string_array: StringArrayRegistry::new(),
         translation_prop: TranslationPropRegistry::new(),
+        translation_fn_call: TranslationFnCallRegistry::new(),
+        default_exports: HashMap::new(),
     }
 }
 
@@ -30,6 +33,8 @@ fn create_registries_with_key_objects(key_object: KeyObjectRegistry) -> Registri
         key_array: KeyArrayRegistry::new(),
         string_array: StringArrayRegistry::new(),
         translation_prop: TranslationPropRegistry::new(),
+        translation_fn_call: TranslationFnCallRegistry::new(),
+        default_exports: HashMap::new(),
     }
 }
 
@@ -519,6 +524,8 @@ fn create_registries_with_key_arrays(key_array: KeyArrayRegistry) -> Registries 
         key_array,
         string_array: StringArrayRegistry::new(),
         translation_prop: TranslationPropRegistry::new(),
+        translation_fn_call: TranslationFnCallRegistry::new(),
+        default_exports: HashMap::new(),
     }
 }
 
@@ -739,6 +746,8 @@ mod value_source_tests {
             key_array,
             string_array,
             translation_prop: TranslationPropRegistry::new(),
+            translation_fn_call: TranslationFnCallRegistry::new(),
+            default_exports: HashMap::new(),
         }));
         let file_imports = Box::leak(Box::new(collector.imports));
 
@@ -1321,6 +1330,8 @@ fn create_registries_with_translation_props(
         key_array: KeyArrayRegistry::new(),
         string_array: StringArrayRegistry::new(),
         translation_prop,
+        translation_fn_call: TranslationFnCallRegistry::new(),
+        default_exports: HashMap::new(),
     }
 }
 
@@ -1384,6 +1395,201 @@ fn test_translation_prop_arrow_function() {
 
     assert_eq!(checker.used_keys.len(), 1);
     assert_eq!(checker.used_keys[0].full_key, "Dashboard.welcome");
+}
+
+#[test]
+fn test_translation_fn_call_destructured_param_shadows_in_checker() {
+    // Test that destructured parameters properly shadow outer translation bindings
+    let mut translation_fn_call = TranslationFnCallRegistry::new();
+    translation_fn_call.insert(
+        make_translation_fn_call_key("test.tsx", "outerFunc", 0),
+        TranslationFnCall {
+            fn_file_path: "test.tsx".to_string(),
+            fn_name: "outerFunc".to_string(),
+            arg_index: 0,
+            namespaces: vec![Some("Outer".to_string())],
+        },
+    );
+    let registries = Box::leak(Box::new(create_registries_with_translation_fn_calls(
+        translation_fn_call,
+    )));
+
+    let code = r#"
+        const outerFunc = (t) => {
+            const innerFunc = ({ t }) => {
+                return t("innerKey");
+            };
+            return t("outerKey");
+        };
+    "#;
+
+    let checker = parse_and_check_with_registries(code, registries);
+
+    // Only outerKey should be tracked, innerKey should be shadowed
+    assert_eq!(checker.used_keys.len(), 1);
+    assert_eq!(checker.used_keys[0].full_key, "Outer.outerKey");
+}
+
+#[test]
+fn test_translation_fn_call_anonymous_default_export_function() {
+    // Test anonymous default export function: export default function(t) { ... }
+    let mut translation_fn_call = TranslationFnCallRegistry::new();
+    translation_fn_call.insert(
+        make_translation_fn_call_key("test.tsx", "default", 0),
+        TranslationFnCall {
+            fn_file_path: "test.tsx".to_string(),
+            fn_name: "default".to_string(),
+            arg_index: 0,
+            namespaces: vec![Some("MyNs".to_string())],
+        },
+    );
+    let registries = Box::leak(Box::new(create_registries_with_translation_fn_calls(
+        translation_fn_call,
+    )));
+
+    let code = r#"
+        export default function(t) {
+            return t("title");
+        }
+    "#;
+
+    let checker = parse_and_check_with_registries(code, registries);
+
+    assert_eq!(checker.used_keys.len(), 1);
+    assert_eq!(checker.used_keys[0].full_key, "MyNs.title");
+}
+
+#[test]
+fn test_translation_fn_call_anonymous_default_export_arrow() {
+    // Test anonymous default export arrow: export default (t) => ...
+    let mut translation_fn_call = TranslationFnCallRegistry::new();
+    translation_fn_call.insert(
+        make_translation_fn_call_key("test.tsx", "default", 0),
+        TranslationFnCall {
+            fn_file_path: "test.tsx".to_string(),
+            fn_name: "default".to_string(),
+            arg_index: 0,
+            namespaces: vec![Some("MyNs".to_string())],
+        },
+    );
+    let registries = Box::leak(Box::new(create_registries_with_translation_fn_calls(
+        translation_fn_call,
+    )));
+
+    let code = r#"
+        export default (t) => t("title");
+    "#;
+
+    let checker = parse_and_check_with_registries(code, registries);
+
+    assert_eq!(checker.used_keys.len(), 1);
+    assert_eq!(checker.used_keys[0].full_key, "MyNs.title");
+}
+
+#[test]
+fn test_translation_prop_default_export_arrow_component() {
+    let mut translation_prop = TranslationPropRegistry::new();
+    translation_prop.insert(
+        make_translation_prop_key("default", "t"),
+        TranslationProp {
+            component_name: "default".to_string(),
+            prop_name: "t".to_string(),
+            namespaces: vec![Some("MyNs".to_string())],
+        },
+    );
+    let registries = Box::leak(Box::new(create_registries_with_translation_props(
+        translation_prop,
+    )));
+
+    let code = r#"
+        export default ({ t }) => t("title");
+    "#;
+
+    let checker = parse_and_check_with_registries(code, registries);
+
+    assert_eq!(checker.used_keys.len(), 1);
+    assert_eq!(checker.used_keys[0].full_key, "MyNs.title");
+}
+
+#[test]
+fn test_translation_fn_call_default_export_matched() {
+    // Setup: registry has "test.tsx.default.0" entry (from default import call site)
+    // File test.tsx has `export default function buildLabels(t) { t("key") }`
+    // The function should match via the default_exports registry
+    let mut translation_fn_call = TranslationFnCallRegistry::new();
+    translation_fn_call.insert(
+        make_translation_fn_call_key("test.tsx", "default", 0),
+        TranslationFnCall {
+            fn_file_path: "test.tsx".to_string(),
+            fn_name: "default".to_string(),
+            arg_index: 0,
+            namespaces: vec![Some("MyNs".to_string())],
+        },
+    );
+
+    let mut default_exports = HashMap::new();
+    default_exports.insert("test.tsx".to_string(), "buildLabels".to_string());
+
+    let registries = Box::leak(Box::new(Registries {
+        schema: SchemaRegistry::new(),
+        key_object: KeyObjectRegistry::new(),
+        key_array: KeyArrayRegistry::new(),
+        string_array: StringArrayRegistry::new(),
+        translation_prop: TranslationPropRegistry::new(),
+        translation_fn_call,
+        default_exports,
+    }));
+
+    let code = r#"
+        export default function buildLabels(t) {
+            return t("title");
+        }
+    "#;
+
+    let checker = parse_and_check_with_registries(code, registries);
+
+    // The function should match because:
+    // 1. Registry has "test.tsx.default.0" entry
+    // 2. default_exports says "buildLabels" is the default export
+    // 3. So when visiting buildLabels, we look up both "test.tsx.buildLabels.0" and "test.tsx.default.0"
+    assert_eq!(checker.used_keys.len(), 1);
+    assert_eq!(checker.used_keys[0].full_key, "MyNs.title");
+}
+
+#[test]
+fn test_translation_fn_call_parameter_shadowing_in_checker() {
+    // This tests that parameter shadowing works correctly in MissingKeyChecker
+    // Inner function's `t` parameter should shadow the outer `t` even when
+    // the outer function IS in the registry
+    let mut translation_fn_call = TranslationFnCallRegistry::new();
+    translation_fn_call.insert(
+        make_translation_fn_call_key("test.tsx", "outerFunc", 0),
+        TranslationFnCall {
+            fn_file_path: "test.tsx".to_string(),
+            fn_name: "outerFunc".to_string(),
+            arg_index: 0,
+            namespaces: vec![Some("Outer".to_string())],
+        },
+    );
+    let registries = Box::leak(Box::new(create_registries_with_translation_fn_calls(
+        translation_fn_call,
+    )));
+
+    let code = r#"
+        const outerFunc = (t) => {
+            // innerFunc is NOT in the registry, so its t param should shadow
+            const innerFunc = (t) => {
+                return t("innerKey");  // Should NOT be tracked
+            };
+            return t("outerKey");  // Should be tracked
+        };
+    "#;
+
+    let checker = parse_and_check_with_registries(code, registries);
+
+    // Only outerKey should be tracked
+    assert_eq!(checker.used_keys.len(), 1);
+    assert_eq!(checker.used_keys[0].full_key, "Outer.outerKey");
 }
 
 #[test]
@@ -2012,4 +2218,344 @@ fn test_translation_prop_multiple_props_with_rename() {
 
     assert_eq!(checker.used_keys.len(), 1);
     assert_eq!(checker.used_keys[0].full_key, "Multi.click");
+}
+
+// ============================================================
+// Translation Function Call Tests
+// ============================================================
+
+use crate::checkers::key_objects::{TranslationFnCall, make_translation_fn_call_key};
+
+fn create_registries_with_translation_fn_calls(
+    translation_fn_call: TranslationFnCallRegistry,
+) -> Registries {
+    Registries {
+        schema: SchemaRegistry::new(),
+        key_object: KeyObjectRegistry::new(),
+        key_array: KeyArrayRegistry::new(),
+        string_array: StringArrayRegistry::new(),
+        translation_prop: TranslationPropRegistry::new(),
+        translation_fn_call,
+        default_exports: HashMap::new(),
+    }
+}
+
+#[test]
+fn test_translation_fn_call_arrow_function() {
+    // Create registry with a translation function call for usageTypeLabels
+    let mut translation_fn_call = TranslationFnCallRegistry::new();
+    translation_fn_call.insert(
+        make_translation_fn_call_key("test.tsx", "usageTypeLabels", 0),
+        TranslationFnCall {
+            fn_file_path: "test.tsx".to_string(),
+            fn_name: "usageTypeLabels".to_string(),
+            arg_index: 0,
+            namespaces: vec![Some("CreditsUsageList".to_string())],
+        },
+    );
+    let registries = Box::leak(Box::new(create_registries_with_translation_fn_calls(
+        translation_fn_call,
+    )));
+
+    let code = r#"
+        const usageTypeLabels = (t) => ({
+            ai_chapter_generation: t("usageTypes.ai_chapter_generation"),
+            ai_completion_plan: t("usageTypes.ai_completion_plan"),
+        });
+    "#;
+
+    let checker = parse_and_check_with_registries(code, registries);
+
+    assert_eq!(checker.used_keys.len(), 2);
+    let keys: HashSet<&str> = checker
+        .used_keys
+        .iter()
+        .map(|k| k.full_key.as_str())
+        .collect();
+    assert!(keys.contains("CreditsUsageList.usageTypes.ai_chapter_generation"));
+    assert!(keys.contains("CreditsUsageList.usageTypes.ai_completion_plan"));
+}
+
+#[test]
+fn test_translation_fn_call_function_declaration() {
+    let mut translation_fn_call = TranslationFnCallRegistry::new();
+    translation_fn_call.insert(
+        make_translation_fn_call_key("test.tsx", "buildLabels", 0),
+        TranslationFnCall {
+            fn_file_path: "test.tsx".to_string(),
+            fn_name: "buildLabels".to_string(),
+            arg_index: 0,
+            namespaces: vec![Some("MyNamespace".to_string())],
+        },
+    );
+    let registries = Box::leak(Box::new(create_registries_with_translation_fn_calls(
+        translation_fn_call,
+    )));
+
+    let code = r#"
+        function buildLabels(t) {
+            return {
+                submit: t("submit"),
+                cancel: t("cancel"),
+            };
+        }
+    "#;
+
+    let checker = parse_and_check_with_registries(code, registries);
+
+    assert_eq!(checker.used_keys.len(), 2);
+    let keys: HashSet<&str> = checker
+        .used_keys
+        .iter()
+        .map(|k| k.full_key.as_str())
+        .collect();
+    assert!(keys.contains("MyNamespace.submit"));
+    assert!(keys.contains("MyNamespace.cancel"));
+}
+
+#[test]
+fn test_translation_fn_call_multiple_namespaces() {
+    // Same function called from different places with different namespaces
+    let mut translation_fn_call = TranslationFnCallRegistry::new();
+    translation_fn_call.insert(
+        make_translation_fn_call_key("test.tsx", "createLabels", 0),
+        TranslationFnCall {
+            fn_file_path: "test.tsx".to_string(),
+            fn_name: "createLabels".to_string(),
+            arg_index: 0,
+            namespaces: vec![Some("PageA".to_string()), Some("PageB".to_string())],
+        },
+    );
+    let registries = Box::leak(Box::new(create_registries_with_translation_fn_calls(
+        translation_fn_call,
+    )));
+
+    let code = r#"
+        const createLabels = (t) => ({
+            title: t("title"),
+        });
+    "#;
+
+    let checker = parse_and_check_with_registries(code, registries);
+
+    // Each key should be recorded for both namespaces
+    assert_eq!(checker.used_keys.len(), 2);
+    let keys: HashSet<&str> = checker
+        .used_keys
+        .iter()
+        .map(|k| k.full_key.as_str())
+        .collect();
+    assert!(keys.contains("PageA.title"));
+    assert!(keys.contains("PageB.title"));
+}
+
+#[test]
+fn test_translation_fn_call_second_argument() {
+    // Translation function passed as second argument
+    let mut translation_fn_call = TranslationFnCallRegistry::new();
+    translation_fn_call.insert(
+        make_translation_fn_call_key("test.tsx", "createLabels", 1),
+        TranslationFnCall {
+            fn_file_path: "test.tsx".to_string(),
+            fn_name: "createLabels".to_string(),
+            arg_index: 1, // Second argument
+            namespaces: vec![Some("MyNs".to_string())],
+        },
+    );
+    let registries = Box::leak(Box::new(create_registries_with_translation_fn_calls(
+        translation_fn_call,
+    )));
+
+    let code = r#"
+        const createLabels = (config, translate) => ({
+            title: translate("title"),
+        });
+    "#;
+
+    let checker = parse_and_check_with_registries(code, registries);
+
+    assert_eq!(checker.used_keys.len(), 1);
+    assert_eq!(checker.used_keys[0].full_key, "MyNs.title");
+}
+
+#[test]
+fn test_translation_fn_call_not_in_registry() {
+    // Function not in registry - should not track keys
+    let registries = Box::leak(Box::new(create_empty_registries()));
+
+    let code = r#"
+        const unknownFunction = (t) => ({
+            key: t("someKey"),
+        });
+    "#;
+
+    let checker = parse_and_check_with_registries(code, registries);
+
+    // t is not registered, so no keys should be tracked
+    assert!(checker.used_keys.is_empty());
+}
+
+#[test]
+fn test_translation_fn_call_with_t_method_calls() {
+    let mut translation_fn_call = TranslationFnCallRegistry::new();
+    translation_fn_call.insert(
+        make_translation_fn_call_key("test.tsx", "buildLabels", 0),
+        TranslationFnCall {
+            fn_file_path: "test.tsx".to_string(),
+            fn_name: "buildLabels".to_string(),
+            arg_index: 0,
+            namespaces: vec![Some("MyNs".to_string())],
+        },
+    );
+    let registries = Box::leak(Box::new(create_registries_with_translation_fn_calls(
+        translation_fn_call,
+    )));
+
+    let code = r#"
+        const buildLabels = (t) => ({
+            raw: t.raw("rawContent"),
+            rich: t.rich("richContent"),
+            markup: t.markup("markupContent"),
+        });
+    "#;
+
+    let checker = parse_and_check_with_registries(code, registries);
+
+    assert_eq!(checker.used_keys.len(), 3);
+    let keys: HashSet<&str> = checker
+        .used_keys
+        .iter()
+        .map(|k| k.full_key.as_str())
+        .collect();
+    assert!(keys.contains("MyNs.rawContent"));
+    assert!(keys.contains("MyNs.richContent"));
+    assert!(keys.contains("MyNs.markupContent"));
+}
+
+#[test]
+fn test_translation_fn_call_scope_isolated() {
+    let mut translation_fn_call = TranslationFnCallRegistry::new();
+    translation_fn_call.insert(
+        make_translation_fn_call_key("test.tsx", "outerFunc", 0),
+        TranslationFnCall {
+            fn_file_path: "test.tsx".to_string(),
+            fn_name: "outerFunc".to_string(),
+            arg_index: 0,
+            namespaces: vec![Some("Outer".to_string())],
+        },
+    );
+    let registries = Box::leak(Box::new(create_registries_with_translation_fn_calls(
+        translation_fn_call,
+    )));
+
+    let code = r#"
+        const outerFunc = (t) => {
+            const innerFunc = (t) => {
+                // This t shadows the outer t, but should NOT be tracked
+                // because innerFunc is not in the registry
+                return t("innerKey");
+            };
+            return t("outerKey");
+        };
+    "#;
+
+    let checker = parse_and_check_with_registries(code, registries);
+
+    // Only outerKey should be tracked
+    assert_eq!(checker.used_keys.len(), 1);
+    assert_eq!(checker.used_keys[0].full_key, "Outer.outerKey");
+}
+
+#[test]
+fn test_translation_fn_call_dynamic_key_hint_uses_relative_path() {
+    let mut translation_fn_call = TranslationFnCallRegistry::new();
+    translation_fn_call.insert(
+        make_translation_fn_call_key("test.tsx", "buildLabels", 0),
+        TranslationFnCall {
+            fn_file_path: "test.tsx".to_string(),
+            fn_name: "buildLabels".to_string(),
+            arg_index: 0,
+            namespaces: vec![Some("MyNs".to_string())],
+        },
+    );
+    let registries = Box::leak(Box::new(create_registries_with_translation_fn_calls(
+        translation_fn_call,
+    )));
+
+    let code = r#"
+        const buildLabels = (t) => ({
+            dynamic: t(`types.${type}.label`),
+        });
+    "#;
+
+    let checker = parse_and_check_with_registries(code, registries);
+
+    // Should generate a dynamic key warning with relative pattern hint
+    assert_eq!(checker.warnings.len(), 1);
+    let hint = checker.warnings[0].hint.as_ref().unwrap();
+    // FromFnCall should use relative pattern (starting with .)
+    assert!(
+        hint.contains(".types.*.label"),
+        "hint should contain relative pattern: {}",
+        hint
+    );
+}
+
+#[test]
+fn test_translation_fn_call_without_namespace() {
+    let mut translation_fn_call = TranslationFnCallRegistry::new();
+    translation_fn_call.insert(
+        make_translation_fn_call_key("test.tsx", "buildLabels", 0),
+        TranslationFnCall {
+            fn_file_path: "test.tsx".to_string(),
+            fn_name: "buildLabels".to_string(),
+            arg_index: 0,
+            namespaces: vec![None], // No namespace
+        },
+    );
+    let registries = Box::leak(Box::new(create_registries_with_translation_fn_calls(
+        translation_fn_call,
+    )));
+
+    let code = r#"
+        const buildLabels = (t) => ({
+            title: t("title"),
+        });
+    "#;
+
+    let checker = parse_and_check_with_registries(code, registries);
+
+    // Key without namespace prefix
+    assert_eq!(checker.used_keys.len(), 1);
+    assert_eq!(checker.used_keys[0].full_key, "title");
+}
+
+#[test]
+fn test_translation_fn_call_exported_function() {
+    let mut translation_fn_call = TranslationFnCallRegistry::new();
+    translation_fn_call.insert(
+        make_translation_fn_call_key("test.tsx", "createExportedLabels", 0),
+        TranslationFnCall {
+            fn_file_path: "test.tsx".to_string(),
+            fn_name: "createExportedLabels".to_string(),
+            arg_index: 0,
+            namespaces: vec![Some("MyNs".to_string())],
+        },
+    );
+    let registries = Box::leak(Box::new(create_registries_with_translation_fn_calls(
+        translation_fn_call,
+    )));
+
+    let code = r#"
+        export function createExportedLabels(t) {
+            return {
+                title: t("title"),
+            };
+        }
+    "#;
+
+    let checker = parse_and_check_with_registries(code, registries);
+
+    assert_eq!(checker.used_keys.len(), 1);
+    assert_eq!(checker.used_keys[0].full_key, "MyNs.title");
 }

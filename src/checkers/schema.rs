@@ -48,6 +48,9 @@ pub struct SchemaFunctionCollector {
     pub file_path: String,
     pub functions: Vec<SchemaFunction>,
     current_function: Option<SchemaFunctionContext>,
+    /// Depth of nested functions that shadow the t_param_name.
+    /// When > 0, t() calls should be ignored because the parameter is shadowed.
+    shadow_depth: usize,
 }
 
 impl SchemaFunctionCollector {
@@ -56,6 +59,7 @@ impl SchemaFunctionCollector {
             file_path: file_path.to_string(),
             functions: Vec::new(),
             current_function: None,
+            shadow_depth: 0,
         }
     }
 
@@ -145,7 +149,9 @@ impl Visit for SchemaFunctionCollector {
     }
 
     fn visit_call_expr(&mut self, node: &swc_ecma_ast::CallExpr) {
-        if let Some(ctx) = &mut self.current_function
+        // Only collect keys if not inside a shadowed scope
+        if self.shadow_depth == 0
+            && let Some(ctx) = &mut self.current_function
             && let Callee::Expr(expr) = &node.callee
             && let Expr::Ident(ident) = &**expr
         {
@@ -159,6 +165,48 @@ impl Visit for SchemaFunctionCollector {
             }
         }
         node.visit_children_with(self);
+    }
+
+    /// Track nested arrow functions that shadow the t parameter.
+    fn visit_arrow_expr(&mut self, node: &swc_ecma_ast::ArrowExpr) {
+        let shadows_t = self.current_function.as_ref().is_some_and(|ctx| {
+            node.params.iter().any(|param| {
+                if let Pat::Ident(ident) = param {
+                    ident.id.sym.as_str() == ctx.t_param_name
+                } else {
+                    false
+                }
+            })
+        });
+
+        if shadows_t {
+            self.shadow_depth += 1;
+        }
+        node.visit_children_with(self);
+        if shadows_t {
+            self.shadow_depth -= 1;
+        }
+    }
+
+    /// Track nested functions that shadow the t parameter.
+    fn visit_function(&mut self, node: &swc_ecma_ast::Function) {
+        let shadows_t = self.current_function.as_ref().is_some_and(|ctx| {
+            node.params.iter().any(|param| {
+                if let Pat::Ident(ident) = &param.pat {
+                    ident.id.sym.as_str() == ctx.t_param_name
+                } else {
+                    false
+                }
+            })
+        });
+
+        if shadows_t {
+            self.shadow_depth += 1;
+        }
+        node.visit_children_with(self);
+        if shadows_t {
+            self.shadow_depth -= 1;
+        }
     }
 }
 

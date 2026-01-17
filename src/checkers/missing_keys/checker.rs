@@ -18,7 +18,9 @@ use super::types::{
 };
 use crate::checkers::{
     glob_matcher::{expand_glob_pattern, is_glob_pattern},
-    key_objects::{FileImports, make_translation_prop_key},
+    key_objects::{
+        FileImports, extract_binding_names, make_translation_fn_call_key, make_translation_prop_key,
+    },
     schema::SchemaCallInfo,
     value_analyzer::ValueAnalyzer,
     value_source::ResolvedKey,
@@ -523,6 +525,111 @@ impl<'a> MissingKeyChecker<'a> {
         }
     }
 
+    /// Register translation function bindings from function/arrow parameters.
+    ///
+    /// This handles the case where a translation function is passed as a regular
+    /// function argument (not as a JSX prop). For example:
+    ///
+    /// ```tsx
+    /// const usageLabels = (t) => ({ key: t("key") });
+    /// const labels = usageLabels(t);  // t passed as function argument
+    /// ```
+    ///
+    /// Two-pass approach:
+    /// 1. First pass: Register FromFnCall bindings for simple identifier params
+    ///    (only Pat::Ident can be matched against registry by arg_index)
+    /// 2. Second pass: Shadow all parameter names (including destructured) that
+    ///    have outer bindings but weren't registered in this function's scope
+    ///
+    /// Also handles default exports: if this function is the default export of the file,
+    /// we also check for registry entries with "default" as the function name.
+    ///
+    /// - `fn_name`: The function name (e.g., "usageLabels")
+    /// - `params`: The function parameters
+    fn register_translation_fn_params(&mut self, fn_name: &str, params: &[Pat]) {
+        // Check if this function is the default export (for fallback registry lookup)
+        let is_default_export = self
+            .registries
+            .default_exports
+            .get(self.file_path)
+            .map(|s| s.as_str())
+            == Some(fn_name);
+
+        // Track which names we register in first pass (to avoid shadowing them in second pass)
+        let mut registered_names = HashSet::new();
+
+        // First pass: register FromFnCall bindings for simple identifier params
+        for (idx, param) in params.iter().enumerate() {
+            if let Pat::Ident(ident) = param {
+                let param_name = ident.id.sym.to_string();
+
+                // Check if this function+param is in the registry with its declared name
+                let key = make_translation_fn_call_key(self.file_path, fn_name, idx);
+
+                // Also check with "default" if this function is the default export
+                let default_key = if is_default_export {
+                    Some(make_translation_fn_call_key(self.file_path, "default", idx))
+                } else {
+                    None
+                };
+
+                // Try to find the function call entry with either key
+                let fn_call = self.registries.translation_fn_call.get(&key).or_else(|| {
+                    default_key
+                        .as_ref()
+                        .and_then(|k| self.registries.translation_fn_call.get(k))
+                });
+
+                if let Some(fn_call) = fn_call {
+                    // Register this parameter as a translation function binding
+                    self.insert_binding(
+                        param_name.clone(),
+                        TranslationSource::FromFnCall {
+                            namespaces: fn_call.namespaces.clone(),
+                        },
+                    );
+                    registered_names.insert(param_name);
+                }
+            }
+        }
+
+        // Second pass: shadow all parameter names (including destructured) that
+        // have OUTER bindings but weren't registered in this function's scope.
+        // This handles cases like:
+        //   const outer = (t) => { const inner = ({t}) => t("key") }
+        // where inner's destructured `t` should shadow outer's `t`.
+        for param in params {
+            for name in extract_binding_names(param) {
+                // Skip if we already registered this name in the first pass
+                if registered_names.contains(&name) {
+                    continue;
+                }
+
+                // Skip if this name was already registered in the current scope
+                // (e.g., by register_translation_props_from_params)
+                let already_in_current_scope = self
+                    .bindings_stack
+                    .last()
+                    .is_some_and(|scope| scope.contains_key(&name));
+                if already_in_current_scope {
+                    continue;
+                }
+
+                // Check if there's an OUTER binding (not in current scope) that should be shadowed
+                let has_outer_binding = self
+                    .bindings_stack
+                    .iter()
+                    .rev()
+                    .skip(1) // Skip current scope
+                    .any(|scope| scope.contains_key(&name));
+
+                if has_outer_binding {
+                    self.insert_binding(name, TranslationSource::Shadowed);
+                }
+            }
+        }
+    }
+
     /// Check if a variable declarator is an arrow function component.
     fn extract_arrow_component(decl: &VarDeclarator) -> Option<(String, &swc_ecma_ast::ArrowExpr)> {
         let Pat::Ident(binding_ident) = &decl.name else {
@@ -588,12 +695,85 @@ impl<'a> Visit for MissingKeyChecker<'a> {
 
     /// Visit function declarations to detect translation function parameters.
     /// e.g., `function AdultLandingPage({ t }: Props) { ... }`
+    /// e.g., `function usageLabels(t) { ... }`
     fn visit_fn_decl(&mut self, node: &FnDecl) {
         self.enter_scope();
-        let component_name = node.ident.sym.to_string();
-        self.register_translation_props_from_params(&component_name, &node.function.params);
+        let fn_name = node.ident.sym.to_string();
+
+        // Try to register translation props (for React components)
+        self.register_translation_props_from_params(&fn_name, &node.function.params);
+
+        // Try to register translation function parameters (for utility functions)
+        // Convert Param to Pat for the helper function
+        let params: Vec<Pat> = node.function.params.iter().map(|p| p.pat.clone()).collect();
+        self.register_translation_fn_params(&fn_name, &params);
+
         node.function.visit_children_with(self);
         self.exit_scope();
+    }
+
+    /// Visit export default declarations to detect translation function parameters.
+    /// Handles both named and anonymous default exports:
+    /// - `export default function buildLabels(t) { ... }` (named)
+    /// - `export default function(t) { ... }` (anonymous)
+    fn visit_export_default_decl(&mut self, node: &swc_ecma_ast::ExportDefaultDecl) {
+        // Handle default exported functions (both named and anonymous)
+        if let swc_ecma_ast::DefaultDecl::Fn(fn_expr) = &node.decl {
+            self.enter_scope();
+
+            // Use function name if available, otherwise use "default" for anonymous functions
+            let fn_name = fn_expr
+                .ident
+                .as_ref()
+                .map(|i| i.sym.to_string())
+                .unwrap_or_else(|| "default".to_string());
+
+            // Try to register translation props (for React components)
+            self.register_translation_props_from_params(&fn_name, &fn_expr.function.params);
+
+            // Try to register translation function parameters (for utility functions)
+            let params: Vec<Pat> = fn_expr
+                .function
+                .params
+                .iter()
+                .map(|p| p.pat.clone())
+                .collect();
+            self.register_translation_fn_params(&fn_name, &params);
+
+            fn_expr.function.visit_children_with(self);
+            self.exit_scope();
+            return;
+        }
+
+        // Default: visit children normally (for classes, etc.)
+        node.visit_children_with(self);
+    }
+
+    /// Visit export default expressions to detect translation function parameters.
+    /// Handles anonymous arrow function exports: `export default (t) => t("key")`
+    fn visit_export_default_expr(&mut self, node: &swc_ecma_ast::ExportDefaultExpr) {
+        // Handle: export default (t) => { ... }
+        if let Expr::Arrow(arrow) = &*node.expr {
+            self.enter_scope();
+
+            // Use "default" as the function name for anonymous arrow exports
+            let fn_name = "default";
+
+            // Try to register translation props (for default-exported components)
+            if let Some(first_param) = arrow.params.first() {
+                self.register_translation_props_from_pat(fn_name, first_param);
+            }
+
+            // Try to register translation function parameters
+            self.register_translation_fn_params(fn_name, &arrow.params);
+
+            arrow.visit_children_with(self);
+            self.exit_scope();
+            return;
+        }
+
+        // Default: visit children normally
+        node.visit_children_with(self);
     }
 
     fn visit_function(&mut self, node: &swc_ecma_ast::Function) {
@@ -611,21 +791,29 @@ impl<'a> Visit for MissingKeyChecker<'a> {
     /// Visit variable declarations to detect:
     /// 1. Translation hook bindings: `const t = useTranslations("Ns")`
     /// 2. Arrow function components: `const MyComponent = ({ t }: Props) => { ... }`
+    /// 3. Arrow functions with translation function parameters: `const fn = (t) => { ... }`
     fn visit_var_decl(&mut self, node: &VarDecl) {
         for decl in &node.decls {
-            // Special handling for arrow function components:
+            // Special handling for arrow functions (components or utility functions):
             // We need to manually manage scope here because:
-            // 1. Arrow components need to register props (like `t`) as translation bindings
+            // 1. Arrow functions need to register translation bindings (from props or fn args)
             //    BEFORE visiting the function body
             // 2. Using `arrow.visit_children_with(self)` only visits the body/params,
             //    it won't trigger `visit_arrow_expr` again (avoiding double scoping)
             // 3. The `continue` skips the default `decl.visit_children_with(self)` to avoid
             //    processing the same arrow expression twice
-            if let Some((component_name, arrow)) = Self::extract_arrow_component(decl) {
+            if let Some((fn_name, arrow)) = Self::extract_arrow_component(decl) {
                 self.enter_scope();
+
+                // Try to register translation props (for React components)
                 if let Some(first_param) = arrow.params.first() {
-                    self.register_translation_props_from_pat(&component_name, first_param);
+                    self.register_translation_props_from_pat(&fn_name, first_param);
                 }
+
+                // Try to register translation function parameters (for utility functions)
+                // This handles: const usageLabels = (t) => { t("key") }
+                self.register_translation_fn_params(&fn_name, &arrow.params);
+
                 arrow.visit_children_with(self);
                 self.exit_scope();
                 continue;
@@ -674,7 +862,9 @@ impl<'a> Visit for MissingKeyChecker<'a> {
         {
             let fn_name = ident.sym.as_str();
 
-            if let Some(translation_source) = self.get_binding(fn_name) {
+            if let Some(translation_source) = self.get_binding(fn_name)
+                && !translation_source.is_shadowed()
+            {
                 let namespace = translation_source.primary_namespace();
                 let loc = self.source_map.lookup_char_pos(node.span.lo);
 
@@ -746,9 +936,9 @@ impl<'a> Visit for MissingKeyChecker<'a> {
                                 // No annotation - emit warning with hint if applicable
                                 let unwrapped = crate::checkers::unwrap_paren(&arg.expr);
                                 let (reason, hint) = if let Expr::Tpl(tpl) = unwrapped {
-                                    // For FromProps, suggest relative pattern (starting with .)
+                                    // For indirect sources (FromProps, FromFnCall), suggest relative pattern (starting with .)
                                     // For Direct, use absolute pattern with namespace
-                                    let pattern = if translation_source.is_from_props() {
+                                    let pattern = if translation_source.is_indirect() {
                                         Self::infer_pattern_from_template(tpl, &None)
                                             .map(|p| format!(".{}", p))
                                     } else {
@@ -785,7 +975,8 @@ impl<'a> Visit for MissingKeyChecker<'a> {
                 let should_record = match &*arg.expr {
                     Expr::Ident(t_ident) => {
                         let t_var = t_ident.sym.as_str();
-                        self.get_binding(t_var).is_some()
+                        self.get_binding(t_var)
+                            .is_some_and(|src| !src.is_shadowed())
                     }
                     _ => true,
                 };
@@ -824,6 +1015,7 @@ impl<'a> Visit for MissingKeyChecker<'a> {
             // Check if this is a translation method call (t.raw, t.rich, t.markup)
             if matches!(method_name, "raw" | "rich" | "markup")
                 && let Some(translation_source) = self.get_binding(obj_name)
+                && !translation_source.is_shadowed()
                 && let Some(arg) = node.args.first()
             {
                 let loc = self.source_map.lookup_char_pos(node.span.lo);

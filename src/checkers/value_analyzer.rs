@@ -712,9 +712,43 @@ mod tests {
     // tests in tests/cli/check.rs instead.
 
     #[test]
-    fn test_import_without_matching_file_returns_unresolvable() {
-        // When an import's target file doesn't exist/can't be resolved,
+    fn test_import_without_registry_entry_returns_unresolvable() {
+        // When an import's target doesn't have a registry entry,
         // the lookup should return Unresolvable
+        let object_registry = KeyObjectRegistry::new(); // Empty registry
+
+        let imports = vec![ImportInfo {
+            local_name: "toolKeys".to_string(),
+            imported_name: "toolKeys".to_string(),
+            module_path: "./constants".to_string(),
+        }];
+
+        let array_registry = KeyArrayRegistry::new();
+        let string_array_registry = StringArrayRegistry::new();
+
+        let analyzer = create_empty_analyzer(
+            "component.tsx",
+            &object_registry,
+            &array_registry,
+            &string_array_registry,
+            &imports,
+        );
+
+        // Since there's no registry entry for the import target,
+        // this should return Unresolvable
+        let result = analyzer.resolve_object("toolKeys");
+        assert!(matches!(
+            result,
+            ValueSource::Unresolvable {
+                reason: UnresolvableReason::UnknownObject(name)
+            } if name == "toolKeys"
+        ));
+    }
+
+    #[test]
+    fn test_import_with_registry_entry_resolves_via_speculative_path() {
+        // When an import's target has a registry entry, it should resolve
+        // even if the file doesn't physically exist (using speculative path)
         let mut object_registry = KeyObjectRegistry::new();
         object_registry.insert(
             make_registry_key("constants.ts", "toolKeys"),
@@ -730,7 +764,7 @@ mod tests {
         let imports = vec![ImportInfo {
             local_name: "toolKeys".to_string(),
             imported_name: "toolKeys".to_string(),
-            module_path: "./constants".to_string(), // File doesn't exist in tests
+            module_path: "./constants".to_string(),
         }];
 
         let array_registry = KeyArrayRegistry::new();
@@ -744,14 +778,13 @@ mod tests {
             &imports,
         );
 
-        // Since the import can't be resolved (file doesn't exist),
-        // this should return Unresolvable
+        // Since the registry has an entry for the speculative path,
+        // this should resolve successfully
         let result = analyzer.resolve_object("toolKeys");
         assert!(matches!(
             result,
-            ValueSource::Unresolvable {
-                reason: UnresolvableReason::UnknownObject(name)
-            } if name == "toolKeys"
+            ValueSource::ObjectAccess { object_name, candidate_values }
+            if object_name == "toolKeys" && candidate_values == vec!["create".to_string()]
         ));
     }
 }

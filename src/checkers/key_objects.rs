@@ -1,9 +1,9 @@
 use std::{collections::HashMap, path::Path};
 
 use swc_ecma_ast::{
-    ArrayLit, ArrowExpr, Callee, Decl, Expr, ExprOrSpread, Function, ImportSpecifier, JSXAttr,
-    JSXAttrName, JSXAttrOrSpread, JSXAttrValue, JSXElement, JSXElementName, JSXExpr, Lit,
-    ModuleExportName, ObjectLit, Pat, Prop, PropName, PropOrSpread, VarDecl,
+    ArrayLit, ArrowExpr, Callee, Decl, DefaultDecl, Expr, ExprOrSpread, Function, ImportSpecifier,
+    JSXAttr, JSXAttrName, JSXAttrOrSpread, JSXAttrValue, JSXElement, JSXElementName, JSXExpr, Lit,
+    ModuleExportName, ObjectLit, ObjectPatProp, Pat, Prop, PropName, PropOrSpread, VarDecl,
 };
 use swc_ecma_visit::{Visit, VisitWith};
 
@@ -90,6 +90,71 @@ pub fn make_translation_prop_key(component_name: &str, prop_name: &str) -> Strin
     format!("{}.{}", component_name, prop_name)
 }
 
+/// Represents a translation function passed as a regular function call argument.
+/// Used to track: `someFunc(t)` where `t` is a translation function.
+///
+/// This enables tracking translation keys in utility/factory functions that
+/// receive translation functions as parameters, not just React components.
+#[derive(Debug, Clone)]
+pub struct TranslationFnCall {
+    /// File path where the function is defined
+    pub fn_file_path: String,
+    /// Function name (e.g., "usageTypeLabels")
+    pub fn_name: String,
+    /// Argument index (0-based) where the translation function is passed
+    pub arg_index: usize,
+    /// List of possible namespaces from different call sites
+    /// None means no namespace (e.g., `useTranslations()` without argument)
+    pub namespaces: Vec<Option<String>>,
+}
+
+/// Registry of translation functions passed as regular function call arguments.
+/// Key format: "file_path.fn_name.arg_index"
+pub type TranslationFnCallRegistry = HashMap<String, TranslationFnCall>;
+
+/// Create registry key for TranslationFnCallRegistry
+pub fn make_translation_fn_call_key(fn_file_path: &str, fn_name: &str, arg_index: usize) -> String {
+    format!("{}.{}.{}", fn_file_path, fn_name, arg_index)
+}
+
+/// Represents a binding value in the translation bindings stack.
+/// Used to distinguish between actual translation bindings and shadowed bindings.
+#[derive(Debug, Clone)]
+enum TranslationBindingValue {
+    /// A translation function binding with optional namespace
+    Translation(Option<String>),
+    /// A shadowed binding (parameter that shadows outer translation binding).
+    /// When encountered during lookup, indicates "stop searching, this is not a translation".
+    Shadowed,
+}
+
+/// Extract all identifier names from a pattern (handles destructuring).
+/// Supports: simple ident, object destructuring, array destructuring,
+/// default values, rest patterns, and renamed destructuring.
+pub fn extract_binding_names(pat: &Pat) -> Vec<String> {
+    match pat {
+        Pat::Ident(ident) => vec![ident.id.sym.to_string()],
+        Pat::Object(obj) => obj
+            .props
+            .iter()
+            .flat_map(|prop| match prop {
+                ObjectPatProp::KeyValue(kv) => extract_binding_names(&kv.value),
+                ObjectPatProp::Assign(assign) => vec![assign.key.sym.to_string()],
+                ObjectPatProp::Rest(rest) => extract_binding_names(&rest.arg),
+            })
+            .collect(),
+        Pat::Array(arr) => arr
+            .elems
+            .iter()
+            .flatten()
+            .flat_map(extract_binding_names)
+            .collect(),
+        Pat::Assign(assign) => extract_binding_names(&assign.left),
+        Pat::Rest(rest) => extract_binding_names(&rest.arg),
+        _ => vec![],
+    }
+}
+
 /// Collects object literals, arrays, imports, and translation props from TypeScript/TSX files
 pub struct KeyObjectCollector {
     pub file_path: String,
@@ -99,11 +164,16 @@ pub struct KeyObjectCollector {
     pub imports: FileImports,
     /// Translation functions passed as JSX props
     pub translation_props: Vec<TranslationProp>,
+    /// Translation functions passed as regular function call arguments
+    pub translation_fn_calls: Vec<TranslationFnCall>,
+    /// Tracks the name of the default exported function/variable (if any).
+    /// e.g., for `export default function foo() {}`, this would be Some("foo")
+    pub default_export_name: Option<String>,
     /// Tracks nesting depth: 0 = module level, >0 = inside function/arrow
     scope_depth: usize,
     /// Stack of translation function bindings scoped by function/arrow.
-    /// Used to detect when a translation function is passed as a prop.
-    translation_bindings_stack: Vec<HashMap<String, Option<String>>>,
+    /// Used to detect when a translation function is passed as a prop or function argument.
+    translation_bindings_stack: Vec<HashMap<String, TranslationBindingValue>>,
 }
 
 const TRANSLATION_HOOKS: &[&str] = &["useTranslations", "getTranslations"];
@@ -132,6 +202,8 @@ impl KeyObjectCollector {
             string_arrays: Vec::new(),
             imports: Vec::new(),
             translation_props: Vec::new(),
+            translation_fn_calls: Vec::new(),
+            default_export_name: None,
             scope_depth: 0,
             translation_bindings_stack: vec![HashMap::new()],
         }
@@ -147,14 +219,27 @@ impl KeyObjectCollector {
 
     fn insert_translation_binding(&mut self, name: String, namespace: Option<String>) {
         if let Some(scope) = self.translation_bindings_stack.last_mut() {
-            scope.insert(name, namespace);
+            scope.insert(name, TranslationBindingValue::Translation(namespace));
         }
     }
 
+    /// Shadow a binding to prevent outer translation bindings from leaking in.
+    /// Used when a function parameter has the same name as an outer translation binding.
+    fn shadow_binding(&mut self, name: String) {
+        if let Some(scope) = self.translation_bindings_stack.last_mut() {
+            scope.insert(name, TranslationBindingValue::Shadowed);
+        }
+    }
+
+    /// Get the namespace for a translation binding if it exists.
+    /// Returns None if the binding is shadowed or not found.
     fn get_translation_binding(&self, name: &str) -> Option<Option<String>> {
         for scope in self.translation_bindings_stack.iter().rev() {
-            if let Some(namespace) = scope.get(name) {
-                return Some(namespace.clone());
+            if let Some(value) = scope.get(name) {
+                return match value {
+                    TranslationBindingValue::Translation(namespace) => Some(namespace.clone()),
+                    TranslationBindingValue::Shadowed => None, // Stop searching, explicitly shadowed
+                };
             }
         }
         None
@@ -374,6 +459,16 @@ impl Visit for KeyObjectCollector {
     fn visit_function(&mut self, node: &Function) {
         self.scope_depth += 1;
         self.enter_binding_scope();
+
+        // Shadow all function parameters to prevent outer bindings from leaking in.
+        // This handles cases like: const outer = (t) => { const inner = (t) => someFunc(t); }
+        // where inner's t should not be tracked as a translation function.
+        for param in &node.params {
+            for name in extract_binding_names(&param.pat) {
+                self.shadow_binding(name);
+            }
+        }
+
         node.visit_children_with(self);
         self.exit_binding_scope();
         self.scope_depth -= 1;
@@ -382,6 +477,14 @@ impl Visit for KeyObjectCollector {
     fn visit_arrow_expr(&mut self, node: &ArrowExpr) {
         self.scope_depth += 1;
         self.enter_binding_scope();
+
+        // Shadow all arrow function parameters to prevent outer bindings from leaking in.
+        for param in &node.params {
+            for name in extract_binding_names(param) {
+                self.shadow_binding(name);
+            }
+        }
+
         node.visit_children_with(self);
         self.exit_binding_scope();
         self.scope_depth -= 1;
@@ -396,6 +499,42 @@ impl Visit for KeyObjectCollector {
             // Only traverse children for non-Var declarations (e.g., export function)
             node.visit_children_with(self);
         }
+    }
+
+    /// Track default export declarations: `export default function foo() {}`
+    fn visit_export_default_decl(&mut self, node: &swc_ecma_ast::ExportDefaultDecl) {
+        match &node.decl {
+            DefaultDecl::Fn(fn_expr) => {
+                self.default_export_name = fn_expr
+                    .ident
+                    .as_ref()
+                    .map(|ident| ident.sym.to_string())
+                    .or_else(|| Some("default".to_string()));
+            }
+            DefaultDecl::Class(class_expr) => {
+                self.default_export_name = class_expr
+                    .ident
+                    .as_ref()
+                    .map(|ident| ident.sym.to_string())
+                    .or_else(|| Some("default".to_string()));
+            }
+            _ => {}
+        }
+        node.visit_children_with(self);
+    }
+
+    /// Track default export expressions: `export default foo`
+    fn visit_export_default_expr(&mut self, node: &swc_ecma_ast::ExportDefaultExpr) {
+        match &*node.expr {
+            Expr::Ident(ident) => {
+                self.default_export_name = Some(ident.sym.to_string());
+            }
+            Expr::Arrow(_) | Expr::Fn(_) => {
+                self.default_export_name = Some("default".to_string());
+            }
+            _ => {}
+        }
+        node.visit_children_with(self);
     }
 
     fn visit_var_decl(&mut self, node: &VarDecl) {
@@ -504,6 +643,47 @@ impl Visit for KeyObjectCollector {
         // Continue visiting children
         node.visit_children_with(self);
     }
+
+    /// Visit function calls to detect translation functions passed as arguments.
+    /// e.g., `usageTypeLabels(t)` where `t` is a translation function.
+    fn visit_call_expr(&mut self, node: &swc_ecma_ast::CallExpr) {
+        // Only process direct function calls (not method calls)
+        if let Callee::Expr(callee_expr) = &node.callee
+            && let Expr::Ident(fn_ident) = &**callee_expr
+        {
+            let local_fn_name = fn_ident.sym.to_string();
+
+            // Skip translation hooks themselves - we don't want to track useTranslations(namespace)
+            if is_translation_hook(&local_fn_name) {
+                node.visit_children_with(self);
+                return;
+            }
+
+            // Resolve where this function is defined and get its original name.
+            // For imports, this uses the imported_name (original) instead of local_name (alias).
+            let (fn_file_path, fn_name) = self.resolve_fn_definition(&local_fn_name);
+
+            // Check each argument to see if it's a translation function
+            for (idx, arg) in node.args.iter().enumerate() {
+                if let Expr::Ident(arg_ident) = &*arg.expr {
+                    let var_name = arg_ident.sym.to_string();
+
+                    // If this variable is a tracked translation function, record it
+                    if let Some(namespace) = self.get_translation_binding(&var_name) {
+                        self.add_or_update_translation_fn_call(
+                            &fn_file_path,
+                            &fn_name,
+                            idx,
+                            namespace.clone(),
+                        );
+                    }
+                }
+            }
+        }
+
+        // Continue visiting children
+        node.visit_children_with(self);
+    }
 }
 
 impl KeyObjectCollector {
@@ -543,6 +723,54 @@ impl KeyObjectCollector {
             });
         }
     }
+
+    /// Resolve where a function is defined and get its original name.
+    ///
+    /// Returns (file_path, original_function_name):
+    /// - For local functions: (current_file, local_fn_name)
+    /// - For named imports: (resolved_file, imported_name) - uses original function name
+    /// - For default imports: (resolved_file, "default")
+    fn resolve_fn_definition(&self, local_fn_name: &str) -> (String, String) {
+        // Check if the function is imported
+        if let Some(import) = self.imports.iter().find(|i| i.local_name == local_fn_name) {
+            // Try to resolve the import path to an actual file
+            let file_path = resolve_import_path(Path::new(&self.file_path), &import.module_path)
+                .unwrap_or_else(|| self.file_path.clone());
+            // Use imported_name: original name for named imports, "default" for default imports
+            (file_path, import.imported_name.clone())
+        } else {
+            // Function is defined locally
+            (self.file_path.clone(), local_fn_name.to_string())
+        }
+    }
+
+    /// Add or update a translation function call entry.
+    /// If the same fn_file_path.fn_name.arg_index already exists, merge the namespace.
+    fn add_or_update_translation_fn_call(
+        &mut self,
+        fn_file_path: &str,
+        fn_name: &str,
+        arg_index: usize,
+        namespace: Option<String>,
+    ) {
+        // Check if we already have an entry for this function.arg_index
+        if let Some(existing) = self.translation_fn_calls.iter_mut().find(|c| {
+            c.fn_file_path == fn_file_path && c.fn_name == fn_name && c.arg_index == arg_index
+        }) {
+            // Only add if this namespace isn't already tracked
+            if !existing.namespaces.contains(&namespace) {
+                existing.namespaces.push(namespace);
+            }
+        } else {
+            // Create new entry
+            self.translation_fn_calls.push(TranslationFnCall {
+                fn_file_path: fn_file_path.to_string(),
+                fn_name: fn_name.to_string(),
+                arg_index,
+                namespaces: vec![namespace],
+            });
+        }
+    }
 }
 
 /// Resolves a TypeScript import path to an actual file path
@@ -553,7 +781,9 @@ pub fn resolve_import_path(current_file: &Path, import_path: &str) -> Option<Str
     }
 
     let base_dir = current_file.parent()?;
-    let resolved = base_dir.join(import_path);
+    // Strip leading "./" from import_path to avoid paths like "./src/./utils"
+    let normalized_import = import_path.strip_prefix("./").unwrap_or(import_path);
+    let resolved = base_dir.join(normalized_import);
 
     for ext in &["ts", "tsx", "js", "jsx"] {
         let with_ext = resolved.with_extension(ext);
@@ -1208,8 +1438,14 @@ mod tests {
         assert_eq!(collector.translation_bindings_stack.len(), 1);
         let scope = collector.translation_bindings_stack.last().unwrap();
         assert_eq!(scope.len(), 2);
-        assert_eq!(scope.get("t"), Some(&Some("NS1".to_string())));
-        assert_eq!(scope.get("translate"), Some(&Some("NS2".to_string())));
+        assert!(matches!(
+            scope.get("t"),
+            Some(TranslationBindingValue::Translation(Some(ns))) if ns == "NS1"
+        ));
+        assert!(matches!(
+            scope.get("translate"),
+            Some(TranslationBindingValue::Translation(Some(ns))) if ns == "NS2"
+        ));
         // Should not track non-translation function
         assert!(!scope.contains_key("notTranslation"));
     }
@@ -1260,5 +1496,364 @@ mod tests {
             .find(|p| p.component_name == "Child")
             .unwrap();
         assert_eq!(child.namespaces, vec![Some("Inner".to_string())]);
+    }
+
+    // ============================================================
+    // Translation function call collection tests
+    // ============================================================
+
+    #[test]
+    fn test_collect_translation_fn_call_basic() {
+        let code = r#"
+            const t = useTranslations("MyNamespace");
+            const labels = usageTypeLabels(t);
+        "#;
+        let collector = parse_and_collect(code);
+
+        assert_eq!(collector.translation_fn_calls.len(), 1);
+        let fn_call = &collector.translation_fn_calls[0];
+        assert_eq!(fn_call.fn_name, "usageTypeLabels");
+        assert_eq!(fn_call.fn_file_path, "test.ts"); // Same file
+        assert_eq!(fn_call.arg_index, 0);
+        assert_eq!(fn_call.namespaces, vec![Some("MyNamespace".to_string())]);
+    }
+
+    #[test]
+    fn test_collect_translation_fn_call_without_namespace() {
+        let code = r#"
+            const t = useTranslations();
+            const result = someHelper(t);
+        "#;
+        let collector = parse_and_collect(code);
+
+        assert_eq!(collector.translation_fn_calls.len(), 1);
+        let fn_call = &collector.translation_fn_calls[0];
+        assert_eq!(fn_call.fn_name, "someHelper");
+        assert_eq!(fn_call.arg_index, 0);
+        assert_eq!(fn_call.namespaces, vec![None]);
+    }
+
+    #[test]
+    fn test_collect_translation_fn_call_with_await() {
+        let code = r#"
+            const t = await getTranslations("ServerNs");
+            const labels = buildLabels(t);
+        "#;
+        let collector = parse_and_collect(code);
+
+        assert_eq!(collector.translation_fn_calls.len(), 1);
+        let fn_call = &collector.translation_fn_calls[0];
+        assert_eq!(fn_call.fn_name, "buildLabels");
+        assert_eq!(fn_call.namespaces, vec![Some("ServerNs".to_string())]);
+    }
+
+    #[test]
+    fn test_collect_translation_fn_call_second_argument() {
+        let code = r#"
+            const t = useTranslations("MyNs");
+            const result = createLabels(config, t);
+        "#;
+        let collector = parse_and_collect(code);
+
+        assert_eq!(collector.translation_fn_calls.len(), 1);
+        let fn_call = &collector.translation_fn_calls[0];
+        assert_eq!(fn_call.fn_name, "createLabels");
+        assert_eq!(fn_call.arg_index, 1); // Second argument
+        assert_eq!(fn_call.namespaces, vec![Some("MyNs".to_string())]);
+    }
+
+    #[test]
+    fn test_collect_translation_fn_call_multiple_functions() {
+        let code = r#"
+            const t1 = useTranslations("NS1");
+            const t2 = useTranslations("NS2");
+            const labels1 = createLabels(t1);
+            const labels2 = buildLabels(t2);
+        "#;
+        let collector = parse_and_collect(code);
+
+        assert_eq!(collector.translation_fn_calls.len(), 2);
+
+        let fn_call1 = collector
+            .translation_fn_calls
+            .iter()
+            .find(|c| c.fn_name == "createLabels")
+            .unwrap();
+        assert_eq!(fn_call1.namespaces, vec![Some("NS1".to_string())]);
+
+        let fn_call2 = collector
+            .translation_fn_calls
+            .iter()
+            .find(|c| c.fn_name == "buildLabels")
+            .unwrap();
+        assert_eq!(fn_call2.namespaces, vec![Some("NS2".to_string())]);
+    }
+
+    #[test]
+    fn test_collect_same_function_multiple_namespaces() {
+        let code = r#"
+            function Page1() {
+                const t = useTranslations("NS1");
+                return createLabels(t);
+            }
+            function Page2() {
+                const t = useTranslations("NS2");
+                return createLabels(t);
+            }
+        "#;
+        let collector = parse_and_collect(code);
+
+        // Same function called with different namespaces
+        assert_eq!(collector.translation_fn_calls.len(), 1);
+        let fn_call = &collector.translation_fn_calls[0];
+        assert_eq!(fn_call.fn_name, "createLabels");
+        assert_eq!(
+            fn_call.namespaces,
+            vec![Some("NS1".to_string()), Some("NS2".to_string())]
+        );
+    }
+
+    #[test]
+    fn test_skip_non_translation_function_call() {
+        let code = r#"
+            const t = useTranslations("MyNs");
+            const name = "John";
+            const result = someFunction(name);  // Not passing t
+        "#;
+        let collector = parse_and_collect(code);
+
+        // Should not collect - the argument is not a translation function
+        assert!(collector.translation_fn_calls.is_empty());
+    }
+
+    #[test]
+    fn test_skip_translation_hook_call() {
+        // Should not track useTranslations("Ns") itself as a function call
+        let code = r#"
+            const t = useTranslations("MyNs");
+        "#;
+        let collector = parse_and_collect(code);
+
+        assert!(collector.translation_fn_calls.is_empty());
+    }
+
+    #[test]
+    fn test_translation_fn_call_scope_isolated() {
+        let code = r#"
+            function Page() {
+                const t = useTranslations("Page");
+                return createLabels(t);
+            }
+            // t is not in scope here, so this should be a different variable
+            const result = someFunc(t);
+        "#;
+        let collector = parse_and_collect(code);
+
+        // Only the call inside Page() should be collected
+        assert_eq!(collector.translation_fn_calls.len(), 1);
+        let fn_call = &collector.translation_fn_calls[0];
+        assert_eq!(fn_call.fn_name, "createLabels");
+    }
+
+    #[test]
+    fn test_translation_fn_call_in_nested_arrow() {
+        let code = r#"
+            const Component = () => {
+                const t = useTranslations("Outer");
+                const inner = () => {
+                    const t = useTranslations("Inner");
+                    return buildLabels(t);
+                };
+                return createLabels(t);
+            };
+        "#;
+        let collector = parse_and_collect(code);
+
+        assert_eq!(collector.translation_fn_calls.len(), 2);
+
+        let outer_call = collector
+            .translation_fn_calls
+            .iter()
+            .find(|c| c.fn_name == "createLabels")
+            .unwrap();
+        assert_eq!(outer_call.namespaces, vec![Some("Outer".to_string())]);
+
+        let inner_call = collector
+            .translation_fn_calls
+            .iter()
+            .find(|c| c.fn_name == "buildLabels")
+            .unwrap();
+        assert_eq!(inner_call.namespaces, vec![Some("Inner".to_string())]);
+    }
+
+    // ============================================================
+    // Parameter Shadowing Tests
+    // ============================================================
+
+    #[test]
+    fn test_translation_fn_call_parameter_shadows_outer_binding() {
+        // Inner function has parameter `t` that shadows outer `t`
+        // The inner call should NOT be tracked
+        let code = r#"
+            const Component = () => {
+                const t = useTranslations("Outer");
+                const inner = (t) => {
+                    return buildLabels(t);  // Should NOT be tracked
+                };
+                return createLabels(t);  // Should be tracked
+            };
+        "#;
+        let collector = parse_and_collect(code);
+
+        // Only createLabels should be tracked, not buildLabels
+        assert_eq!(collector.translation_fn_calls.len(), 1);
+        assert_eq!(collector.translation_fn_calls[0].fn_name, "createLabels");
+        assert_eq!(
+            collector.translation_fn_calls[0].namespaces,
+            vec![Some("Outer".to_string())]
+        );
+    }
+
+    #[test]
+    fn test_translation_fn_call_destructured_param_shadows() {
+        // Inner function has destructured parameter `{ t }` that shadows outer `t`
+        let code = r#"
+            const Component = () => {
+                const t = useTranslations("Outer");
+                const inner = ({ t }) => {
+                    return buildLabels(t);  // Should NOT be tracked
+                };
+                return createLabels(t);  // Should be tracked
+            };
+        "#;
+        let collector = parse_and_collect(code);
+
+        assert_eq!(collector.translation_fn_calls.len(), 1);
+        assert_eq!(collector.translation_fn_calls[0].fn_name, "createLabels");
+    }
+
+    #[test]
+    fn test_translation_fn_call_function_param_shadows() {
+        // Function declaration with param `t` that shadows outer `t`
+        let code = r#"
+            function Page() {
+                const t = useTranslations("Page");
+                function helper(t) {
+                    return someFunc(t);  // Should NOT be tracked
+                }
+                return buildLabels(t);  // Should be tracked
+            }
+        "#;
+        let collector = parse_and_collect(code);
+
+        assert_eq!(collector.translation_fn_calls.len(), 1);
+        assert_eq!(collector.translation_fn_calls[0].fn_name, "buildLabels");
+    }
+
+    #[test]
+    fn test_translation_fn_call_renamed_destructured_param_shadows() {
+        // Renamed destructured parameter `{ t: translate }` should shadow `translate`
+        let code = r#"
+            const Component = () => {
+                const translate = useTranslations("Outer");
+                const inner = ({ t: translate }) => {
+                    return buildLabels(translate);  // Should NOT be tracked
+                };
+                return createLabels(translate);  // Should be tracked
+            };
+        "#;
+        let collector = parse_and_collect(code);
+
+        assert_eq!(collector.translation_fn_calls.len(), 1);
+        assert_eq!(collector.translation_fn_calls[0].fn_name, "createLabels");
+    }
+
+    // ============================================================
+    // Import Alias Tests
+    // ============================================================
+
+    #[test]
+    fn test_translation_fn_call_with_import_alias() {
+        // When a function is imported with an alias, the registry should use
+        // the original function name (imported_name), not the alias (local_name)
+        let code = r#"
+            import { buildLabels as labels } from './utils';
+            const t = useTranslations("NS");
+            labels(t);
+        "#;
+        let collector = parse_and_collect(code);
+
+        assert_eq!(collector.translation_fn_calls.len(), 1);
+        // Should use original function name "buildLabels", not alias "labels"
+        assert_eq!(collector.translation_fn_calls[0].fn_name, "buildLabels");
+    }
+
+    #[test]
+    fn test_translation_fn_call_with_default_import() {
+        // When a function is default imported, the registry should use "default"
+        let code = r#"
+            import labels from './utils';
+            const t = useTranslations("NS");
+            labels(t);
+        "#;
+        let collector = parse_and_collect(code);
+
+        assert_eq!(collector.translation_fn_calls.len(), 1);
+        // Should use "default" as function name
+        assert_eq!(collector.translation_fn_calls[0].fn_name, "default");
+    }
+
+    // ============================================================
+    // Default Export Detection Tests
+    // ============================================================
+
+    #[test]
+    fn test_default_export_function_decl() {
+        let code = r#"
+            export default function buildLabels(t) {
+                return t("key");
+            }
+        "#;
+        let collector = parse_and_collect(code);
+        assert_eq!(
+            collector.default_export_name,
+            Some("buildLabels".to_string())
+        );
+    }
+
+    #[test]
+    fn test_default_export_expr() {
+        let code = r#"
+            function buildLabels(t) {
+                return t("key");
+            }
+            export default buildLabels;
+        "#;
+        let collector = parse_and_collect(code);
+        assert_eq!(
+            collector.default_export_name,
+            Some("buildLabels".to_string())
+        );
+    }
+
+    #[test]
+    fn test_default_export_arrow_function() {
+        // Anonymous arrow function - track as "default"
+        let code = r#"
+            export default (t) => t("key");
+        "#;
+        let collector = parse_and_collect(code);
+        assert_eq!(collector.default_export_name, Some("default".to_string()));
+    }
+
+    #[test]
+    fn test_no_default_export() {
+        let code = r#"
+            export function buildLabels(t) {
+                return t("key");
+            }
+        "#;
+        let collector = parse_and_collect(code);
+        assert_eq!(collector.default_export_name, None);
     }
 }
