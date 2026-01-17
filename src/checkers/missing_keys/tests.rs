@@ -1487,6 +1487,31 @@ fn test_translation_fn_call_anonymous_default_export_arrow() {
 }
 
 #[test]
+fn test_translation_prop_default_export_arrow_component() {
+    let mut translation_prop = TranslationPropRegistry::new();
+    translation_prop.insert(
+        make_translation_prop_key("default", "t"),
+        TranslationProp {
+            component_name: "default".to_string(),
+            prop_name: "t".to_string(),
+            namespaces: vec![Some("MyNs".to_string())],
+        },
+    );
+    let registries = Box::leak(Box::new(create_registries_with_translation_props(
+        translation_prop,
+    )));
+
+    let code = r#"
+        export default ({ t }) => t("title");
+    "#;
+
+    let checker = parse_and_check_with_registries(code, registries);
+
+    assert_eq!(checker.used_keys.len(), 1);
+    assert_eq!(checker.used_keys[0].full_key, "MyNs.title");
+}
+
+#[test]
 fn test_translation_fn_call_default_export_matched() {
     // Setup: registry has "test.tsx.default.0" entry (from default import call site)
     // File test.tsx has `export default function buildLabels(t) { t("key") }`

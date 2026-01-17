@@ -759,6 +759,11 @@ impl<'a> Visit for MissingKeyChecker<'a> {
             // Use "default" as the function name for anonymous arrow exports
             let fn_name = "default";
 
+            // Try to register translation props (for default-exported components)
+            if let Some(first_param) = arrow.params.first() {
+                self.register_translation_props_from_pat(fn_name, first_param);
+            }
+
             // Try to register translation function parameters
             self.register_translation_fn_params(fn_name, &arrow.params);
 

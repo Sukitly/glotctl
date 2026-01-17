@@ -10,8 +10,8 @@ use swc_ecma_visit::VisitWith;
 use crate::{
     checkers::{
         key_objects::{
-            KeyObjectCollector, make_registry_key, make_translation_fn_call_key,
-            make_translation_prop_key,
+            FileImports, KeyObjectCollector, TranslationProp, make_registry_key,
+            make_translation_fn_call_key, make_translation_prop_key, resolve_import_path,
         },
         schema::{SchemaFunctionCollector, expand_schema_keys},
         value_source::ValueSource,
@@ -40,6 +40,7 @@ pub fn build_registries(ctx: &CheckContext) -> (Registries, AllFileImports, Vec<
     let mut default_exports = HashMap::new();
     let mut file_imports: AllFileImports = HashMap::new();
     let mut errors = Vec::new();
+    let mut translation_props_by_file: Vec<(String, Vec<TranslationProp>)> = Vec::new();
 
     for file_path in &ctx.files {
         let parsed = match parse_jsx_file(Path::new(file_path)) {
@@ -82,23 +83,7 @@ pub fn build_registries(ctx: &CheckContext) -> (Registries, AllFileImports, Vec<
             string_array.insert(key, str_arr);
         }
 
-        // Translation prop registry: merge namespaces for same component.prop
-        for prop in key_collector.translation_props {
-            let key = make_translation_prop_key(&prop.component_name, &prop.prop_name);
-            translation_prop
-                .entry(key)
-                .and_modify(
-                    |existing: &mut crate::checkers::key_objects::TranslationProp| {
-                        // Merge namespaces from different call sites
-                        for ns in &prop.namespaces {
-                            if !existing.namespaces.contains(ns) {
-                                existing.namespaces.push(ns.clone());
-                            }
-                        }
-                    },
-                )
-                .or_insert(prop);
-        }
+        translation_props_by_file.push((file_path.clone(), key_collector.translation_props));
 
         // Translation function call registry: merge namespaces for same fn.arg_index
         for fn_call in key_collector.translation_fn_calls {
@@ -128,6 +113,35 @@ pub fn build_registries(ctx: &CheckContext) -> (Registries, AllFileImports, Vec<
         }
     }
 
+    // Translation prop registry: merge namespaces for same component.prop
+    // Map default-imported component names to their default export names where possible.
+    for (file_path, props) in translation_props_by_file {
+        let imports = file_imports.get(&file_path).cloned().unwrap_or_default();
+        for mut prop in props {
+            let resolved_component_name = resolve_component_name_for_prop(
+                &file_path,
+                &prop.component_name,
+                &imports,
+                &default_exports,
+            );
+            prop.component_name = resolved_component_name;
+            let key = make_translation_prop_key(&prop.component_name, &prop.prop_name);
+            translation_prop
+                .entry(key)
+                .and_modify(
+                    |existing: &mut crate::checkers::key_objects::TranslationProp| {
+                        // Merge namespaces from different call sites
+                        for ns in &prop.namespaces {
+                            if !existing.namespaces.contains(ns) {
+                                existing.namespaces.push(ns.clone());
+                            }
+                        }
+                    },
+                )
+                .or_insert(prop);
+        }
+    }
+
     let registries = Registries {
         schema,
         key_object,
@@ -139,6 +153,29 @@ pub fn build_registries(ctx: &CheckContext) -> (Registries, AllFileImports, Vec<
     };
 
     (registries, file_imports, errors)
+}
+
+fn resolve_component_name_for_prop(
+    file_path: &str,
+    component_name: &str,
+    imports: &FileImports,
+    default_exports: &HashMap<String, String>,
+) -> String {
+    let Some(import) = imports
+        .iter()
+        .find(|i| i.local_name == component_name && i.imported_name == "default")
+    else {
+        return component_name.to_string();
+    };
+
+    let Some(target_path) = resolve_import_path(Path::new(file_path), &import.module_path) else {
+        return component_name.to_string();
+    };
+
+    default_exports
+        .get(&target_path)
+        .cloned()
+        .unwrap_or_else(|| component_name.to_string())
 }
 
 /// Build extractions by parsing all source files once.

@@ -505,14 +505,18 @@ impl Visit for KeyObjectCollector {
     fn visit_export_default_decl(&mut self, node: &swc_ecma_ast::ExportDefaultDecl) {
         match &node.decl {
             DefaultDecl::Fn(fn_expr) => {
-                if let Some(ident) = &fn_expr.ident {
-                    self.default_export_name = Some(ident.sym.to_string());
-                }
+                self.default_export_name = fn_expr
+                    .ident
+                    .as_ref()
+                    .map(|ident| ident.sym.to_string())
+                    .or_else(|| Some("default".to_string()));
             }
             DefaultDecl::Class(class_expr) => {
-                if let Some(ident) = &class_expr.ident {
-                    self.default_export_name = Some(ident.sym.to_string());
-                }
+                self.default_export_name = class_expr
+                    .ident
+                    .as_ref()
+                    .map(|ident| ident.sym.to_string())
+                    .or_else(|| Some("default".to_string()));
             }
             _ => {}
         }
@@ -521,8 +525,14 @@ impl Visit for KeyObjectCollector {
 
     /// Track default export expressions: `export default foo`
     fn visit_export_default_expr(&mut self, node: &swc_ecma_ast::ExportDefaultExpr) {
-        if let Expr::Ident(ident) = &*node.expr {
-            self.default_export_name = Some(ident.sym.to_string());
+        match &*node.expr {
+            Expr::Ident(ident) => {
+                self.default_export_name = Some(ident.sym.to_string());
+            }
+            Expr::Arrow(_) | Expr::Fn(_) => {
+                self.default_export_name = Some("default".to_string());
+            }
+            _ => {}
         }
         node.visit_children_with(self);
     }
