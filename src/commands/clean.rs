@@ -66,6 +66,8 @@ impl CleanRunner {
                 exit_on_errors: true,
                 issues: Vec::new(),
                 parse_error_count: 0,
+                source_files_checked: 0,
+                locale_files_checked: 0,
             });
         }
 
@@ -307,6 +309,8 @@ impl CleanRunner {
                 exit_on_errors: true,
                 issues: Vec::new(),
                 parse_error_count: 0,
+                source_files_checked: 0,
+                locale_files_checked: 0,
             })
         } else {
             // Dry-run: just print what would be deleted
@@ -331,6 +335,8 @@ impl CleanRunner {
                 exit_on_errors: false, // dry-run should not fail CI
                 issues: Vec::new(),
                 parse_error_count: 0,
+                source_files_checked: 0,
+                locale_files_checked: 0,
             })
         }
     }

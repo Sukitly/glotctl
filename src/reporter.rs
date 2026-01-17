@@ -142,6 +142,32 @@ pub fn print_report(issues: &[Issue]) {
     }
 }
 
+/// Print a success message when no issues are found.
+///
+/// Displays the number of files checked to give the user confidence
+/// that the check actually ran and covered the expected scope.
+pub fn print_success(source_files: usize, locale_files: usize) {
+    let checkmark = "\u{2713}".green();
+
+    if locale_files == 0 {
+        println!(
+            "{} Checked {} source {} - no issues found",
+            checkmark,
+            source_files,
+            if source_files == 1 { "file" } else { "files" }
+        );
+    } else {
+        println!(
+            "{} Checked {} source {}, {} locale {} - no issues found",
+            checkmark,
+            source_files,
+            if source_files == 1 { "file" } else { "files" },
+            locale_files,
+            if locale_files == 1 { "file" } else { "files" }
+        );
+    }
+}
+
 /// Print a warning about files that could not be parsed.
 ///
 /// This is shown at the end of a check run when files were skipped.
