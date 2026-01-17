@@ -1,9 +1,9 @@
 use std::{collections::HashMap, path::Path};
 
 use swc_ecma_ast::{
-    ArrayLit, ArrowExpr, Callee, Decl, Expr, ExprOrSpread, Function, ImportSpecifier, JSXAttr,
-    JSXAttrName, JSXAttrOrSpread, JSXAttrValue, JSXElement, JSXElementName, JSXExpr, Lit,
-    ModuleExportName, ObjectLit, Pat, Prop, PropName, PropOrSpread, VarDecl,
+    ArrayLit, ArrowExpr, Callee, Decl, DefaultDecl, Expr, ExprOrSpread, Function, ImportSpecifier,
+    JSXAttr, JSXAttrName, JSXAttrOrSpread, JSXAttrValue, JSXElement, JSXElementName, JSXExpr, Lit,
+    ModuleExportName, ObjectLit, ObjectPatProp, Pat, Prop, PropName, PropOrSpread, VarDecl,
 };
 use swc_ecma_visit::{Visit, VisitWith};
 
@@ -117,6 +117,44 @@ pub fn make_translation_fn_call_key(fn_file_path: &str, fn_name: &str, arg_index
     format!("{}.{}.{}", fn_file_path, fn_name, arg_index)
 }
 
+/// Represents a binding value in the translation bindings stack.
+/// Used to distinguish between actual translation bindings and shadowed bindings.
+#[derive(Debug, Clone)]
+enum TranslationBindingValue {
+    /// A translation function binding with optional namespace
+    Translation(Option<String>),
+    /// A shadowed binding (parameter that shadows outer translation binding).
+    /// When encountered during lookup, indicates "stop searching, this is not a translation".
+    Shadowed,
+}
+
+/// Extract all identifier names from a pattern (handles destructuring).
+/// Supports: simple ident, object destructuring, array destructuring,
+/// default values, rest patterns, and renamed destructuring.
+fn extract_binding_names(pat: &Pat) -> Vec<String> {
+    match pat {
+        Pat::Ident(ident) => vec![ident.id.sym.to_string()],
+        Pat::Object(obj) => obj
+            .props
+            .iter()
+            .flat_map(|prop| match prop {
+                ObjectPatProp::KeyValue(kv) => extract_binding_names(&kv.value),
+                ObjectPatProp::Assign(assign) => vec![assign.key.sym.to_string()],
+                ObjectPatProp::Rest(rest) => extract_binding_names(&rest.arg),
+            })
+            .collect(),
+        Pat::Array(arr) => arr
+            .elems
+            .iter()
+            .flatten()
+            .flat_map(extract_binding_names)
+            .collect(),
+        Pat::Assign(assign) => extract_binding_names(&assign.left),
+        Pat::Rest(rest) => extract_binding_names(&rest.arg),
+        _ => vec![],
+    }
+}
+
 /// Collects object literals, arrays, imports, and translation props from TypeScript/TSX files
 pub struct KeyObjectCollector {
     pub file_path: String,
@@ -128,11 +166,14 @@ pub struct KeyObjectCollector {
     pub translation_props: Vec<TranslationProp>,
     /// Translation functions passed as regular function call arguments
     pub translation_fn_calls: Vec<TranslationFnCall>,
+    /// Tracks the name of the default exported function/variable (if any).
+    /// e.g., for `export default function foo() {}`, this would be Some("foo")
+    pub default_export_name: Option<String>,
     /// Tracks nesting depth: 0 = module level, >0 = inside function/arrow
     scope_depth: usize,
     /// Stack of translation function bindings scoped by function/arrow.
     /// Used to detect when a translation function is passed as a prop or function argument.
-    translation_bindings_stack: Vec<HashMap<String, Option<String>>>,
+    translation_bindings_stack: Vec<HashMap<String, TranslationBindingValue>>,
 }
 
 const TRANSLATION_HOOKS: &[&str] = &["useTranslations", "getTranslations"];
@@ -162,6 +203,7 @@ impl KeyObjectCollector {
             imports: Vec::new(),
             translation_props: Vec::new(),
             translation_fn_calls: Vec::new(),
+            default_export_name: None,
             scope_depth: 0,
             translation_bindings_stack: vec![HashMap::new()],
         }
@@ -177,14 +219,27 @@ impl KeyObjectCollector {
 
     fn insert_translation_binding(&mut self, name: String, namespace: Option<String>) {
         if let Some(scope) = self.translation_bindings_stack.last_mut() {
-            scope.insert(name, namespace);
+            scope.insert(name, TranslationBindingValue::Translation(namespace));
         }
     }
 
+    /// Shadow a binding to prevent outer translation bindings from leaking in.
+    /// Used when a function parameter has the same name as an outer translation binding.
+    fn shadow_binding(&mut self, name: String) {
+        if let Some(scope) = self.translation_bindings_stack.last_mut() {
+            scope.insert(name, TranslationBindingValue::Shadowed);
+        }
+    }
+
+    /// Get the namespace for a translation binding if it exists.
+    /// Returns None if the binding is shadowed or not found.
     fn get_translation_binding(&self, name: &str) -> Option<Option<String>> {
         for scope in self.translation_bindings_stack.iter().rev() {
-            if let Some(namespace) = scope.get(name) {
-                return Some(namespace.clone());
+            if let Some(value) = scope.get(name) {
+                return match value {
+                    TranslationBindingValue::Translation(namespace) => Some(namespace.clone()),
+                    TranslationBindingValue::Shadowed => None, // Stop searching, explicitly shadowed
+                };
             }
         }
         None
@@ -404,6 +459,16 @@ impl Visit for KeyObjectCollector {
     fn visit_function(&mut self, node: &Function) {
         self.scope_depth += 1;
         self.enter_binding_scope();
+
+        // Shadow all function parameters to prevent outer bindings from leaking in.
+        // This handles cases like: const outer = (t) => { const inner = (t) => someFunc(t); }
+        // where inner's t should not be tracked as a translation function.
+        for param in &node.params {
+            for name in extract_binding_names(&param.pat) {
+                self.shadow_binding(name);
+            }
+        }
+
         node.visit_children_with(self);
         self.exit_binding_scope();
         self.scope_depth -= 1;
@@ -412,6 +477,14 @@ impl Visit for KeyObjectCollector {
     fn visit_arrow_expr(&mut self, node: &ArrowExpr) {
         self.scope_depth += 1;
         self.enter_binding_scope();
+
+        // Shadow all arrow function parameters to prevent outer bindings from leaking in.
+        for param in &node.params {
+            for name in extract_binding_names(param) {
+                self.shadow_binding(name);
+            }
+        }
+
         node.visit_children_with(self);
         self.exit_binding_scope();
         self.scope_depth -= 1;
@@ -426,6 +499,32 @@ impl Visit for KeyObjectCollector {
             // Only traverse children for non-Var declarations (e.g., export function)
             node.visit_children_with(self);
         }
+    }
+
+    /// Track default export declarations: `export default function foo() {}`
+    fn visit_export_default_decl(&mut self, node: &swc_ecma_ast::ExportDefaultDecl) {
+        match &node.decl {
+            DefaultDecl::Fn(fn_expr) => {
+                if let Some(ident) = &fn_expr.ident {
+                    self.default_export_name = Some(ident.sym.to_string());
+                }
+            }
+            DefaultDecl::Class(class_expr) => {
+                if let Some(ident) = &class_expr.ident {
+                    self.default_export_name = Some(ident.sym.to_string());
+                }
+            }
+            _ => {}
+        }
+        node.visit_children_with(self);
+    }
+
+    /// Track default export expressions: `export default foo`
+    fn visit_export_default_expr(&mut self, node: &swc_ecma_ast::ExportDefaultExpr) {
+        if let Expr::Ident(ident) = &*node.expr {
+            self.default_export_name = Some(ident.sym.to_string());
+        }
+        node.visit_children_with(self);
     }
 
     fn visit_var_decl(&mut self, node: &VarDecl) {
@@ -542,16 +641,17 @@ impl Visit for KeyObjectCollector {
         if let Callee::Expr(callee_expr) = &node.callee
             && let Expr::Ident(fn_ident) = &**callee_expr
         {
-            let fn_name = fn_ident.sym.to_string();
+            let local_fn_name = fn_ident.sym.to_string();
 
             // Skip translation hooks themselves - we don't want to track useTranslations(namespace)
-            if is_translation_hook(&fn_name) {
+            if is_translation_hook(&local_fn_name) {
                 node.visit_children_with(self);
                 return;
             }
 
-            // Resolve where this function is defined
-            let fn_file_path = self.resolve_fn_definition_path(&fn_name);
+            // Resolve where this function is defined and get its original name.
+            // For imports, this uses the imported_name (original) instead of local_name (alias).
+            let (fn_file_path, fn_name) = self.resolve_fn_definition(&local_fn_name);
 
             // Check each argument to see if it's a translation function
             for (idx, arg) in node.args.iter().enumerate() {
@@ -614,19 +714,23 @@ impl KeyObjectCollector {
         }
     }
 
-    /// Resolve where a function is defined based on its name.
+    /// Resolve where a function is defined and get its original name.
     ///
-    /// If the function is imported, returns the resolved file path of the import.
-    /// Otherwise, returns the current file path (function defined locally).
-    fn resolve_fn_definition_path(&self, fn_name: &str) -> String {
+    /// Returns (file_path, original_function_name):
+    /// - For local functions: (current_file, local_fn_name)
+    /// - For named imports: (resolved_file, imported_name) - uses original function name
+    /// - For default imports: (resolved_file, "default")
+    fn resolve_fn_definition(&self, local_fn_name: &str) -> (String, String) {
         // Check if the function is imported
-        if let Some(import) = self.imports.iter().find(|i| i.local_name == fn_name) {
+        if let Some(import) = self.imports.iter().find(|i| i.local_name == local_fn_name) {
             // Try to resolve the import path to an actual file
-            resolve_import_path(Path::new(&self.file_path), &import.module_path)
-                .unwrap_or_else(|| self.file_path.clone())
+            let file_path = resolve_import_path(Path::new(&self.file_path), &import.module_path)
+                .unwrap_or_else(|| self.file_path.clone());
+            // Use imported_name: original name for named imports, "default" for default imports
+            (file_path, import.imported_name.clone())
         } else {
             // Function is defined locally
-            self.file_path.clone()
+            (self.file_path.clone(), local_fn_name.to_string())
         }
     }
 
@@ -1322,8 +1426,14 @@ mod tests {
         assert_eq!(collector.translation_bindings_stack.len(), 1);
         let scope = collector.translation_bindings_stack.last().unwrap();
         assert_eq!(scope.len(), 2);
-        assert_eq!(scope.get("t"), Some(&Some("NS1".to_string())));
-        assert_eq!(scope.get("translate"), Some(&Some("NS2".to_string())));
+        assert!(matches!(
+            scope.get("t"),
+            Some(TranslationBindingValue::Translation(Some(ns))) if ns == "NS1"
+        ));
+        assert!(matches!(
+            scope.get("translate"),
+            Some(TranslationBindingValue::Translation(Some(ns))) if ns == "NS2"
+        ));
         // Should not track non-translation function
         assert!(!scope.contains_key("notTranslation"));
     }
@@ -1562,5 +1672,177 @@ mod tests {
             .find(|c| c.fn_name == "buildLabels")
             .unwrap();
         assert_eq!(inner_call.namespaces, vec![Some("Inner".to_string())]);
+    }
+
+    // ============================================================
+    // Parameter Shadowing Tests
+    // ============================================================
+
+    #[test]
+    fn test_translation_fn_call_parameter_shadows_outer_binding() {
+        // Inner function has parameter `t` that shadows outer `t`
+        // The inner call should NOT be tracked
+        let code = r#"
+            const Component = () => {
+                const t = useTranslations("Outer");
+                const inner = (t) => {
+                    return buildLabels(t);  // Should NOT be tracked
+                };
+                return createLabels(t);  // Should be tracked
+            };
+        "#;
+        let collector = parse_and_collect(code);
+
+        // Only createLabels should be tracked, not buildLabels
+        assert_eq!(collector.translation_fn_calls.len(), 1);
+        assert_eq!(collector.translation_fn_calls[0].fn_name, "createLabels");
+        assert_eq!(
+            collector.translation_fn_calls[0].namespaces,
+            vec![Some("Outer".to_string())]
+        );
+    }
+
+    #[test]
+    fn test_translation_fn_call_destructured_param_shadows() {
+        // Inner function has destructured parameter `{ t }` that shadows outer `t`
+        let code = r#"
+            const Component = () => {
+                const t = useTranslations("Outer");
+                const inner = ({ t }) => {
+                    return buildLabels(t);  // Should NOT be tracked
+                };
+                return createLabels(t);  // Should be tracked
+            };
+        "#;
+        let collector = parse_and_collect(code);
+
+        assert_eq!(collector.translation_fn_calls.len(), 1);
+        assert_eq!(collector.translation_fn_calls[0].fn_name, "createLabels");
+    }
+
+    #[test]
+    fn test_translation_fn_call_function_param_shadows() {
+        // Function declaration with param `t` that shadows outer `t`
+        let code = r#"
+            function Page() {
+                const t = useTranslations("Page");
+                function helper(t) {
+                    return someFunc(t);  // Should NOT be tracked
+                }
+                return buildLabels(t);  // Should be tracked
+            }
+        "#;
+        let collector = parse_and_collect(code);
+
+        assert_eq!(collector.translation_fn_calls.len(), 1);
+        assert_eq!(collector.translation_fn_calls[0].fn_name, "buildLabels");
+    }
+
+    #[test]
+    fn test_translation_fn_call_renamed_destructured_param_shadows() {
+        // Renamed destructured parameter `{ t: translate }` should shadow `translate`
+        let code = r#"
+            const Component = () => {
+                const translate = useTranslations("Outer");
+                const inner = ({ t: translate }) => {
+                    return buildLabels(translate);  // Should NOT be tracked
+                };
+                return createLabels(translate);  // Should be tracked
+            };
+        "#;
+        let collector = parse_and_collect(code);
+
+        assert_eq!(collector.translation_fn_calls.len(), 1);
+        assert_eq!(collector.translation_fn_calls[0].fn_name, "createLabels");
+    }
+
+    // ============================================================
+    // Import Alias Tests
+    // ============================================================
+
+    #[test]
+    fn test_translation_fn_call_with_import_alias() {
+        // When a function is imported with an alias, the registry should use
+        // the original function name (imported_name), not the alias (local_name)
+        let code = r#"
+            import { buildLabels as labels } from './utils';
+            const t = useTranslations("NS");
+            labels(t);
+        "#;
+        let collector = parse_and_collect(code);
+
+        assert_eq!(collector.translation_fn_calls.len(), 1);
+        // Should use original function name "buildLabels", not alias "labels"
+        assert_eq!(collector.translation_fn_calls[0].fn_name, "buildLabels");
+    }
+
+    #[test]
+    fn test_translation_fn_call_with_default_import() {
+        // When a function is default imported, the registry should use "default"
+        let code = r#"
+            import labels from './utils';
+            const t = useTranslations("NS");
+            labels(t);
+        "#;
+        let collector = parse_and_collect(code);
+
+        assert_eq!(collector.translation_fn_calls.len(), 1);
+        // Should use "default" as function name
+        assert_eq!(collector.translation_fn_calls[0].fn_name, "default");
+    }
+
+    // ============================================================
+    // Default Export Detection Tests
+    // ============================================================
+
+    #[test]
+    fn test_default_export_function_decl() {
+        let code = r#"
+            export default function buildLabels(t) {
+                return t("key");
+            }
+        "#;
+        let collector = parse_and_collect(code);
+        assert_eq!(
+            collector.default_export_name,
+            Some("buildLabels".to_string())
+        );
+    }
+
+    #[test]
+    fn test_default_export_expr() {
+        let code = r#"
+            function buildLabels(t) {
+                return t("key");
+            }
+            export default buildLabels;
+        "#;
+        let collector = parse_and_collect(code);
+        assert_eq!(
+            collector.default_export_name,
+            Some("buildLabels".to_string())
+        );
+    }
+
+    #[test]
+    fn test_default_export_arrow_function() {
+        // Anonymous arrow function - no name to track
+        let code = r#"
+            export default (t) => t("key");
+        "#;
+        let collector = parse_and_collect(code);
+        // Anonymous functions have no name
+        assert_eq!(collector.default_export_name, None);
+    }
+
+    #[test]
+    fn test_no_default_export() {
+        let code = r#"
+            export function buildLabels(t) {
+                return t("key");
+            }
+        "#;
+        let collector = parse_and_collect(code);
+        assert_eq!(collector.default_export_name, None);
     }
 }

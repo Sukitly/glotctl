@@ -37,6 +37,7 @@ pub fn build_registries(ctx: &CheckContext) -> (Registries, AllFileImports, Vec<
     let mut string_array = HashMap::new();
     let mut translation_prop = HashMap::new();
     let mut translation_fn_call = HashMap::new();
+    let mut default_exports = HashMap::new();
     let mut file_imports: AllFileImports = HashMap::new();
     let mut errors = Vec::new();
 
@@ -120,6 +121,11 @@ pub fn build_registries(ctx: &CheckContext) -> (Registries, AllFileImports, Vec<
                 )
                 .or_insert(fn_call);
         }
+
+        // Default export registry: track which function is the default export
+        if let Some(name) = key_collector.default_export_name {
+            default_exports.insert(file_path.clone(), name);
+        }
     }
 
     let registries = Registries {
@@ -129,6 +135,7 @@ pub fn build_registries(ctx: &CheckContext) -> (Registries, AllFileImports, Vec<
         string_array,
         translation_prop,
         translation_fn_call,
+        default_exports,
     };
 
     (registries, file_imports, errors)

@@ -42,6 +42,9 @@ pub struct Registries {
     pub translation_prop: TranslationPropRegistry,
     /// Translation functions passed as regular function call arguments (e.g., `someFunc(t)`)
     pub translation_fn_call: TranslationFnCallRegistry,
+    /// Maps file_path -> default_export_name for files with default exports.
+    /// Used to match translation function calls with default imported functions.
+    pub default_exports: HashMap<String, String>,
 }
 
 /// Aggregated message data from all locale files.

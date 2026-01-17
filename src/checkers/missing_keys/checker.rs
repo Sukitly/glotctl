@@ -538,15 +538,40 @@ impl<'a> MissingKeyChecker<'a> {
     /// For any parameter that shadows an outer translation binding but isn't registered,
     /// insert a Shadowed marker to prevent the outer binding from leaking in.
     ///
+    /// Also handles default exports: if this function is the default export of the file,
+    /// we also check for registry entries with "default" as the function name.
+    ///
     /// - `fn_name`: The function name (e.g., "usageLabels")
     /// - `params`: The function parameters
     fn register_translation_fn_params(&mut self, fn_name: &str, params: &[Pat]) {
         for (idx, param) in params.iter().enumerate() {
             if let Pat::Ident(ident) = param {
                 let param_name = ident.id.sym.to_string();
-                // Check if this function+param is in the registry
+
+                // Check if this function+param is in the registry with its declared name
                 let key = make_translation_fn_call_key(self.file_path, fn_name, idx);
-                if let Some(fn_call) = self.registries.translation_fn_call.get(&key) {
+
+                // Also check with "default" if this function is the default export
+                let default_key = if self
+                    .registries
+                    .default_exports
+                    .get(self.file_path)
+                    .map(|s| s.as_str())
+                    == Some(fn_name)
+                {
+                    Some(make_translation_fn_call_key(self.file_path, "default", idx))
+                } else {
+                    None
+                };
+
+                // Try to find the function call entry with either key
+                let fn_call = self.registries.translation_fn_call.get(&key).or_else(|| {
+                    default_key
+                        .as_ref()
+                        .and_then(|k| self.registries.translation_fn_call.get(k))
+                });
+
+                if let Some(fn_call) = fn_call {
                     // Register this parameter as a translation function binding
                     self.insert_binding(
                         param_name,
@@ -643,6 +668,37 @@ impl<'a> Visit for MissingKeyChecker<'a> {
 
         node.function.visit_children_with(self);
         self.exit_scope();
+    }
+
+    /// Visit export default declarations to detect translation function parameters.
+    /// e.g., `export default function buildLabels(t) { ... }`
+    fn visit_export_default_decl(&mut self, node: &swc_ecma_ast::ExportDefaultDecl) {
+        // Handle default exported functions with names
+        if let swc_ecma_ast::DefaultDecl::Fn(fn_expr) = &node.decl
+            && let Some(ident) = &fn_expr.ident
+        {
+            self.enter_scope();
+            let fn_name = ident.sym.to_string();
+
+            // Try to register translation props (for React components)
+            self.register_translation_props_from_params(&fn_name, &fn_expr.function.params);
+
+            // Try to register translation function parameters (for utility functions)
+            let params: Vec<Pat> = fn_expr
+                .function
+                .params
+                .iter()
+                .map(|p| p.pat.clone())
+                .collect();
+            self.register_translation_fn_params(&fn_name, &params);
+
+            fn_expr.function.visit_children_with(self);
+            self.exit_scope();
+            return;
+        }
+
+        // Default: visit children normally
+        node.visit_children_with(self);
     }
 
     fn visit_function(&mut self, node: &swc_ecma_ast::Function) {

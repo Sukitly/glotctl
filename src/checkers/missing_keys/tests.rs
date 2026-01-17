@@ -22,6 +22,7 @@ fn create_empty_registries() -> Registries {
         string_array: StringArrayRegistry::new(),
         translation_prop: TranslationPropRegistry::new(),
         translation_fn_call: TranslationFnCallRegistry::new(),
+        default_exports: HashMap::new(),
     }
 }
 
@@ -33,6 +34,7 @@ fn create_registries_with_key_objects(key_object: KeyObjectRegistry) -> Registri
         string_array: StringArrayRegistry::new(),
         translation_prop: TranslationPropRegistry::new(),
         translation_fn_call: TranslationFnCallRegistry::new(),
+        default_exports: HashMap::new(),
     }
 }
 
@@ -523,6 +525,7 @@ fn create_registries_with_key_arrays(key_array: KeyArrayRegistry) -> Registries 
         string_array: StringArrayRegistry::new(),
         translation_prop: TranslationPropRegistry::new(),
         translation_fn_call: TranslationFnCallRegistry::new(),
+        default_exports: HashMap::new(),
     }
 }
 
@@ -744,6 +747,7 @@ mod value_source_tests {
             string_array,
             translation_prop: TranslationPropRegistry::new(),
             translation_fn_call: TranslationFnCallRegistry::new(),
+            default_exports: HashMap::new(),
         }));
         let file_imports = Box::leak(Box::new(collector.imports));
 
@@ -1327,6 +1331,7 @@ fn create_registries_with_translation_props(
         string_array: StringArrayRegistry::new(),
         translation_prop,
         translation_fn_call: TranslationFnCallRegistry::new(),
+        default_exports: HashMap::new(),
     }
 }
 
@@ -1390,6 +1395,87 @@ fn test_translation_prop_arrow_function() {
 
     assert_eq!(checker.used_keys.len(), 1);
     assert_eq!(checker.used_keys[0].full_key, "Dashboard.welcome");
+}
+
+#[test]
+fn test_translation_fn_call_default_export_matched() {
+    // Setup: registry has "test.tsx.default.0" entry (from default import call site)
+    // File test.tsx has `export default function buildLabels(t) { t("key") }`
+    // The function should match via the default_exports registry
+    let mut translation_fn_call = TranslationFnCallRegistry::new();
+    translation_fn_call.insert(
+        make_translation_fn_call_key("test.tsx", "default", 0),
+        TranslationFnCall {
+            fn_file_path: "test.tsx".to_string(),
+            fn_name: "default".to_string(),
+            arg_index: 0,
+            namespaces: vec![Some("MyNs".to_string())],
+        },
+    );
+
+    let mut default_exports = HashMap::new();
+    default_exports.insert("test.tsx".to_string(), "buildLabels".to_string());
+
+    let registries = Box::leak(Box::new(Registries {
+        schema: SchemaRegistry::new(),
+        key_object: KeyObjectRegistry::new(),
+        key_array: KeyArrayRegistry::new(),
+        string_array: StringArrayRegistry::new(),
+        translation_prop: TranslationPropRegistry::new(),
+        translation_fn_call,
+        default_exports,
+    }));
+
+    let code = r#"
+        export default function buildLabels(t) {
+            return t("title");
+        }
+    "#;
+
+    let checker = parse_and_check_with_registries(code, registries);
+
+    // The function should match because:
+    // 1. Registry has "test.tsx.default.0" entry
+    // 2. default_exports says "buildLabels" is the default export
+    // 3. So when visiting buildLabels, we look up both "test.tsx.buildLabels.0" and "test.tsx.default.0"
+    assert_eq!(checker.used_keys.len(), 1);
+    assert_eq!(checker.used_keys[0].full_key, "MyNs.title");
+}
+
+#[test]
+fn test_translation_fn_call_parameter_shadowing_in_checker() {
+    // This tests that parameter shadowing works correctly in MissingKeyChecker
+    // Inner function's `t` parameter should shadow the outer `t` even when
+    // the outer function IS in the registry
+    let mut translation_fn_call = TranslationFnCallRegistry::new();
+    translation_fn_call.insert(
+        make_translation_fn_call_key("test.tsx", "outerFunc", 0),
+        TranslationFnCall {
+            fn_file_path: "test.tsx".to_string(),
+            fn_name: "outerFunc".to_string(),
+            arg_index: 0,
+            namespaces: vec![Some("Outer".to_string())],
+        },
+    );
+    let registries = Box::leak(Box::new(create_registries_with_translation_fn_calls(
+        translation_fn_call,
+    )));
+
+    let code = r#"
+        const outerFunc = (t) => {
+            // innerFunc is NOT in the registry, so its t param should shadow
+            const innerFunc = (t) => {
+                return t("innerKey");  // Should NOT be tracked
+            };
+            return t("outerKey");  // Should be tracked
+        };
+    "#;
+
+    let checker = parse_and_check_with_registries(code, registries);
+
+    // Only outerKey should be tracked
+    assert_eq!(checker.used_keys.len(), 1);
+    assert_eq!(checker.used_keys[0].full_key, "Outer.outerKey");
 }
 
 #[test]
@@ -2036,6 +2122,7 @@ fn create_registries_with_translation_fn_calls(
         string_array: StringArrayRegistry::new(),
         translation_prop: TranslationPropRegistry::new(),
         translation_fn_call,
+        default_exports: HashMap::new(),
     }
 }
 
