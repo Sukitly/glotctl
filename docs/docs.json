@@ -31,8 +31,7 @@
             "pages": [
               "detection/hardcoded-text",
               "detection/missing-keys",
-              "detection/orphan-keys",
-              "detection/translation-props"
+              "detection/orphan-keys"
             ]
           },
           {
@@ -44,7 +43,7 @@
           },
           {
             "group": "Reference",
-            "pages": ["configuration", "directives"]
+            "pages": ["configuration", "directives", "how-it-works"]
           }
         ]
       }

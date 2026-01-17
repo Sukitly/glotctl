@@ -1,0 +1,520 @@
+---
+title: How Detection Works
+description: Understanding glot's static analysis capabilities and supported patterns
+---
+
+Glot uses static analysis to detect i18n issues in your codebase. This page documents all supported patterns and known limitations.
+
+## Hardcoded Text Detection
+
+### JSX Text Nodes
+
+Glot detects text content in JSX elements:
+
+```tsx
+<div>Hello World</div>           // Detected
+<>text in fragment</>            // Detected
+<div>
+  Multiline                      // Detected
+  text content
+</div>
+```
+
+### JSX Expression Containers
+
+**String literal** - detected:
+
+```tsx
+<div>{"Submit"}</div>
+```
+
+**Ternary expression** - both branches checked:
+
+```tsx
+{loading ? "Loading..." : "Done"}
+```
+
+**Logical AND** - right side checked:
+
+```tsx
+{error && "Something wrong"}
+```
+
+**Logical OR** - right side checked:
+
+```tsx
+{value || "Default"}
+```
+
+**Template literal** - static parts checked:
+
+```tsx
+{`Hello ${name}`}
+```
+
+### Checked Attributes
+
+By default, glot checks these attributes for hardcoded text:
+
+- `placeholder` - Input placeholder text
+- `title` - Tooltip/title text
+- `alt` - Image alternative text
+- `aria-label` - Accessibility label
+- `aria-description` - Accessibility description
+- `aria-placeholder` - Accessibility placeholder
+- `aria-roledescription` - Accessibility role description
+- `aria-valuetext` - Accessibility value text
+
+<Tip>
+Customize checked attributes via `checkedAttributes` in `.glotrc.json`.
+</Tip>
+
+### Skipped Patterns
+
+The following are NOT reported as hardcoded text:
+
+**Pure numbers** - no alphabetic characters:
+
+```tsx
+<div>123</div>
+```
+
+**Pure symbols** - no alphabetic characters:
+
+```tsx
+<div>---</div>
+<div>$100</div>
+```
+
+**Empty/whitespace** - no content:
+
+```tsx
+<div>   </div>
+```
+
+**Style tag content** - CSS code:
+
+```tsx
+<style>{`.class { color: red }`}</style>
+```
+
+**Configured ignores** - text matching patterns in `ignoreTexts` config.
+
+### Text Detection Rules
+
+Glot uses Unicode `char::is_alphabetic()` to determine if text should be reported. This means:
+
+- All languages are supported (English, Chinese, Japanese, Arabic, etc.)
+- Text must contain at least one alphabetic character
+- Numbers and symbols alone are ignored
+
+---
+
+## Translation Function Tracking
+
+Glot tracks how translation functions (`t`) are obtained and used throughout your codebase.
+
+### Direct Binding
+
+The most common pattern - calling `useTranslations` or `getTranslations` directly:
+
+```tsx
+// Client components
+const t = useTranslations("Namespace");
+const t = useTranslations();  // Without namespace
+
+// Server components
+const t = await getTranslations("Namespace");
+const t = await getTranslations();
+
+// Renamed binding
+const translate = useTranslations("Namespace");
+```
+
+### Props Passing
+
+When a translation function is passed as a prop to a child component:
+
+```tsx
+// Parent component
+function Page() {
+  const t = useTranslations("Landing");
+  return <LandingContent t={t} />;
+}
+
+// Child component - all these patterns are supported:
+function Component({ t }: Props) { ... }                    // Function declaration
+const Component = ({ t }: Props) => { ... }                 // Arrow function
+function Component({ t: translate }: Props) { ... }         // Renamed destructuring
+function Component({ t = defaultT }: Props) { ... }         // Default value
+function Component({ t: translate = defaultT }: Props) { ...} // Both
+```
+
+Member expression component names are also supported:
+
+```tsx
+<UI.Button t={t} />
+```
+
+### Function Call Arguments
+
+When a translation function is passed to a utility/factory function:
+
+```tsx
+// Factory function receiving t as parameter
+const usageTypeLabels = (t: ReturnType<typeof useTranslations>) => ({
+  ai_chapter: t("usageTypes.ai_chapter"),
+  ai_completion: t("usageTypes.ai_completion"),
+});
+
+// Usage
+const t = useTranslations("CreditsUsageList");
+const labels = usageTypeLabels(t);  // Keys are tracked correctly
+```
+
+Supported patterns:
+
+```tsx
+const labels = usageLabels(t);                    // Regular function call
+const labels = (t) => ({ key: t("key") });        // Arrow function
+function buildLabels(t) { return t("key"); }      // Function declaration
+export default function(t) { ... }                // Default export
+export default (t) => ...                         // Arrow default export
+```
+
+### Translation Method Calls
+
+All next-intl translation methods are supported:
+
+```tsx
+t("key")                              // Basic call
+t.raw("htmlContent")                  // Raw string
+t.rich("text", { bold: (c) => <b>{c}</b> })  // Rich text
+t.markup("text")                      // Markup
+```
+
+---
+
+## Dynamic Key Resolution
+
+Glot can resolve dynamic keys in many common patterns.
+
+### Object Access Pattern
+
+When a key comes from an object property:
+
+```tsx
+const toolKeys = {
+  create: "createNovel",
+  update: "updateNovel",
+};
+
+const key = toolKeys[toolName];
+t(key);  // Resolves to: createNovel, updateNovel
+```
+
+### Array Iteration
+
+Supported iterator methods: `map`, `forEach`, `filter`, `find`, `some`, `every`, `flatMap`
+
+**Object array with property access:**
+
+```tsx
+const capabilities = [
+  { titleKey: "novelManagement" },
+  { titleKey: "characterDevelopment" },
+];
+
+capabilities.map(cap => t(`features.${cap.titleKey}.title`));
+// Resolves to: features.novelManagement.title, features.characterDevelopment.title
+```
+
+**String array:**
+
+```tsx
+const FEATURE_KEYS = ["save", "characters", "chapters"] as const;
+
+FEATURE_KEYS.map(key => t(`features.${key}`));
+// Resolves to: features.save, features.characters, features.chapters
+```
+
+### Template Literals
+
+Templates with a single dynamic expression are analyzed:
+
+```tsx
+t(`prefix.${cap.titleKey}.suffix`);
+// Analyzed as: prefix + dynamic value + suffix
+```
+
+### Conditional Expressions
+
+Both branches of conditionals are extracted:
+
+```tsx
+t(cond ? "keyA" : "keyB");                    // Both keys tracked
+t(key || "fallback");                         // Logical OR as fallback
+t(flag1 ? (flag2 ? "a" : "b") : "c");         // Nested conditionals
+```
+
+### Cross-File Import Resolution
+
+Glot resolves imports from other files:
+
+```tsx
+// utils/keys.ts
+export const toolKeys = { create: "createNovel", update: "updateNovel" };
+
+// page.tsx
+import { toolKeys } from "./utils/keys";
+const key = toolKeys[toolName];
+t(key);  // Resolves correctly across files
+```
+
+<Note>
+Only module-level, exported declarations are resolved across files.
+</Note>
+
+---
+
+## Schema Factory Pattern
+
+Glot detects translation keys in schema factory functions (commonly used with Zod):
+
+```tsx
+export const createSchema = (t: TFunction) => z.object({
+  title: z.string().min(1, t("titleRequired")),
+  description: z.string().max(100, t("descriptionMax")),
+});
+
+// When called with: createSchema(t) where t = useTranslations("Form")
+// Keys tracked: Form.titleRequired, Form.descriptionMax
+```
+
+**Supported patterns:**
+- Arrow function exports: `export const createSchema = (t) => ...`
+- Parameter names starting with `t`: `t`, `tForm`, `tValidation`
+- Nested schema calls are tracked
+
+---
+
+## Scope Isolation
+
+Glot correctly handles variable scoping and shadowing.
+
+### Parameter Shadowing
+
+Inner bindings shadow outer ones:
+
+```tsx
+const t = useTranslations("Outer");
+
+function Child() {
+  const t = useTranslations("Inner");  // Shadows module-level t
+  return t("key");  // Uses "Inner" namespace
+}
+
+function Parent() {
+  return t("key");  // Uses "Outer" namespace
+}
+```
+
+### Sibling Function Isolation
+
+Translation bindings don't leak between sibling functions:
+
+```tsx
+function ComponentA() {
+  const t = useTranslations("A");
+  return t("key");  // Tracked with "A"
+}
+
+function ComponentB() {
+  // t is not defined here
+  return t("key");  // NOT tracked
+}
+```
+
+### Iterator Scope
+
+Nested iterators with same variable names are handled correctly:
+
+```tsx
+OUTER.map(item => (
+  <>
+    {t(`outer.${item.key}`)}
+    {INNER.map(item => t(`inner.${item.key}`))}  // Correctly shadows outer item
+  </>
+))
+```
+
+---
+
+## glot-message-keys Annotation
+
+For dynamic keys that can't be statically analyzed, use `glot-message-keys` to declare expected keys.
+
+### Absolute Patterns
+
+Specify full key paths:
+
+```tsx
+// glot-message-keys "Namespace.key.path"
+t(dynamicKey);
+
+// Multiple keys
+// glot-message-keys "Status.active", "Status.inactive", "Status.pending"
+t(status);
+```
+
+### Relative Patterns
+
+Patterns starting with `.` are expanded with the current namespace:
+
+```tsx
+const t = useTranslations("CharacterForm");
+
+// glot-message-keys ".items.*.title"
+t(`items.${idx}.title`);
+// Expands to: CharacterForm.items.*.title
+```
+
+<Tip>
+Use relative patterns in components that receive `t` as a prop - they work with any namespace the component is called with.
+</Tip>
+
+### Glob Pattern Matching
+
+Use `*` to match key segments:
+
+```tsx
+// glot-message-keys "errors.*"
+// Matches: errors.E001, errors.E002, errors.notFound
+
+// glot-message-keys "form.*.label"
+// Matches: form.email.label, form.password.label
+
+// glot-message-keys "step*.title"
+// Matches: step.title, step1.title, step2.title
+
+// Multiple wildcards
+// glot-message-keys "form.*.*.text"
+// Matches: form.email.hint.text, form.password.error.text
+```
+
+### JSX vs JS Comments
+
+Use the appropriate comment syntax based on context:
+
+```tsx
+// In JavaScript context
+// glot-message-keys "Common.key"
+const label = t(dynamicKey);
+
+// In JSX context
+{/* glot-message-keys "Common.key" */}
+<span>{t(dynamicKey)}</span>
+```
+
+---
+
+## Limitations
+
+### Patterns That Cannot Be Tracked
+
+These patterns cannot be tracked by static analysis and have no workaround:
+
+**Non-destructured props** - use destructuring instead:
+
+```tsx
+// NOT supported
+function Component(props) {
+  return props.t("key");
+}
+
+// Supported
+function Component({ t }) {
+  return t("key");
+}
+```
+
+**Deep nested destructuring** - use top-level destructuring:
+
+```tsx
+// NOT supported
+function Component({ translations: { t } }) {
+  return t("key");
+}
+
+// Supported
+function Component({ t }) {
+  return t("key");
+}
+```
+
+### Patterns Requiring Declaration
+
+These patterns cannot be statically analyzed but can be handled with `glot-message-keys`:
+
+**Multi-expression template**:
+
+```tsx
+// glot-message-keys "Namespace.some.key"
+t(`${prefix}.${suffix}`);
+```
+
+**Logical AND as key**:
+
+```tsx
+// glot-message-keys "Namespace.key"
+t(flag && "key");
+```
+
+**Runtime dynamic key**:
+
+```tsx
+// glot-message-keys "Namespace.key"
+t(getKeyFromApi());
+```
+
+### Feature-Specific Limitations
+
+**Cross-file key object resolution:**
+
+Objects with spread operators are not collected for cross-file resolution:
+
+```tsx
+// Collected
+export const keys = { a: "keyA", b: "keyB" };
+
+// NOT collected (spread operator)
+export const extended = { ...keys, c: "keyC" };
+```
+
+This only affects dynamic key resolution via object access patterns. Direct `t()` calls are unaffected.
+
+**Schema factory detection:**
+
+Only arrow function exports are supported:
+
+```tsx
+// Supported
+export const createSchema = (t) => z.object({ ... });
+
+// NOT supported
+export function createSchema(t) { return z.object({ ... }); }
+```
+
+---
+
+## TypeScript Support
+
+Glot automatically unwraps TypeScript-specific syntax:
+
+```tsx
+// All of these are analyzed correctly
+"text" as const
+"text" as string
+"text" satisfies string
+("text")  // Parentheses
+```
