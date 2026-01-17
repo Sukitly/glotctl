@@ -781,7 +781,9 @@ pub fn resolve_import_path(current_file: &Path, import_path: &str) -> Option<Str
     }
 
     let base_dir = current_file.parent()?;
-    let resolved = base_dir.join(import_path);
+    // Strip leading "./" from import_path to avoid paths like "./src/./utils"
+    let normalized_import = import_path.strip_prefix("./").unwrap_or(import_path);
+    let resolved = base_dir.join(normalized_import);
 
     for ext in &["ts", "tsx", "js", "jsx"] {
         let with_ext = resolved.with_extension(ext);

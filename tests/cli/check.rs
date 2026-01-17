@@ -1254,3 +1254,225 @@ export function FeatureList({ t, items }: Props) {
 
     Ok(())
 }
+
+// ============================================
+// Translation Function Call Tests
+// ============================================
+
+#[test]
+fn test_translation_fn_call_same_file_used_key() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    // All keys defined
+    test.write_file(
+        "messages/en.json",
+        r#"{
+            "Usage": {
+                "monthly": "Monthly",
+                "yearly": "Yearly"
+            }
+        }"#,
+    )?;
+
+    // Utility function and component in SAME file
+    // usageLabels receives t as argument and uses it to translate keys
+    test.write_file(
+        "src/app.tsx",
+        r#"
+const usageLabels = (t) => ({
+    monthly: t("monthly"),
+    yearly: t("yearly"),
+});
+
+export function UsagePage() {
+    const t = useTranslations("Usage");
+    const labels = usageLabels(t);
+    return <div>{labels.monthly}</div>;
+}
+"#,
+    )?;
+
+    // Keys should be tracked as used via function call, no unused warnings
+    assert_cmd_snapshot!(test.check_command());
+
+    Ok(())
+}
+
+#[test]
+fn test_translation_fn_call_import_alias_used_key() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    // All keys defined
+    test.write_file(
+        "messages/en.json",
+        r#"{
+            "Status": {
+                "active": "Active",
+                "inactive": "Inactive"
+            }
+        }"#,
+    )?;
+
+    // Utility file with named export
+    test.write_file(
+        "src/utils.ts",
+        r#"
+export const buildStatusLabels = (t) => ({
+    active: t("active"),
+    inactive: t("inactive"),
+});
+"#,
+    )?;
+
+    // Component imports with alias and calls the function
+    test.write_file(
+        "src/app.tsx",
+        r#"
+import { buildStatusLabels as statusLabels } from './utils';
+
+export function StatusPage() {
+    const t = useTranslations("Status");
+    const labels = statusLabels(t);
+    return <div>{labels.active}</div>;
+}
+"#,
+    )?;
+
+    // Keys should be tracked via aliased import, no unused warnings
+    assert_cmd_snapshot!(test.check_command());
+
+    Ok(())
+}
+
+#[test]
+fn test_translation_fn_call_default_export_used_key() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    // All keys defined
+    test.write_file(
+        "messages/en.json",
+        r#"{
+            "Plan": {
+                "free": "Free Plan",
+                "pro": "Pro Plan"
+            }
+        }"#,
+    )?;
+
+    // Utility file with default export
+    test.write_file(
+        "src/plan-labels.ts",
+        r#"
+export default function buildPlanLabels(t) {
+    return {
+        free: t("free"),
+        pro: t("pro"),
+    };
+}
+"#,
+    )?;
+
+    // Component uses default import
+    test.write_file(
+        "src/app.tsx",
+        r#"
+import buildPlanLabels from './plan-labels';
+
+export function PlanPage() {
+    const t = useTranslations("Plan");
+    const labels = buildPlanLabels(t);
+    return <div>{labels.free}</div>;
+}
+"#,
+    )?;
+
+    // Keys should be tracked via default import, no unused warnings
+    assert_cmd_snapshot!(test.check_command());
+
+    Ok(())
+}
+
+#[test]
+fn test_translation_fn_call_param_shadowing() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    // Only "outer" key is defined, "inner" is NOT defined
+    test.write_file(
+        "messages/en.json",
+        r#"{
+            "Outer": {
+                "outerKey": "Outer Value"
+            }
+        }"#,
+    )?;
+
+    // Outer function receives t from registry, inner function shadows t
+    // Inner's t("innerKey") should NOT be tracked (parameter shadows outer binding)
+    test.write_file(
+        "src/utils.ts",
+        r#"
+export const outerFunc = (t) => {
+    const innerFunc = (t) => {
+        return t("innerKey");  // Should NOT be tracked - t is shadowed
+    };
+    return t("outerKey");  // Should be tracked
+};
+"#,
+    )?;
+
+    // Component calls outerFunc with translation function
+    test.write_file(
+        "src/app.tsx",
+        r#"
+import { outerFunc } from './utils';
+
+export function Page() {
+    const t = useTranslations("Outer");
+    const result = outerFunc(t);
+    return <div>{result}</div>;
+}
+"#,
+    )?;
+
+    // Only "outerKey" should be tracked, "innerKey" should be ignored (shadowed)
+    // No missing key error for "innerKey" since it's not tracked
+    assert_cmd_snapshot!(test.check_command());
+
+    Ok(())
+}
