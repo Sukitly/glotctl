@@ -19,9 +19,12 @@ fn main() -> Result<()> {
 
     let result = glot::run(args)?;
 
-    // Print report for check commands (issues is non-empty)
+    // Print report for check commands
     if !result.issues.is_empty() {
         glot::reporter::print_report(&result.issues);
+    } else if result.source_files_checked > 0 {
+        // Print success message for check commands with no issues
+        glot::reporter::print_success(result.source_files_checked, result.locale_files_checked);
     }
 
     // Print parse warning if needed

@@ -118,11 +118,27 @@ impl CheckRunner {
             all_issues.append(&mut issues);
         }
 
-        Ok(finish(all_issues))
+        // 4. Gather file counts for reporting
+        let source_files_checked = self.ctx.files.len();
+        let locale_files_checked = self
+            .ctx
+            .messages()
+            .map(|m| m.all_messages.len())
+            .unwrap_or(0);
+
+        Ok(finish(
+            all_issues,
+            source_files_checked,
+            locale_files_checked,
+        ))
     }
 }
 
-fn finish(mut issues: Vec<Issue>) -> RunResult {
+fn finish(
+    mut issues: Vec<Issue>,
+    source_files_checked: usize,
+    locale_files_checked: usize,
+) -> RunResult {
     issues.sort();
 
     let parse_error_count = issues.iter().filter(|i| i.rule == Rule::ParseError).count();
@@ -141,5 +157,7 @@ fn finish(mut issues: Vec<Issue>) -> RunResult {
         exit_on_errors: true, // check command: exit 1 on errors
         issues,
         parse_error_count,
+        source_files_checked,
+        locale_files_checked,
     }
 }

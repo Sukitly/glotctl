@@ -20,6 +20,11 @@ pub struct RunResult {
     pub issues: Vec<Issue>,
     /// Number of files that failed to parse.
     pub parse_error_count: usize,
+    /// Number of source files (TSX/JSX) that were checked.
+    pub source_files_checked: usize,
+    /// Number of locale message files (JSON) that were checked.
+    /// 0 if message checking was not performed.
+    pub locale_files_checked: usize,
 }
 
 pub mod args;
@@ -64,6 +69,8 @@ pub fn run(Arguments { command }: Arguments) -> Result<RunResult> {
                 exit_on_errors: true,
                 issues: Vec::new(),
                 parse_error_count: 0,
+                source_files_checked: 0,
+                locale_files_checked: 0,
             })
         }
         Some(Command::Serve) => {
