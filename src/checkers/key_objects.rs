@@ -1836,13 +1836,12 @@ mod tests {
 
     #[test]
     fn test_default_export_arrow_function() {
-        // Anonymous arrow function - no name to track
+        // Anonymous arrow function - track as "default"
         let code = r#"
             export default (t) => t("key");
         "#;
         let collector = parse_and_collect(code);
-        // Anonymous functions have no name
-        assert_eq!(collector.default_export_name, None);
+        assert_eq!(collector.default_export_name, Some("default".to_string()));
     }
 
     #[test]
