@@ -18,7 +18,7 @@ use super::types::{
 };
 use crate::checkers::{
     glob_matcher::{expand_glob_pattern, is_glob_pattern},
-    key_objects::{FileImports, make_translation_prop_key},
+    key_objects::{FileImports, make_translation_fn_call_key, make_translation_prop_key},
     schema::SchemaCallInfo,
     value_analyzer::ValueAnalyzer,
     value_source::ResolvedKey,
@@ -523,6 +523,46 @@ impl<'a> MissingKeyChecker<'a> {
         }
     }
 
+    /// Register translation function bindings from function/arrow parameters.
+    ///
+    /// This handles the case where a translation function is passed as a regular
+    /// function argument (not as a JSX prop). For example:
+    ///
+    /// ```tsx
+    /// const usageLabels = (t) => ({ key: t("key") });
+    /// const labels = usageLabels(t);  // t passed as function argument
+    /// ```
+    ///
+    /// Register translation function parameters for a function.
+    /// If the function is in the translation_fn_call registry, register parameters with FromFnCall.
+    /// For any parameter that shadows an outer translation binding but isn't registered,
+    /// insert a Shadowed marker to prevent the outer binding from leaking in.
+    ///
+    /// - `fn_name`: The function name (e.g., "usageLabels")
+    /// - `params`: The function parameters
+    fn register_translation_fn_params(&mut self, fn_name: &str, params: &[Pat]) {
+        for (idx, param) in params.iter().enumerate() {
+            if let Pat::Ident(ident) = param {
+                let param_name = ident.id.sym.to_string();
+                // Check if this function+param is in the registry
+                let key = make_translation_fn_call_key(self.file_path, fn_name, idx);
+                if let Some(fn_call) = self.registries.translation_fn_call.get(&key) {
+                    // Register this parameter as a translation function binding
+                    self.insert_binding(
+                        param_name,
+                        TranslationSource::FromFnCall {
+                            namespaces: fn_call.namespaces.clone(),
+                        },
+                    );
+                } else if self.get_binding(&param_name).is_some() {
+                    // Not in registry, but there's an outer binding with this name.
+                    // Shadow it to prevent incorrect tracking.
+                    self.insert_binding(param_name, TranslationSource::Shadowed);
+                }
+            }
+        }
+    }
+
     /// Check if a variable declarator is an arrow function component.
     fn extract_arrow_component(decl: &VarDeclarator) -> Option<(String, &swc_ecma_ast::ArrowExpr)> {
         let Pat::Ident(binding_ident) = &decl.name else {
@@ -588,10 +628,19 @@ impl<'a> Visit for MissingKeyChecker<'a> {
 
     /// Visit function declarations to detect translation function parameters.
     /// e.g., `function AdultLandingPage({ t }: Props) { ... }`
+    /// e.g., `function usageLabels(t) { ... }`
     fn visit_fn_decl(&mut self, node: &FnDecl) {
         self.enter_scope();
-        let component_name = node.ident.sym.to_string();
-        self.register_translation_props_from_params(&component_name, &node.function.params);
+        let fn_name = node.ident.sym.to_string();
+
+        // Try to register translation props (for React components)
+        self.register_translation_props_from_params(&fn_name, &node.function.params);
+
+        // Try to register translation function parameters (for utility functions)
+        // Convert Param to Pat for the helper function
+        let params: Vec<Pat> = node.function.params.iter().map(|p| p.pat.clone()).collect();
+        self.register_translation_fn_params(&fn_name, &params);
+
         node.function.visit_children_with(self);
         self.exit_scope();
     }
@@ -611,21 +660,29 @@ impl<'a> Visit for MissingKeyChecker<'a> {
     /// Visit variable declarations to detect:
     /// 1. Translation hook bindings: `const t = useTranslations("Ns")`
     /// 2. Arrow function components: `const MyComponent = ({ t }: Props) => { ... }`
+    /// 3. Arrow functions with translation function parameters: `const fn = (t) => { ... }`
     fn visit_var_decl(&mut self, node: &VarDecl) {
         for decl in &node.decls {
-            // Special handling for arrow function components:
+            // Special handling for arrow functions (components or utility functions):
             // We need to manually manage scope here because:
-            // 1. Arrow components need to register props (like `t`) as translation bindings
+            // 1. Arrow functions need to register translation bindings (from props or fn args)
             //    BEFORE visiting the function body
             // 2. Using `arrow.visit_children_with(self)` only visits the body/params,
             //    it won't trigger `visit_arrow_expr` again (avoiding double scoping)
             // 3. The `continue` skips the default `decl.visit_children_with(self)` to avoid
             //    processing the same arrow expression twice
-            if let Some((component_name, arrow)) = Self::extract_arrow_component(decl) {
+            if let Some((fn_name, arrow)) = Self::extract_arrow_component(decl) {
                 self.enter_scope();
+
+                // Try to register translation props (for React components)
                 if let Some(first_param) = arrow.params.first() {
-                    self.register_translation_props_from_pat(&component_name, first_param);
+                    self.register_translation_props_from_pat(&fn_name, first_param);
                 }
+
+                // Try to register translation function parameters (for utility functions)
+                // This handles: const usageLabels = (t) => { t("key") }
+                self.register_translation_fn_params(&fn_name, &arrow.params);
+
                 arrow.visit_children_with(self);
                 self.exit_scope();
                 continue;
@@ -674,7 +731,9 @@ impl<'a> Visit for MissingKeyChecker<'a> {
         {
             let fn_name = ident.sym.as_str();
 
-            if let Some(translation_source) = self.get_binding(fn_name) {
+            if let Some(translation_source) = self.get_binding(fn_name)
+                && !translation_source.is_shadowed()
+            {
                 let namespace = translation_source.primary_namespace();
                 let loc = self.source_map.lookup_char_pos(node.span.lo);
 
@@ -746,9 +805,9 @@ impl<'a> Visit for MissingKeyChecker<'a> {
                                 // No annotation - emit warning with hint if applicable
                                 let unwrapped = crate::checkers::unwrap_paren(&arg.expr);
                                 let (reason, hint) = if let Expr::Tpl(tpl) = unwrapped {
-                                    // For FromProps, suggest relative pattern (starting with .)
+                                    // For indirect sources (FromProps, FromFnCall), suggest relative pattern (starting with .)
                                     // For Direct, use absolute pattern with namespace
-                                    let pattern = if translation_source.is_from_props() {
+                                    let pattern = if translation_source.is_indirect() {
                                         Self::infer_pattern_from_template(tpl, &None)
                                             .map(|p| format!(".{}", p))
                                     } else {
@@ -785,7 +844,8 @@ impl<'a> Visit for MissingKeyChecker<'a> {
                 let should_record = match &*arg.expr {
                     Expr::Ident(t_ident) => {
                         let t_var = t_ident.sym.as_str();
-                        self.get_binding(t_var).is_some()
+                        self.get_binding(t_var)
+                            .is_some_and(|src| !src.is_shadowed())
                     }
                     _ => true,
                 };
@@ -824,6 +884,7 @@ impl<'a> Visit for MissingKeyChecker<'a> {
             // Check if this is a translation method call (t.raw, t.rich, t.markup)
             if matches!(method_name, "raw" | "rich" | "markup")
                 && let Some(translation_source) = self.get_binding(obj_name)
+                && !translation_source.is_shadowed()
                 && let Some(arg) = node.args.first()
             {
                 let loc = self.source_map.lookup_char_pos(node.span.lo);

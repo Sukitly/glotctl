@@ -9,7 +9,10 @@ use swc_ecma_visit::VisitWith;
 
 use crate::{
     checkers::{
-        key_objects::{KeyObjectCollector, make_registry_key, make_translation_prop_key},
+        key_objects::{
+            KeyObjectCollector, make_registry_key, make_translation_fn_call_key,
+            make_translation_prop_key,
+        },
         schema::{SchemaFunctionCollector, expand_schema_keys},
         value_source::ValueSource,
     },
@@ -33,6 +36,7 @@ pub fn build_registries(ctx: &CheckContext) -> (Registries, AllFileImports, Vec<
     let mut key_array = HashMap::new();
     let mut string_array = HashMap::new();
     let mut translation_prop = HashMap::new();
+    let mut translation_fn_call = HashMap::new();
     let mut file_imports: AllFileImports = HashMap::new();
     let mut errors = Vec::new();
 
@@ -94,6 +98,28 @@ pub fn build_registries(ctx: &CheckContext) -> (Registries, AllFileImports, Vec<
                 )
                 .or_insert(prop);
         }
+
+        // Translation function call registry: merge namespaces for same fn.arg_index
+        for fn_call in key_collector.translation_fn_calls {
+            let key = make_translation_fn_call_key(
+                &fn_call.fn_file_path,
+                &fn_call.fn_name,
+                fn_call.arg_index,
+            );
+            translation_fn_call
+                .entry(key)
+                .and_modify(
+                    |existing: &mut crate::checkers::key_objects::TranslationFnCall| {
+                        // Merge namespaces from different call sites
+                        for ns in &fn_call.namespaces {
+                            if !existing.namespaces.contains(ns) {
+                                existing.namespaces.push(ns.clone());
+                            }
+                        }
+                    },
+                )
+                .or_insert(fn_call);
+        }
     }
 
     let registries = Registries {
@@ -102,6 +128,7 @@ pub fn build_registries(ctx: &CheckContext) -> (Registries, AllFileImports, Vec<
         key_array,
         string_array,
         translation_prop,
+        translation_fn_call,
     };
 
     (registries, file_imports, errors)

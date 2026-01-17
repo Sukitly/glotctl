@@ -9,7 +9,8 @@ use anyhow::{Context as _, Result, anyhow};
 use crate::{
     args::CommonArgs,
     checkers::key_objects::{
-        KeyArrayRegistry, KeyObjectRegistry, StringArrayRegistry, TranslationPropRegistry,
+        KeyArrayRegistry, KeyObjectRegistry, StringArrayRegistry, TranslationFnCallRegistry,
+        TranslationPropRegistry,
     },
     checkers::missing_keys::MissingKeyResult,
     checkers::schema::SchemaRegistry,
@@ -39,6 +40,8 @@ pub struct Registries {
     pub string_array: StringArrayRegistry,
     /// Translation functions passed as JSX props (e.g., `<Component t={t} />`)
     pub translation_prop: TranslationPropRegistry,
+    /// Translation functions passed as regular function call arguments (e.g., `someFunc(t)`)
+    pub translation_fn_call: TranslationFnCallRegistry,
 }
 
 /// Aggregated message data from all locale files.

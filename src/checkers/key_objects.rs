@@ -90,6 +90,33 @@ pub fn make_translation_prop_key(component_name: &str, prop_name: &str) -> Strin
     format!("{}.{}", component_name, prop_name)
 }
 
+/// Represents a translation function passed as a regular function call argument.
+/// Used to track: `someFunc(t)` where `t` is a translation function.
+///
+/// This enables tracking translation keys in utility/factory functions that
+/// receive translation functions as parameters, not just React components.
+#[derive(Debug, Clone)]
+pub struct TranslationFnCall {
+    /// File path where the function is defined
+    pub fn_file_path: String,
+    /// Function name (e.g., "usageTypeLabels")
+    pub fn_name: String,
+    /// Argument index (0-based) where the translation function is passed
+    pub arg_index: usize,
+    /// List of possible namespaces from different call sites
+    /// None means no namespace (e.g., `useTranslations()` without argument)
+    pub namespaces: Vec<Option<String>>,
+}
+
+/// Registry of translation functions passed as regular function call arguments.
+/// Key format: "file_path.fn_name.arg_index"
+pub type TranslationFnCallRegistry = HashMap<String, TranslationFnCall>;
+
+/// Create registry key for TranslationFnCallRegistry
+pub fn make_translation_fn_call_key(fn_file_path: &str, fn_name: &str, arg_index: usize) -> String {
+    format!("{}.{}.{}", fn_file_path, fn_name, arg_index)
+}
+
 /// Collects object literals, arrays, imports, and translation props from TypeScript/TSX files
 pub struct KeyObjectCollector {
     pub file_path: String,
@@ -99,10 +126,12 @@ pub struct KeyObjectCollector {
     pub imports: FileImports,
     /// Translation functions passed as JSX props
     pub translation_props: Vec<TranslationProp>,
+    /// Translation functions passed as regular function call arguments
+    pub translation_fn_calls: Vec<TranslationFnCall>,
     /// Tracks nesting depth: 0 = module level, >0 = inside function/arrow
     scope_depth: usize,
     /// Stack of translation function bindings scoped by function/arrow.
-    /// Used to detect when a translation function is passed as a prop.
+    /// Used to detect when a translation function is passed as a prop or function argument.
     translation_bindings_stack: Vec<HashMap<String, Option<String>>>,
 }
 
@@ -132,6 +161,7 @@ impl KeyObjectCollector {
             string_arrays: Vec::new(),
             imports: Vec::new(),
             translation_props: Vec::new(),
+            translation_fn_calls: Vec::new(),
             scope_depth: 0,
             translation_bindings_stack: vec![HashMap::new()],
         }
@@ -504,6 +534,46 @@ impl Visit for KeyObjectCollector {
         // Continue visiting children
         node.visit_children_with(self);
     }
+
+    /// Visit function calls to detect translation functions passed as arguments.
+    /// e.g., `usageTypeLabels(t)` where `t` is a translation function.
+    fn visit_call_expr(&mut self, node: &swc_ecma_ast::CallExpr) {
+        // Only process direct function calls (not method calls)
+        if let Callee::Expr(callee_expr) = &node.callee
+            && let Expr::Ident(fn_ident) = &**callee_expr
+        {
+            let fn_name = fn_ident.sym.to_string();
+
+            // Skip translation hooks themselves - we don't want to track useTranslations(namespace)
+            if is_translation_hook(&fn_name) {
+                node.visit_children_with(self);
+                return;
+            }
+
+            // Resolve where this function is defined
+            let fn_file_path = self.resolve_fn_definition_path(&fn_name);
+
+            // Check each argument to see if it's a translation function
+            for (idx, arg) in node.args.iter().enumerate() {
+                if let Expr::Ident(arg_ident) = &*arg.expr {
+                    let var_name = arg_ident.sym.to_string();
+
+                    // If this variable is a tracked translation function, record it
+                    if let Some(namespace) = self.get_translation_binding(&var_name) {
+                        self.add_or_update_translation_fn_call(
+                            &fn_file_path,
+                            &fn_name,
+                            idx,
+                            namespace.clone(),
+                        );
+                    }
+                }
+            }
+        }
+
+        // Continue visiting children
+        node.visit_children_with(self);
+    }
 }
 
 impl KeyObjectCollector {
@@ -539,6 +609,50 @@ impl KeyObjectCollector {
             self.translation_props.push(TranslationProp {
                 component_name: component_name.to_string(),
                 prop_name: prop_name.to_string(),
+                namespaces: vec![namespace],
+            });
+        }
+    }
+
+    /// Resolve where a function is defined based on its name.
+    ///
+    /// If the function is imported, returns the resolved file path of the import.
+    /// Otherwise, returns the current file path (function defined locally).
+    fn resolve_fn_definition_path(&self, fn_name: &str) -> String {
+        // Check if the function is imported
+        if let Some(import) = self.imports.iter().find(|i| i.local_name == fn_name) {
+            // Try to resolve the import path to an actual file
+            resolve_import_path(Path::new(&self.file_path), &import.module_path)
+                .unwrap_or_else(|| self.file_path.clone())
+        } else {
+            // Function is defined locally
+            self.file_path.clone()
+        }
+    }
+
+    /// Add or update a translation function call entry.
+    /// If the same fn_file_path.fn_name.arg_index already exists, merge the namespace.
+    fn add_or_update_translation_fn_call(
+        &mut self,
+        fn_file_path: &str,
+        fn_name: &str,
+        arg_index: usize,
+        namespace: Option<String>,
+    ) {
+        // Check if we already have an entry for this function.arg_index
+        if let Some(existing) = self.translation_fn_calls.iter_mut().find(|c| {
+            c.fn_file_path == fn_file_path && c.fn_name == fn_name && c.arg_index == arg_index
+        }) {
+            // Only add if this namespace isn't already tracked
+            if !existing.namespaces.contains(&namespace) {
+                existing.namespaces.push(namespace);
+            }
+        } else {
+            // Create new entry
+            self.translation_fn_calls.push(TranslationFnCall {
+                fn_file_path: fn_file_path.to_string(),
+                fn_name: fn_name.to_string(),
+                arg_index,
                 namespaces: vec![namespace],
             });
         }
@@ -1260,5 +1374,193 @@ mod tests {
             .find(|p| p.component_name == "Child")
             .unwrap();
         assert_eq!(child.namespaces, vec![Some("Inner".to_string())]);
+    }
+
+    // ============================================================
+    // Translation function call collection tests
+    // ============================================================
+
+    #[test]
+    fn test_collect_translation_fn_call_basic() {
+        let code = r#"
+            const t = useTranslations("MyNamespace");
+            const labels = usageTypeLabels(t);
+        "#;
+        let collector = parse_and_collect(code);
+
+        assert_eq!(collector.translation_fn_calls.len(), 1);
+        let fn_call = &collector.translation_fn_calls[0];
+        assert_eq!(fn_call.fn_name, "usageTypeLabels");
+        assert_eq!(fn_call.fn_file_path, "test.ts"); // Same file
+        assert_eq!(fn_call.arg_index, 0);
+        assert_eq!(fn_call.namespaces, vec![Some("MyNamespace".to_string())]);
+    }
+
+    #[test]
+    fn test_collect_translation_fn_call_without_namespace() {
+        let code = r#"
+            const t = useTranslations();
+            const result = someHelper(t);
+        "#;
+        let collector = parse_and_collect(code);
+
+        assert_eq!(collector.translation_fn_calls.len(), 1);
+        let fn_call = &collector.translation_fn_calls[0];
+        assert_eq!(fn_call.fn_name, "someHelper");
+        assert_eq!(fn_call.arg_index, 0);
+        assert_eq!(fn_call.namespaces, vec![None]);
+    }
+
+    #[test]
+    fn test_collect_translation_fn_call_with_await() {
+        let code = r#"
+            const t = await getTranslations("ServerNs");
+            const labels = buildLabels(t);
+        "#;
+        let collector = parse_and_collect(code);
+
+        assert_eq!(collector.translation_fn_calls.len(), 1);
+        let fn_call = &collector.translation_fn_calls[0];
+        assert_eq!(fn_call.fn_name, "buildLabels");
+        assert_eq!(fn_call.namespaces, vec![Some("ServerNs".to_string())]);
+    }
+
+    #[test]
+    fn test_collect_translation_fn_call_second_argument() {
+        let code = r#"
+            const t = useTranslations("MyNs");
+            const result = createLabels(config, t);
+        "#;
+        let collector = parse_and_collect(code);
+
+        assert_eq!(collector.translation_fn_calls.len(), 1);
+        let fn_call = &collector.translation_fn_calls[0];
+        assert_eq!(fn_call.fn_name, "createLabels");
+        assert_eq!(fn_call.arg_index, 1); // Second argument
+        assert_eq!(fn_call.namespaces, vec![Some("MyNs".to_string())]);
+    }
+
+    #[test]
+    fn test_collect_translation_fn_call_multiple_functions() {
+        let code = r#"
+            const t1 = useTranslations("NS1");
+            const t2 = useTranslations("NS2");
+            const labels1 = createLabels(t1);
+            const labels2 = buildLabels(t2);
+        "#;
+        let collector = parse_and_collect(code);
+
+        assert_eq!(collector.translation_fn_calls.len(), 2);
+
+        let fn_call1 = collector
+            .translation_fn_calls
+            .iter()
+            .find(|c| c.fn_name == "createLabels")
+            .unwrap();
+        assert_eq!(fn_call1.namespaces, vec![Some("NS1".to_string())]);
+
+        let fn_call2 = collector
+            .translation_fn_calls
+            .iter()
+            .find(|c| c.fn_name == "buildLabels")
+            .unwrap();
+        assert_eq!(fn_call2.namespaces, vec![Some("NS2".to_string())]);
+    }
+
+    #[test]
+    fn test_collect_same_function_multiple_namespaces() {
+        let code = r#"
+            function Page1() {
+                const t = useTranslations("NS1");
+                return createLabels(t);
+            }
+            function Page2() {
+                const t = useTranslations("NS2");
+                return createLabels(t);
+            }
+        "#;
+        let collector = parse_and_collect(code);
+
+        // Same function called with different namespaces
+        assert_eq!(collector.translation_fn_calls.len(), 1);
+        let fn_call = &collector.translation_fn_calls[0];
+        assert_eq!(fn_call.fn_name, "createLabels");
+        assert_eq!(
+            fn_call.namespaces,
+            vec![Some("NS1".to_string()), Some("NS2".to_string())]
+        );
+    }
+
+    #[test]
+    fn test_skip_non_translation_function_call() {
+        let code = r#"
+            const t = useTranslations("MyNs");
+            const name = "John";
+            const result = someFunction(name);  // Not passing t
+        "#;
+        let collector = parse_and_collect(code);
+
+        // Should not collect - the argument is not a translation function
+        assert!(collector.translation_fn_calls.is_empty());
+    }
+
+    #[test]
+    fn test_skip_translation_hook_call() {
+        // Should not track useTranslations("Ns") itself as a function call
+        let code = r#"
+            const t = useTranslations("MyNs");
+        "#;
+        let collector = parse_and_collect(code);
+
+        assert!(collector.translation_fn_calls.is_empty());
+    }
+
+    #[test]
+    fn test_translation_fn_call_scope_isolated() {
+        let code = r#"
+            function Page() {
+                const t = useTranslations("Page");
+                return createLabels(t);
+            }
+            // t is not in scope here, so this should be a different variable
+            const result = someFunc(t);
+        "#;
+        let collector = parse_and_collect(code);
+
+        // Only the call inside Page() should be collected
+        assert_eq!(collector.translation_fn_calls.len(), 1);
+        let fn_call = &collector.translation_fn_calls[0];
+        assert_eq!(fn_call.fn_name, "createLabels");
+    }
+
+    #[test]
+    fn test_translation_fn_call_in_nested_arrow() {
+        let code = r#"
+            const Component = () => {
+                const t = useTranslations("Outer");
+                const inner = () => {
+                    const t = useTranslations("Inner");
+                    return buildLabels(t);
+                };
+                return createLabels(t);
+            };
+        "#;
+        let collector = parse_and_collect(code);
+
+        assert_eq!(collector.translation_fn_calls.len(), 2);
+
+        let outer_call = collector
+            .translation_fn_calls
+            .iter()
+            .find(|c| c.fn_name == "createLabels")
+            .unwrap();
+        assert_eq!(outer_call.namespaces, vec![Some("Outer".to_string())]);
+
+        let inner_call = collector
+            .translation_fn_calls
+            .iter()
+            .find(|c| c.fn_name == "buildLabels")
+            .unwrap();
+        assert_eq!(inner_call.namespaces, vec![Some("Inner".to_string())]);
     }
 }
