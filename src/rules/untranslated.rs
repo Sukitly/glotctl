@@ -15,13 +15,10 @@ use crate::{
         check::{build_key_usage_map, get_usages_for_key},
         context::CheckContext,
     },
-    issue::Issue,
+    issue::{Issue, Location, MAX_KEY_USAGES, UntranslatedIssue},
     rules::Checker,
     utils::contains_alphabetic,
 };
-
-/// Maximum number of usage locations to include in issues
-const MAX_USAGES: usize = 3;
 
 pub struct UntranslatedRule;
 
@@ -78,16 +75,16 @@ impl Checker for UntranslatedRule {
             identical_in.sort();
 
             if !identical_in.is_empty() {
-                let (usages, total_usages) = get_usages_for_key(&key_usages, key, MAX_USAGES);
-                issues.push(Issue::untranslated(
-                    key,
-                    &primary_entry.value,
-                    &primary_entry.file_path,
-                    primary_entry.line,
-                    &identical_in,
+                let (usages, total_usages) = get_usages_for_key(&key_usages, key, MAX_KEY_USAGES);
+                issues.push(Issue::Untranslated(UntranslatedIssue {
+                    location: Location::new(&primary_entry.file_path, primary_entry.line),
+                    key: key.clone(),
+                    value: primary_entry.value.clone(),
+                    primary_locale: primary_locale.clone(),
+                    identical_in,
                     usages,
                     total_usages,
-                ));
+                }));
             }
         }
 

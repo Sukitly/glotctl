@@ -5,7 +5,7 @@ use crate::{
     RunResult,
     args::CheckArgs,
     commands::context::CheckContext,
-    issue::{Issue, Rule, Severity},
+    issue::{Issue, IssueReport, Rule, Severity},
     rules::{
         Checker, hardcoded::HardcodedRule, missing::MissingKeysRule, orphan::OrphanKeysRule,
         untranslated::UntranslatedRule,
@@ -151,14 +151,17 @@ fn finish(
 ) -> RunResult {
     issues.sort();
 
-    let parse_error_count = issues.iter().filter(|i| i.rule == Rule::ParseError).count();
+    let parse_error_count = issues
+        .iter()
+        .filter(|i| i.rule() == Rule::ParseError)
+        .count();
     let error_count = issues
         .iter()
-        .filter(|i| i.severity == Severity::Error)
+        .filter(|i| i.severity() == Severity::Error)
         .count();
     let warning_count = issues
         .iter()
-        .filter(|i| i.severity == Severity::Warning)
+        .filter(|i| i.severity() == Severity::Warning)
         .count();
 
     RunResult {

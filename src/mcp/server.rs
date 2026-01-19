@@ -16,19 +16,19 @@ use crate::{
     args::{CheckArgs, CommonArgs},
     commands::runner::{CheckRunner, CheckType},
     config::load_config,
-    issue::Rule,
+    issue::{Issue, IssueReport, Rule},
     parsers::json::scan_message_files,
 };
 
-use super::helpers::{parse_identical_locales, parse_missing_locales, process_locale_translation};
+use super::helpers::process_locale_translation;
 use super::types::{
     AddTranslationsParams, AddTranslationsResult, AddTranslationsSummary, ConfigDto, ConfigValues,
     GetConfigParams, GetLocalesParams, HardcodedItem, HardcodedScanResult, HardcodedStats,
-    KeyUsageLocation, LocaleInfo, LocalesResult, Pagination, PrimaryMissingItem,
-    PrimaryMissingScanResult, PrimaryMissingStats, ReplicaLagItem, ReplicaLagScanResult,
-    ReplicaLagStats, ScanHardcodedParams, ScanOverviewParams, ScanOverviewResult,
-    ScanPrimaryMissingParams, ScanReplicaLagParams, ScanUntranslatedParams, UntranslatedItem,
-    UntranslatedScanResult, UntranslatedStats,
+    LocaleInfo, LocalesResult, Pagination, PrimaryMissingItem, PrimaryMissingScanResult,
+    PrimaryMissingStats, ReplicaLagItem, ReplicaLagScanResult, ReplicaLagStats,
+    ScanHardcodedParams, ScanOverviewParams, ScanOverviewResult, ScanPrimaryMissingParams,
+    ScanReplicaLagParams, ScanUntranslatedParams, UntranslatedItem, UntranslatedScanResult,
+    UntranslatedStats,
 };
 
 #[derive(Clone)]
@@ -76,17 +76,13 @@ impl GlotMcpServer {
         let all_items: Vec<HardcodedItem> = result
             .issues
             .into_iter()
-            .filter(|i| i.rule == Rule::HardcodedText)
             .filter_map(|issue| {
-                let file_path = issue.file_path.clone()?;
-                hardcoded_files.insert(file_path.clone());
-                Some(HardcodedItem {
-                    file_path,
-                    line: issue.line.unwrap_or(0),
-                    col: issue.col.unwrap_or(0),
-                    text: issue.message,
-                    source_line: issue.source_line.unwrap_or_default(),
-                })
+                if let Issue::Hardcoded(hardcoded) = issue {
+                    hardcoded_files.insert(hardcoded.location.file_path.clone());
+                    Some(hardcoded.to_mcp_item())
+                } else {
+                    None
+                }
             })
             .collect();
 
@@ -150,31 +146,39 @@ impl GlotMcpServer {
         let hardcoded_count = result
             .issues
             .iter()
-            .filter(|i| i.rule == Rule::HardcodedText)
-            .filter_map(|i| i.file_path.as_ref())
+            .filter(|i| i.rule() == Rule::HardcodedText)
+            .filter_map(|i| i.file_path())
             .map(|fp| {
-                hardcoded_files.insert(fp.clone());
+                hardcoded_files.insert(fp.to_string());
             })
             .count();
 
-        // Count primary missing
-        let primary_missing_count = result
+        // Count primary missing (including expanded keys from MissingDynamicKeyCandidates)
+        let primary_missing_count: usize = result
             .issues
             .iter()
-            .filter(|i| i.rule == Rule::MissingKey)
-            .count();
+            .map(|i| match i {
+                Issue::MissingKey(_) => 1,
+                Issue::MissingDynamicKeyCandidates(dyn_missing) => dyn_missing.missing_keys.len(),
+                _ => 0,
+            })
+            .sum();
 
         // Count replica lag and collect affected locales
         let mut replica_lag_locales: HashSet<String> = HashSet::new();
         let replica_lag_count = result
             .issues
             .iter()
-            .filter(|i| i.rule == Rule::ReplicaLag)
-            .map(|issue| {
-                if let Some(details) = &issue.details {
-                    for locale in parse_missing_locales(details) {
-                        replica_lag_locales.insert(locale);
-                    }
+            .filter_map(|i| {
+                if let Issue::ReplicaLag(lag) = i {
+                    Some(lag)
+                } else {
+                    None
+                }
+            })
+            .map(|lag| {
+                for locale in &lag.missing_in {
+                    replica_lag_locales.insert(locale.clone());
                 }
             })
             .count();
@@ -187,16 +191,16 @@ impl GlotMcpServer {
         let untranslated_count = result
             .issues
             .iter()
-            .filter(|i| i.rule == Rule::Untranslated)
-            .map(|issue| {
-                if let Some(file_path) = &issue.file_path {
-                    // Extract locale from file path (e.g., "messages/zh.json" -> "zh")
-                    if let Some(locale) = std::path::Path::new(file_path)
-                        .file_stem()
-                        .and_then(|s| s.to_str())
-                    {
-                        untranslated_locales.insert(locale.to_string());
-                    }
+            .filter_map(|i| {
+                if let Issue::Untranslated(untranslated) = i {
+                    Some(untranslated)
+                } else {
+                    None
+                }
+            })
+            .map(|untranslated| {
+                for locale in &untranslated.identical_in {
+                    untranslated_locales.insert(locale.clone());
                 }
             })
             .count();
@@ -256,17 +260,28 @@ impl GlotMcpServer {
             .run()
             .map_err(|e| McpError::internal_error(format!("Scan failed: {}", e), None))?;
 
-        // Collect primary missing keys
+        // Collect primary missing keys (including expanded keys from MissingDynamicKeyCandidates)
         let all_items: Vec<PrimaryMissingItem> = result
             .issues
             .iter()
-            .filter(|i| i.rule == Rule::MissingKey)
-            .filter_map(|issue| {
-                Some(PrimaryMissingItem {
-                    key: issue.message.clone(),
-                    file_path: issue.file_path.clone()?,
-                    line: issue.line.unwrap_or(0),
-                })
+            .flat_map(|i| match i {
+                Issue::MissingKey(missing) => vec![PrimaryMissingItem {
+                    key: missing.key.clone(),
+                    file_path: missing.location.file_path.clone(),
+                    line: missing.location.line,
+                    source: None,
+                }],
+                Issue::MissingDynamicKeyCandidates(dyn_missing) => dyn_missing
+                    .missing_keys
+                    .iter()
+                    .map(|key| PrimaryMissingItem {
+                        key: key.clone(),
+                        file_path: dyn_missing.location.file_path.clone(),
+                        line: dyn_missing.location.line,
+                        source: Some(format!("from \"{}\"", dyn_missing.source_object)),
+                    })
+                    .collect(),
+                _ => vec![],
             })
             .collect();
 
@@ -322,58 +337,16 @@ impl GlotMcpServer {
             .run()
             .map_err(|e| McpError::internal_error(format!("Scan failed: {}", e), None))?;
 
-        // Get primary locale from config
-        let config = load_config(Path::new(path))
-            .map_err(|e| McpError::internal_error(format!("Failed to load config: {}", e), None))?;
-        let primary_locale = config.config.primary_locale.clone();
-
         // Collect replica lag items
         let all_items: Vec<ReplicaLagItem> = result
             .issues
             .iter()
-            .filter(|i| i.rule == Rule::ReplicaLag)
-            .filter_map(|issue| {
-                // Parse details to get missing locales
-                // Details format: "(\"value\") missing in: de, fr, ja"
-                let details = issue.details.as_ref()?;
-                let missing_in = parse_missing_locales(details);
-
-                // Extract value from details (between parentheses, removing quotes)
-                let value = details
-                    .split(')')
-                    .next()
-                    .and_then(|s| s.strip_prefix("(\""))
-                    .unwrap_or("")
-                    .trim_end_matches('"')
-                    .to_string();
-
-                // Extract usages from issue
-                let usages: Vec<KeyUsageLocation> = issue
-                    .usages
-                    .as_ref()
-                    .map(|u| {
-                        u.iter()
-                            .map(|usage| KeyUsageLocation {
-                                file_path: usage.file_path.clone(),
-                                line: usage.line,
-                                col: usage.col,
-                            })
-                            .collect()
-                    })
-                    .unwrap_or_default();
-
-                let total_usages = issue.total_usages.unwrap_or(0);
-
-                Some(ReplicaLagItem {
-                    key: issue.message.clone(),
-                    value,
-                    file_path: issue.file_path.clone().unwrap_or_default(),
-                    line: issue.line.unwrap_or(0),
-                    exists_in: primary_locale.clone(),
-                    missing_in,
-                    usages,
-                    total_usages,
-                })
+            .filter_map(|i| {
+                if let Issue::ReplicaLag(lag) = i {
+                    Some(lag.to_mcp_item())
+                } else {
+                    None
+                }
             })
             .collect();
 
@@ -429,58 +402,16 @@ impl GlotMcpServer {
             .run()
             .map_err(|e| McpError::internal_error(format!("Scan failed: {}", e), None))?;
 
-        // Get primary locale from config
-        let config = load_config(Path::new(path))
-            .map_err(|e| McpError::internal_error(format!("Failed to load config: {}", e), None))?;
-        let primary_locale = config.config.primary_locale.clone();
-
         // Collect untranslated items
         let all_items: Vec<UntranslatedItem> = result
             .issues
             .iter()
-            .filter(|i| i.rule == Rule::Untranslated)
-            .filter_map(|issue| {
-                // Parse details to get identical_in locales
-                // Details format: "(\"value\") identical in: zh, ja"
-                let details = issue.details.as_ref()?;
-                let identical_in = parse_identical_locales(details);
-
-                // Extract value from details (between parentheses, removing quotes)
-                let value = details
-                    .split(')')
-                    .next()
-                    .and_then(|s| s.strip_prefix("(\""))
-                    .unwrap_or("")
-                    .trim_end_matches('"')
-                    .to_string();
-
-                // Extract usages from issue
-                let usages: Vec<KeyUsageLocation> = issue
-                    .usages
-                    .as_ref()
-                    .map(|u| {
-                        u.iter()
-                            .map(|usage| KeyUsageLocation {
-                                file_path: usage.file_path.clone(),
-                                line: usage.line,
-                                col: usage.col,
-                            })
-                            .collect()
-                    })
-                    .unwrap_or_default();
-
-                let total_usages = issue.total_usages.unwrap_or(0);
-
-                Some(UntranslatedItem {
-                    key: issue.message.clone(),
-                    value,
-                    file_path: issue.file_path.clone().unwrap_or_default(),
-                    line: issue.line.unwrap_or(0),
-                    identical_in,
-                    primary_locale: primary_locale.clone(),
-                    usages,
-                    total_usages,
-                })
+            .filter_map(|i| {
+                if let Issue::Untranslated(untranslated) = i {
+                    Some(untranslated.to_mcp_item())
+                } else {
+                    None
+                }
             })
             .collect();
 

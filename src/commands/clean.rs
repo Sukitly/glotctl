@@ -13,7 +13,7 @@ use crate::{
         context::{CheckContext, MessageData},
         shared,
     },
-    issue::{Issue, Rule},
+    issue::{DynamicKeyIssue, Issue, IssueReport, Location, ParseErrorIssue, Rule, UnusedKeyIssue},
     json_editor::JsonEditor,
     parsers::json::scan_message_files,
     reporter::{FAILURE_MARK, SUCCESS_MARK},
@@ -113,11 +113,12 @@ impl CleanRunner {
         self.ctx.set_messages(messages);
 
         // Convert JSON parse warnings to ParseError issues
-        issues.extend(
-            message_warnings
-                .into_iter()
-                .map(|warning| Issue::parse_error("messages", &warning)),
-        );
+        issues.extend(message_warnings.into_iter().map(|warning| {
+            Issue::ParseError(ParseErrorIssue {
+                file_path: "messages".to_string(),
+                error: warning,
+            })
+        }));
 
         // Build extractions and collect parse errors
         let (extractions, parse_errors) = shared::build_extractions(&self.ctx);
@@ -138,24 +139,21 @@ impl CleanRunner {
                     DynamicKeyReason::VariableKey => "dynamic key",
                     DynamicKeyReason::TemplateWithExpr => "template with expression",
                 };
-                issues.push(Issue::dynamic_key_with_hint(
-                    &warning.file_path,
-                    warning.line,
-                    warning.col,
-                    reason,
-                    Some(warning.source_line.clone()),
-                    warning.hint.clone(),
-                ));
+                issues.push(Issue::DynamicKey(DynamicKeyIssue {
+                    location: Location::new(&warning.file_path, warning.line).with_col(warning.col),
+                    reason: reason.to_string(),
+                    source_line: Some(warning.source_line.clone()),
+                    hint: warning.hint.clone(),
+                }));
             }
 
             for warning in &extraction.pattern_warnings {
-                issues.push(Issue::dynamic_key(
-                    &warning.file_path,
-                    warning.line,
-                    1,
-                    &warning.message,
-                    None,
-                ));
+                issues.push(Issue::DynamicKey(DynamicKeyIssue {
+                    location: Location::new(&warning.file_path, warning.line).with_col(1),
+                    reason: warning.message.clone(),
+                    source_line: None,
+                    hint: None,
+                }));
             }
         }
 
@@ -163,16 +161,18 @@ impl CleanRunner {
         let messages = self.ctx.messages().unwrap();
         let used_keys = self.ctx.used_keys().unwrap();
 
-        let unused_keys: HashSet<String> = if let Some(primary_messages) =
-            &messages.primary_messages
-        {
-            let unused_issues = find_unused_keys(used_keys, primary_messages);
-            let keys: HashSet<String> = unused_issues.iter().map(|i| i.message.clone()).collect();
-            issues.extend(unused_issues);
-            keys
-        } else {
-            HashSet::new()
-        };
+        let unused_keys: HashSet<String> =
+            if let Some(primary_messages) = &messages.primary_messages {
+                let unused_issues = find_unused_keys(used_keys, primary_messages);
+                let keys: HashSet<String> = unused_issues
+                    .iter()
+                    .map(|i| i.message().to_string())
+                    .collect();
+                issues.extend(unused_issues);
+                keys
+            } else {
+                HashSet::new()
+            };
 
         // Propagate unused keys to other locales
         // If a key is unused in primary, it should also be removed from all other locales
@@ -183,12 +183,11 @@ impl CleanRunner {
 
             for key in &unused_keys {
                 if let Some(entry) = locale_messages.get(key) {
-                    issues.push(Issue::unused_key(
-                        key,
-                        &entry.value,
-                        &entry.file_path,
-                        entry.line,
-                    ));
+                    issues.push(Issue::UnusedKey(UnusedKeyIssue {
+                        location: Location::new(&entry.file_path, entry.line),
+                        key: key.clone(),
+                        value: entry.value.clone(),
+                    }));
                 }
             }
         }
@@ -207,8 +206,14 @@ impl CleanRunner {
     /// # Arguments
     /// * `issues` - All collected issues
     fn validate_safety(&self, issues: &[Issue]) -> Result<()> {
-        let dynamic_key_count = issues.iter().filter(|i| i.rule == Rule::DynamicKey).count();
-        let parse_error_count = issues.iter().filter(|i| i.rule == Rule::ParseError).count();
+        let dynamic_key_count = issues
+            .iter()
+            .filter(|i| i.rule() == Rule::DynamicKey)
+            .count();
+        let parse_error_count = issues
+            .iter()
+            .filter(|i| i.rule() == Rule::ParseError)
+            .count();
 
         if dynamic_key_count > 0 {
             bail!(
@@ -240,8 +245,8 @@ impl CleanRunner {
         issues
             .iter()
             .filter(|issue| {
-                (self.clean_unused && issue.rule == Rule::UnusedKey)
-                    || (self.clean_orphan && issue.rule == Rule::OrphanKey)
+                (self.clean_unused && issue.rule() == Rule::UnusedKey)
+                    || (self.clean_orphan && issue.rule() == Rule::OrphanKey)
             })
             .cloned()
             .collect()
@@ -252,9 +257,9 @@ impl CleanRunner {
         let mut grouped: HashMap<String, Vec<Issue>> = HashMap::new();
 
         for issue in issues {
-            if let Some(file_path) = &issue.file_path {
+            if let Some(file_path) = issue.file_path() {
                 grouped
-                    .entry(file_path.clone())
+                    .entry(file_path.to_string())
                     .or_default()
                     .push(issue.clone());
             }
@@ -272,7 +277,7 @@ impl CleanRunner {
         let mut orphan_count = 0;
         for issues in grouped.values() {
             for issue in issues {
-                match issue.rule {
+                match issue.rule() {
                     Rule::UnusedKey => unused_count += 1,
                     Rule::OrphanKey => orphan_count += 1,
                     _ => {}
@@ -293,7 +298,7 @@ impl CleanRunner {
 
                 // Edit the file
                 let mut editor = JsonEditor::open(Path::new(file_path))?;
-                let key_paths: Vec<&str> = issues.iter().map(|i| i.message.as_str()).collect();
+                let key_paths: Vec<&str> = issues.iter().map(|i| i.message()).collect();
                 editor.delete_keys(&key_paths)?;
                 editor.save()?;
             }
@@ -349,17 +354,16 @@ impl CleanRunner {
         println!("{}:", file_path.blue());
         for issue in issues {
             let line_info = issue
-                .line
+                .line()
                 .map(|l| format!(" (line {})", l))
                 .unwrap_or_default();
 
             let value_info = issue
-                .details
-                .as_ref()
+                .format_details()
                 .map(|d| format!(": {}", d))
                 .unwrap_or_default();
 
-            let rule_tag = match issue.rule {
+            let rule_tag = match issue.rule() {
                 Rule::UnusedKey => "[unused]".dimmed(),
                 Rule::OrphanKey => "[orphan]".dimmed(),
                 _ => "".normal(),
@@ -368,7 +372,7 @@ impl CleanRunner {
             println!(
                 "  {} {}{}{}  {}",
                 "-".dimmed(),
-                issue.message,
+                issue.message(),
                 line_info.dimmed(),
                 value_info.dimmed(),
                 rule_tag

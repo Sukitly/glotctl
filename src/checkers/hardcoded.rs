@@ -7,17 +7,8 @@ use swc_ecma_ast::{
 };
 use swc_ecma_visit::{Visit, VisitWith};
 
+use crate::issue::{HardcodedIssue, Location};
 use crate::utils::contains_alphabetic;
-
-#[derive(Debug, Clone)]
-pub struct HardcodedIssue {
-    pub file_path: String,
-    pub line: usize,
-    pub col: usize,
-    pub text: String,
-    pub source_line: String,
-    pub in_jsx_context: bool,
-}
 
 enum Directive {
     Disable,
@@ -236,11 +227,9 @@ impl<'a> HardcodedChecker<'a> {
         let use_jsx_comment = self.should_use_jsx_comment(&source_line);
 
         self.issues.push(HardcodedIssue {
-            file_path: self.file_path.to_owned(),
-            line: loc.line,
-            col: loc.col_display + 1,
+            location: Location::new(self.file_path, loc.line).with_col(loc.col_display + 1),
             text: value.to_owned(),
-            source_line,
+            source_line: Some(source_line),
             in_jsx_context: use_jsx_comment,
         });
     }
@@ -451,6 +440,11 @@ function App() {
         assert_eq!(issues[0].text, "Visible");
     }
 
+    // Helper function to get line from HardcodedIssue
+    fn get_line(issue: &HardcodedIssue) -> usize {
+        issue.location.line
+    }
+
     #[test]
     fn test_multiline_jsx_text_reports_correct_line() {
         use swc_common::{FileName, FilePathMapping};
@@ -494,9 +488,10 @@ function App() {
         assert_eq!(issues[0].text, "Hello World");
         // The text "Hello World" is on line 5, not line 3 (where <div> starts)
         assert_eq!(
-            issues[0].line, 5,
+            get_line(&issues[0]),
+            5,
             "Expected line 5 for 'Hello World', got line {}",
-            issues[0].line
+            get_line(&issues[0])
         );
     }
 

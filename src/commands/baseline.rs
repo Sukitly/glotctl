@@ -7,13 +7,9 @@ use colored::Colorize;
 use unicode_width::UnicodeWidthStr;
 
 use crate::{
-    RunResult,
-    args::BaselineArgs,
-    checkers::hardcoded::{HardcodedChecker, HardcodedIssue},
-    checkers::translation_calls::TranslationCallFinder,
-    commands::context::CheckContext,
-    parsers::jsx::parse_jsx_file,
-    reporter::SUCCESS_MARK,
+    RunResult, args::BaselineArgs, checkers::hardcoded::HardcodedChecker,
+    checkers::translation_calls::TranslationCallFinder, commands::context::CheckContext,
+    issue::HardcodedIssue, parsers::jsx::parse_jsx_file, reporter::SUCCESS_MARK,
 };
 
 /// Comment to insert for baseline suppression
@@ -125,15 +121,15 @@ impl BaselineRunner {
 
         for issue in issues {
             grouped
-                .entry(issue.file_path.clone())
+                .entry(issue.location.file_path.clone())
                 .or_default()
                 .push(issue.clone());
         }
 
         // Deduplicate: only keep one issue per line (first occurrence)
         for issues in grouped.values_mut() {
-            issues.sort_by_key(|i| i.line);
-            issues.dedup_by_key(|i| i.line);
+            issues.sort_by_key(|i| i.location.line);
+            issues.dedup_by_key(|i| i.location.line);
         }
 
         grouped
@@ -151,8 +147,8 @@ impl BaselineRunner {
         for (file_path, issues) in &grouped {
             let file_translation_lines = translation_lines.get(file_path);
             for issue in issues {
-                let has_translation =
-                    file_translation_lines.is_some_and(|lines| lines.contains(&issue.line));
+                let has_translation = file_translation_lines
+                    .is_some_and(|lines| lines.contains(&issue.location.line));
                 if has_translation {
                     skipped.push(issue.clone());
                 } else {
@@ -165,7 +161,9 @@ impl BaselineRunner {
         }
 
         // Sort skipped for deterministic output
-        skipped.sort_by(|a, b| (&a.file_path, a.line).cmp(&(&b.file_path, b.line)));
+        skipped.sort_by(|a, b| {
+            (&a.location.file_path, a.location.line).cmp(&(&b.location.file_path, b.location.line))
+        });
 
         let file_count = insertable.len();
         let total_insertable: usize = insertable.values().map(|v| v.len()).sum();
@@ -179,7 +177,7 @@ impl BaselineRunner {
         if !skipped.is_empty() {
             println!("{} (line has translation call):", "Skipped".yellow().bold());
             for issue in &skipped {
-                self.preview_issue(&issue.file_path, issue);
+                self.preview_issue(&issue.location.file_path, issue);
             }
         }
 
@@ -256,26 +254,29 @@ impl BaselineRunner {
     }
 
     fn preview_issue(&self, file_path: &str, issue: &HardcodedIssue) {
+        let col = issue.location.col.unwrap_or(1);
+        let source_line = issue.source_line.as_deref().unwrap_or("");
+
         // Clickable location: --> path:line:col
         println!(
             "  {} {}:{}:{}",
             "-->".blue(),
             file_path,
-            issue.line,
-            issue.col
+            issue.location.line,
+            col
         );
 
         // Source context with line number
         println!("     {}", "|".blue());
         println!(
             " {:>3} {} {}",
-            issue.line.to_string().blue(),
+            issue.location.line.to_string().blue(),
             "|".blue(),
-            issue.source_line
+            source_line
         );
 
         // Caret pointing to column
-        let prefix: String = issue.source_line.chars().take(issue.col - 1).collect();
+        let prefix: String = source_line.chars().take(col - 1).collect();
         let caret_padding = UnicodeWidthStr::width(prefix.as_str());
         println!(
             "     {} {:>padding$}{}",
@@ -295,26 +296,29 @@ impl BaselineRunner {
                 JS_COMMENT
             };
 
+            let col = issue.location.col.unwrap_or(1);
+            let source_line = issue.source_line.as_deref().unwrap_or("");
+
             // Clickable location: --> path:line:col
             println!(
                 "  {} {}:{}:{}",
                 "-->".blue(),
                 file_path,
-                issue.line,
-                issue.col
+                issue.location.line,
+                col
             );
 
             // Source context with line number
             println!("     {}", "|".blue());
             println!(
                 " {:>3} {} {}",
-                issue.line.to_string().blue(),
+                issue.location.line.to_string().blue(),
                 "|".blue(),
-                issue.source_line
+                source_line
             );
 
             // Caret pointing to column
-            let prefix: String = issue.source_line.chars().take(issue.col - 1).collect();
+            let prefix: String = source_line.chars().take(col - 1).collect();
             let caret_padding = UnicodeWidthStr::width(prefix.as_str());
             println!(
                 "     {} {:>padding$}{}",
@@ -325,8 +329,7 @@ impl BaselineRunner {
             );
 
             // Comment to be inserted
-            let indentation: String = issue
-                .source_line
+            let indentation: String = source_line
                 .chars()
                 .take_while(|c| c.is_whitespace())
                 .collect();
@@ -371,14 +374,14 @@ impl BaselineRunner {
                     JS_COMMENT.to_string()
                 };
 
-                let indentation: String = issue
-                    .source_line
+                let source_line = issue.source_line.as_deref().unwrap_or("");
+                let indentation: String = source_line
                     .chars()
                     .take_while(|c| c.is_whitespace())
                     .collect();
 
                 CommentInsertion {
-                    line: issue.line,
+                    line: issue.location.line,
                     comment,
                     indentation,
                 }
@@ -425,14 +428,13 @@ impl BaselineRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::issue::Location;
 
     fn create_test_issue(file_path: &str, line: usize, in_jsx_context: bool) -> HardcodedIssue {
         HardcodedIssue {
-            file_path: file_path.to_string(),
-            line,
-            col: 1,
+            location: Location::new(file_path, line).with_col(1),
             text: "test text".to_string(),
-            source_line: "    const x = <div>test text</div>".to_string(),
+            source_line: Some("    const x = <div>test text</div>".to_string()),
             in_jsx_context,
         }
     }
@@ -491,9 +493,9 @@ mod tests {
         let grouped = BaselineRunner::group_by_file(&issues);
         let file_issues = grouped.get("src/app.tsx").unwrap();
 
-        assert_eq!(file_issues[0].line, 10);
-        assert_eq!(file_issues[1].line, 20);
-        assert_eq!(file_issues[2].line, 30);
+        assert_eq!(file_issues[0].location.line, 10);
+        assert_eq!(file_issues[1].location.line, 20);
+        assert_eq!(file_issues[2].location.line, 30);
     }
 
     #[test]
