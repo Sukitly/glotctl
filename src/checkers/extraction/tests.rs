@@ -875,6 +875,45 @@ fn test_used_key_untranslated_disabled_range() {
 }
 
 #[test]
+fn test_used_key_untranslated_disabled_multiline_call() {
+    // Test that disable comment works when call spans multiple lines
+    // The check uses the call expression start line, not the string literal line
+    let code = r#"
+        const t = useTranslations("Common");
+        // glot-disable-next-line untranslated
+        const label = t(
+            "key1"
+        );
+        const other = t("key2");
+    "#;
+    let visitor = parse_and_extract(code);
+
+    assert_eq!(visitor.used_keys.len(), 2);
+
+    let key1 = visitor
+        .used_keys
+        .iter()
+        .find(|k| k.full_key == "Common.key1")
+        .expect("key1 should exist");
+    let key2 = visitor
+        .used_keys
+        .iter()
+        .find(|k| k.full_key == "Common.key2")
+        .expect("key2 should exist");
+
+    // key1 should have untranslated disabled (comment is on line before t()
+    assert!(
+        key1.untranslated_disabled,
+        "key1 should have untranslated_disabled = true even with multiline call"
+    );
+    // key2 should NOT have untranslated disabled
+    assert!(
+        !key2.untranslated_disabled,
+        "key2 should have untranslated_disabled = false"
+    );
+}
+
+#[test]
 fn test_used_key_in_jsx_context_correctly_set() {
     let code = r#"
         const t = useTranslations("Common");

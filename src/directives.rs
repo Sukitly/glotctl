@@ -78,10 +78,21 @@ impl Directive {
         None
     }
 
+    /// Parse rule names from the rest of the directive text.
+    ///
+    /// Design decisions:
+    /// - Empty input = all rules (backward compatible with `glot-disable-next-line`)
+    /// - Valid tokens only = only those rules (e.g., `hardcoded` = Hardcoded only)
+    /// - Mixed valid/invalid = only valid rules (e.g., `hardcoded foobar` = Hardcoded only)
+    /// - All invalid tokens = all rules (fail-safe: disable more rather than less)
+    ///
+    /// The "all invalid = all rules" behavior is intentional for backward compatibility
+    /// and fail-safe operation. A typo like `untrasnalted` will disable all rules,
+    /// which is more permissive but prevents accidentally leaving issues unchecked.
     fn parse_rules(rest: &str) -> HashSet<DisableRule> {
         let rest = rest.trim();
         if rest.is_empty() {
-            // No rules specified = all rules
+            // No rules specified = all rules (backward compatible)
             return DisableRule::all();
         }
 
@@ -90,7 +101,7 @@ impl Directive {
             .filter_map(DisableRule::parse)
             .collect();
 
-        // If no valid rules parsed, treat as all rules
+        // If no valid rules parsed, fall back to all rules (fail-safe)
         if parsed.is_empty() {
             DisableRule::all()
         } else {
