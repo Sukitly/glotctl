@@ -1476,3 +1476,235 @@ export function Page() {
 
     Ok(())
 }
+
+// ============================================
+// Untranslated Value Tests
+// ============================================
+
+#[test]
+fn test_untranslated_value() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    // English (primary locale)
+    test.write_file(
+        "messages/en.json",
+        r#"{
+            "Common": {
+                "submit": "Submit",
+                "cancel": "Cancel"
+            }
+        }"#,
+    )?;
+
+    // Chinese locale has same value as English (not translated)
+    test.write_file(
+        "messages/zh.json",
+        r#"{
+            "Common": {
+                "submit": "Submit",
+                "cancel": "Cancel"
+            }
+        }"#,
+    )?;
+
+    test.write_file("src/app.tsx", r#"const x = 1;"#)?;
+
+    // Should detect untranslated values
+    assert_cmd_snapshot!(test.check_command().arg("untranslated"));
+
+    Ok(())
+}
+
+#[test]
+fn test_untranslated_correct_translation() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    // English (primary locale)
+    test.write_file(
+        "messages/en.json",
+        r#"{
+            "Common": {
+                "welcome": "Welcome to our platform"
+            }
+        }"#,
+    )?;
+
+    // Correctly translated to Chinese
+    test.write_file(
+        "messages/zh.json",
+        r#"{
+            "Common": {
+                "welcome": "欢迎来到我们的平台"
+            }
+        }"#,
+    )?;
+
+    test.write_file("src/app.tsx", r#"const x = 1;"#)?;
+
+    // Should pass without issues
+    assert_cmd_snapshot!(test.check_command().arg("untranslated"));
+
+    Ok(())
+}
+
+#[test]
+fn test_untranslated_short_text() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    test.write_file(
+        "messages/en.json",
+        r#"{
+            "Common": {
+                "ok": "OK",
+                "no": "No"
+            }
+        }"#,
+    )?;
+
+    // Short texts that are the same - should be caught by untranslated check
+    test.write_file(
+        "messages/zh.json",
+        r#"{
+            "Common": {
+                "ok": "OK",
+                "no": "No"
+            }
+        }"#,
+    )?;
+
+    test.write_file("src/app.tsx", r#"const x = 1;"#)?;
+
+    assert_cmd_snapshot!(test.check_command().arg("untranslated"));
+
+    Ok(())
+}
+
+#[test]
+fn test_untranslated_any_locale() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    test.write_file(
+        "messages/en.json",
+        r#"{
+            "Common": {
+                "greeting": "Hello, welcome to our platform"
+            }
+        }"#,
+    )?;
+
+    // Thai locale - value is same as English, should be flagged as untranslated
+    test.write_file(
+        "messages/th.json",
+        r#"{
+            "Common": {
+                "greeting": "Hello, welcome to our platform"
+            }
+        }"#,
+    )?;
+
+    test.write_file("src/app.tsx", r#"const x = 1;"#)?;
+
+    // Should detect untranslated
+    assert_cmd_snapshot!(test.check_command().arg("untranslated"));
+
+    Ok(())
+}
+
+#[test]
+fn test_untranslated_skip_primary_locale() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    // Only primary locale exists
+    test.write_file(
+        "messages/en.json",
+        r#"{
+            "Common": {
+                "submit": "Submit"
+            }
+        }"#,
+    )?;
+
+    test.write_file("src/app.tsx", r#"const x = 1;"#)?;
+
+    // Should pass - primary locale is skipped
+    assert_cmd_snapshot!(test.check_command().arg("untranslated"));
+
+    Ok(())
+}
+
+#[test]
+fn test_subcommand_untranslated() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    test.write_file(
+        "messages/en.json",
+        r#"{"Common": {"submit": "Submit button"}}"#,
+    )?;
+
+    // Untranslated
+    test.write_file(
+        "messages/zh.json",
+        r#"{"Common": {"submit": "Submit button"}}"#,
+    )?;
+
+    test.write_file("src/app.tsx", r#"const x = 1;"#)?;
+
+    // Should only run untranslated check
+    assert_cmd_snapshot!(test.check_command().arg("untranslated"));
+
+    Ok(())
+}

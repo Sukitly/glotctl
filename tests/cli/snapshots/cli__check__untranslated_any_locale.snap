@@ -1,0 +1,22 @@
+---
+source: tests/cli/check.rs
+info:
+  program: glot
+  args:
+    - check
+    - untranslated
+  env:
+    NO_COLOR: "1"
+---
+success: true
+exit_code: 0
+----- stdout -----
+warning: "Common.greeting"  untranslated
+  --> ./messages/th.json:3:0
+  = note: "Hello, welcome to our platform"
+  = hint: Value is identical to primary locale (en), possibly not translated
+
+
+✖ 1 problems (0 errors, 1 warning)
+
+----- stderr -----

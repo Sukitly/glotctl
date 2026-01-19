@@ -6,7 +6,10 @@ use crate::{
     args::CheckArgs,
     commands::context::CheckContext,
     issue::{Issue, Rule, Severity},
-    rules::{Checker, hardcoded::HardcodedRule, missing::MissingKeysRule, orphan::OrphanKeysRule},
+    rules::{
+        Checker, hardcoded::HardcodedRule, missing::MissingKeysRule, orphan::OrphanKeysRule,
+        untranslated::UntranslatedRule,
+    },
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, ValueEnum)]
@@ -14,6 +17,7 @@ pub enum CheckType {
     Hardcoded,
     Missing,
     Orphan,
+    Untranslated,
 }
 
 /// The main orchestrator for check operations.
@@ -42,6 +46,7 @@ impl CheckRunner {
             CheckType::Hardcoded => "hardcoded",
             CheckType::Missing => "missing_keys",
             CheckType::Orphan => "orphan_keys",
+            CheckType::Untranslated => "untranslated",
         };
 
         // Deduplicate: skip if already added
@@ -53,6 +58,7 @@ impl CheckRunner {
             CheckType::Hardcoded => self.checkers.push(Box::new(HardcodedRule)),
             CheckType::Missing => self.checkers.push(Box::new(MissingKeysRule)),
             CheckType::Orphan => self.checkers.push(Box::new(OrphanKeysRule)),
+            CheckType::Untranslated => self.checkers.push(Box::new(UntranslatedRule)),
         }
         self
     }
@@ -69,8 +75,12 @@ impl CheckRunner {
         self.add(CheckType::Orphan)
     }
 
+    pub fn untranslated(self) -> Self {
+        self.add(CheckType::Untranslated)
+    }
+
     pub fn all(self) -> Self {
-        self.hardcoded().missing().orphan()
+        self.hardcoded().missing().orphan().untranslated()
     }
 
     pub fn run(self) -> Result<RunResult> {

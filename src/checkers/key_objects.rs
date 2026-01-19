@@ -7,6 +7,8 @@ use swc_ecma_ast::{
 };
 use swc_ecma_visit::{Visit, VisitWith};
 
+use super::{extract_namespace_from_call, is_translation_hook};
+
 /// Represents an object literal containing translation key candidates
 #[derive(Debug, Clone)]
 pub struct KeyObject {
@@ -174,23 +176,6 @@ pub struct KeyObjectCollector {
     /// Stack of translation function bindings scoped by function/arrow.
     /// Used to detect when a translation function is passed as a prop or function argument.
     translation_bindings_stack: Vec<HashMap<String, TranslationBindingValue>>,
-}
-
-const TRANSLATION_HOOKS: &[&str] = &["useTranslations", "getTranslations"];
-
-fn is_translation_hook(name: &str) -> bool {
-    TRANSLATION_HOOKS.contains(&name)
-}
-
-/// Extract namespace from translation hook call: useTranslations("MyNamespace") -> Some("MyNamespace")
-fn extract_namespace_from_call(call: &swc_ecma_ast::CallExpr) -> Option<String> {
-    call.args.first().and_then(|arg| {
-        if let Expr::Lit(Lit::Str(s)) = &*arg.expr {
-            s.value.as_str().map(|s| s.to_string())
-        } else {
-            None
-        }
-    })
 }
 
 impl KeyObjectCollector {

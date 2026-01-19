@@ -17,6 +17,7 @@ use super::binding_context::BindingContext;
 use super::result::{DynamicKeyReason, DynamicKeyWarning, KeyExtractionResult, UsedKey};
 use super::translation_source::TranslationSource;
 use crate::checkers::{
+    extract_namespace_from_call, is_translation_hook,
     key_objects::{
         FileImports, extract_binding_names, make_translation_fn_call_key, make_translation_prop_key,
     },
@@ -25,22 +26,6 @@ use crate::checkers::{
     value_source::ResolvedKey,
 };
 use crate::commands::context::Registries;
-
-const TRANSLATION_HOOKS: &[&str] = &["useTranslations", "getTranslations"];
-
-fn is_translation_hook(name: &str) -> bool {
-    TRANSLATION_HOOKS.contains(&name)
-}
-
-fn extract_namespace_from_call(call: &CallExpr) -> Option<String> {
-    call.args.first().and_then(|arg| {
-        if let Expr::Lit(Lit::Str(s)) = &*arg.expr {
-            s.value.as_str().map(|s| s.to_string())
-        } else {
-            None
-        }
-    })
-}
 
 pub(crate) fn resolve_full_key(namespace: &Option<String>, key: &str) -> String {
     match namespace {
