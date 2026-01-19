@@ -133,6 +133,7 @@ Or check for specific issue types:
 - [hardcoded](/detection/hardcoded-text) - Untranslated text in JSX/TSX
 - [missing](/detection/missing-keys) - Keys used but not defined in locale files
 - [orphan](/detection/orphan-keys) - Unused keys in locale files
+- [untranslated](/detection/untranslated) - Values identical to primary locale
 
 <CodeGroup>
 ```bash npm
@@ -147,6 +148,10 @@ npx glot check missing
 
 npx glot check orphan
 
+# Only untranslated values
+
+npx glot check untranslated
+
 ````
 
 ```bash pnpm
@@ -158,6 +163,9 @@ pnpm exec glot check missing
 
 # Only orphan (unused) keys
 pnpm exec glot check orphan
+
+# Only untranslated values
+pnpm exec glot check untranslated
 ````
 
 ```bash yarn
@@ -169,6 +177,9 @@ yarn glot check missing
 
 # Only orphan (unused) keys
 yarn glot check orphan
+
+# Only untranslated values
+yarn glot check untranslated
 ```
 
 ```bash bun
@@ -180,6 +191,9 @@ bunx glot check missing
 
 # Only orphan (unused) keys
 bunx glot check orphan
+
+# Only untranslated values
+bunx glot check untranslated
 ```
 
 </CodeGroup>

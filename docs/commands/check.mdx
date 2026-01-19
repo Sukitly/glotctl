@@ -30,11 +30,12 @@ bunx glot check [CHECK_TYPES...] [OPTIONS]
 
 You can run specific checks or all checks at once:
 
-| Type        | Description                                                          |
-| ----------- | -------------------------------------------------------------------- |
-| `hardcoded` | Find untranslated text in JSX/TSX files                              |
-| `missing`   | Identify translation keys used in code but missing from locale files |
-| `orphan`    | Find unused translation keys defined in locale files                 |
+| Type           | Description                                                          |
+| -------------- | -------------------------------------------------------------------- |
+| `hardcoded`    | Find untranslated text in JSX/TSX files                              |
+| `missing`      | Identify translation keys used in code but missing from locale files |
+| `orphan`       | Find unused translation keys defined in locale files                 |
+| `untranslated` | Find values identical to primary locale that may need translation    |
 
 <CodeGroup>
 ```bash npm
@@ -46,6 +47,7 @@ npx glot check
 npx glot check hardcoded
 npx glot check missing
 npx glot check orphan
+npx glot check untranslated
 
 # Run multiple specific checks
 
@@ -61,6 +63,7 @@ pnpm exec glot check
 pnpm exec glot check hardcoded
 pnpm exec glot check missing
 pnpm exec glot check orphan
+pnpm exec glot check untranslated
 
 # Run multiple specific checks
 pnpm exec glot check hardcoded missing
@@ -74,6 +77,7 @@ yarn glot check
 yarn glot check hardcoded
 yarn glot check missing
 yarn glot check orphan
+yarn glot check untranslated
 
 # Run multiple specific checks
 yarn glot check hardcoded missing
@@ -87,6 +91,7 @@ bunx glot check
 bunx glot check hardcoded
 bunx glot check missing
 bunx glot check orphan
+bunx glot check untranslated
 
 # Run multiple specific checks
 bunx glot check hardcoded missing
@@ -241,10 +246,10 @@ warning: common.oldKey  orphan-key
 
 ### Issue Severity
 
-| Severity | Exit Code | Description                       |
-| -------- | --------- | --------------------------------- |
-| Error    | 1         | Hardcoded text, missing keys      |
-| Warning  | 0         | Orphan keys (unused translations) |
+| Severity | Exit Code | Description                                    |
+| -------- | --------- | ---------------------------------------------- |
+| Error    | 1         | Hardcoded text, missing keys                   |
+| Warning  | 0         | Orphan keys, untranslated values               |
 
 ## Understanding Issues
 
@@ -636,6 +641,79 @@ If your code uses dynamic translation keys, glot cannot determine if a key is tr
 For more details on orphan key types and cleanup, see [Orphan Keys Detection](/detection/orphan-keys).
 </Info>
 
+### Untranslated Values (`untranslated`)
+
+Untranslated values are translations in non-primary locales that are identical to the primary locale, possibly indicating they haven't been translated yet.
+
+<Accordion title="Example: Same value as primary locale">
+
+**Primary locale:**
+
+```json messages/en.json
+{
+  "common": {
+    "submit": "Submit",
+    "cancel": "Cancel"
+  }
+}
+```
+
+**Non-primary locale with untranslated values:**
+
+```json messages/zh.json
+{
+  "common": {
+    "submit": "Submit",
+    "cancel": "Cancel"
+  }
+}
+```
+
+**Glot output:**
+
+```
+warning: "Common.submit"  untranslated
+  --> ./messages/zh.json:3:0
+  = note: "Submit"
+  = hint: Value is identical to primary locale (en), possibly not translated
+
+warning: "Common.cancel"  untranslated
+  --> ./messages/zh.json:4:0
+  = note: "Cancel"
+  = hint: Value is identical to primary locale (en), possibly not translated
+```
+
+**Solution:**
+
+Translate the values:
+
+```json messages/zh.json
+{
+  "common": {
+    "submit": "提交",
+    "cancel": "取消"
+  }
+}
+```
+
+</Accordion>
+
+<Accordion title="How to fix untranslated values">
+
+**Option 1: Translate the values (Recommended)**
+
+Update the non-primary locale files with proper translations.
+
+**Option 2: Accept the warning**
+
+Some values legitimately remain the same across locales (brand names, technical terms). In these cases, you can safely ignore the warning since it doesn't cause build failures.
+
+</Accordion>
+
+<Info>
+For more details on untranslated detection, see [Untranslated Values Detection](/detection/untranslated).
+</Info>
+
 ## Exit Codes
 
 | Code | Meaning                              |
@@ -679,6 +757,9 @@ error: "Submit"  hardcoded-text
   </Card>
   <Card title="Orphan Keys" icon="broom" href="/detection/orphan-keys">
     Find unused translation keys
+  </Card>
+  <Card title="Untranslated Values" icon="language" href="/detection/untranslated">
+    Find values that may need translation
   </Card>
   <Card title="Directives" icon="code" href="/directives">
     Suppress specific warnings

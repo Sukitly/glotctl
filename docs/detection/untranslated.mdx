@@ -1,0 +1,270 @@
+---
+title: Untranslated Values
+description: Understanding untranslated value detection
+---
+
+Glot detects translation values in non-primary locales that are identical to the primary locale, which may indicate they haven't been translated yet.
+
+## What Are Untranslated Values?
+
+An untranslated value occurs when:
+
+1. A key exists in both the primary locale and a non-primary locale
+2. The value in the non-primary locale is **identical** to the primary locale
+
+This typically happens when:
+
+- Locale files are copy-pasted and translations are forgotten
+- A new key is added to all locales but only translated in the primary locale
+- Translations are incomplete or rushed
+
+## Example
+
+Primary locale file:
+
+```json messages/en.json
+{
+  "common": {
+    "submit": "Submit",
+    "cancel": "Cancel"
+  }
+}
+```
+
+Non-primary locale with untranslated values:
+
+```json messages/zh.json
+{
+  "common": {
+    "submit": "Submit",
+    "cancel": "Cancel"
+  }
+}
+```
+
+Glot output:
+
+```
+warning: "Common.submit"  untranslated
+  --> ./messages/zh.json:3:0
+  = note: "Submit"
+  = hint: Value is identical to primary locale (en), possibly not translated
+
+warning: "Common.cancel"  untranslated
+  --> ./messages/zh.json:4:0
+  = note: "Cancel"
+  = hint: Value is identical to primary locale (en), possibly not translated
+
+0 errors, 2 warnings
+```
+
+## Detection Rules
+
+Glot applies these rules when detecting untranslated values:
+
+### Only Non-Primary Locales Are Checked
+
+The primary locale (defined in `.glotrc.json`) is skipped since it's the source of truth:
+
+```json .glotrc.json
+{
+  "primaryLocale": "en"
+}
+```
+
+With this config, `messages/en.json` is never checked for untranslated values.
+
+### Values Must Contain Alphabetic Characters
+
+Pure numbers and symbols are skipped since they're often legitimately the same across locales:
+
+```json
+{
+  "common": {
+    "year": "2024",
+    "separator": "---",
+    "currency": "$"
+  }
+}
+```
+
+These won't be flagged even if identical across locales.
+
+### Exact Match Required
+
+Only values that are **exactly identical** to the primary locale are flagged:
+
+```json messages/en.json
+{
+  "common": {
+    "greeting": "Hello"
+  }
+}
+```
+
+```json messages/de.json
+{
+  "common": {
+    "greeting": "Hello"
+  }
+}
+```
+
+This would be flagged. But if the German value was "hello" (lowercase), it would not be flagged.
+
+## Severity
+
+Untranslated values are reported as **warnings** (not errors) because:
+
+- Some values legitimately remain the same across languages (brand names, technical terms, etc.)
+- They don't break functionality
+- They're informational and may not require action
+
+## Running Untranslated Detection
+
+<Tabs syncKey="pkg">
+  <Tab title="npm">```bash npx glot check untranslated ```</Tab>
+  <Tab title="pnpm">```bash pnpm exec glot check untranslated ```</Tab>
+  <Tab title="yarn">```bash yarn glot check untranslated ```</Tab>
+  <Tab title="bun">```bash bunx glot check untranslated ```</Tab>
+</Tabs>
+
+Or run all checks including untranslated:
+
+<Tabs syncKey="pkg">
+  <Tab title="npm">```bash npx glot check ```</Tab>
+  <Tab title="pnpm">```bash pnpm exec glot check ```</Tab>
+  <Tab title="yarn">```bash yarn glot check ```</Tab>
+  <Tab title="bun">```bash bunx glot check ```</Tab>
+</Tabs>
+
+## Fixing Untranslated Values
+
+<Steps>
+  <Step title="Run Check">
+    <Tabs syncKey="pkg">
+      <Tab title="npm">
+        ```bash
+        npx glot check untranslated
+        ```
+      </Tab>
+      <Tab title="pnpm">
+        ```bash
+        pnpm exec glot check untranslated
+        ```
+      </Tab>
+      <Tab title="yarn">
+        ```bash
+        yarn glot check untranslated
+        ```
+      </Tab>
+      <Tab title="bun">
+        ```bash
+        bunx glot check untranslated
+        ```
+      </Tab>
+    </Tabs>
+  </Step>
+  <Step title="Review Issues">
+    For each flagged key, determine if it needs translation or should remain the same.
+  </Step>
+  <Step title="Translate Values">
+    Update the non-primary locale files with proper translations:
+    ```json messages/zh.json
+    {
+      "common": {
+        "submit": "提交",
+        "cancel": "取消"
+      }
+    }
+    ```
+  </Step>
+  <Step title="Verify">
+    Run the check again to confirm translations are applied:
+    <Tabs syncKey="pkg">
+      <Tab title="npm">
+        ```bash
+        npx glot check untranslated
+        ```
+      </Tab>
+      <Tab title="pnpm">
+        ```bash
+        pnpm exec glot check untranslated
+        ```
+      </Tab>
+      <Tab title="yarn">
+        ```bash
+        yarn glot check untranslated
+        ```
+      </Tab>
+      <Tab title="bun">
+        ```bash
+        bunx glot check untranslated
+        ```
+      </Tab>
+    </Tabs>
+  </Step>
+</Steps>
+
+## Common Scenarios
+
+### Legitimate Same Values
+
+Some values should remain identical across locales:
+
+```json
+{
+  "brand": {
+    "name": "Acme Corp",
+    "tagline": "JavaScript"
+  }
+}
+```
+
+In these cases, you can safely ignore the warning.
+
+### Partial Translations
+
+When adding new features, it's common to copy keys from the primary locale and forget to translate some:
+
+```json messages/ja.json
+{
+  "newFeature": {
+    "title": "New Feature",
+    "description": "Check out our new feature"
+  }
+}
+```
+
+These should be translated to Japanese.
+
+### Placeholder Text
+
+Sometimes developers use English placeholder text intending to translate later:
+
+```json messages/fr.json
+{
+  "dashboard": {
+    "welcome": "Welcome back!"
+  }
+}
+```
+
+The untranslated check helps catch these before they reach production.
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Check Command" icon="terminal" href="/commands/check">
+    Run untranslated value detection
+  </Card>
+  <Card title="Missing Keys" icon="triangle-exclamation" href="/detection/missing-keys">
+    Find keys used but not defined
+  </Card>
+  <Card title="Orphan Keys" icon="broom" href="/detection/orphan-keys">
+    Find unused translation keys
+  </Card>
+  <Card title="Configuration" icon="gear" href="/configuration">
+    Configure primary locale
+  </Card>
+</CardGroup>
