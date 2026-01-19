@@ -91,7 +91,7 @@ The server communicates over stdio using the MCP protocol.
 
 ## Available Tools
 
-The MCP server provides 7 tools. All tools require the `project_root_path` parameter.
+The MCP server provides 8 tools. All tools require the `project_root_path` parameter.
 
 ### `get_config`
 
@@ -167,6 +167,10 @@ Returns statistics of all i18n issues in the project. **Use this first** to unde
   "replicaLag": {
     "totalCount": 8,
     "affectedLocales": ["es", "fr"]
+  },
+  "untranslated": {
+    "totalCount": 3,
+    "affectedLocales": ["es", "fr"]
   }
 }
 ```
@@ -240,7 +244,7 @@ Lists translation keys used in code but missing from the primary locale file.
 
 ### `scan_replica_lag`
 
-Lists keys that exist in the primary locale but are missing from other locales.
+Lists keys that exist in the primary locale but are missing from other locales. Includes code usage locations to help prioritize fixes.
 
 **Input:**
 
@@ -259,8 +263,14 @@ Lists keys that exist in the primary locale but are missing from other locales.
     {
       "key": "common.newFeature",
       "value": "New Feature",
-      "existsIn": "en",
-      "missingIn": ["es", "fr"]
+      "filePath": "./messages/en.json",
+      "line": 15,
+      "primaryLocale": "en",
+      "missingIn": ["es", "fr"],
+      "usages": [
+        { "filePath": "./src/components/Feature.tsx", "line": 25, "col": 10 }
+      ],
+      "totalUsages": 3
     }
   ],
   "pagination": {
@@ -270,6 +280,49 @@ Lists keys that exist in the primary locale but are missing from other locales.
   }
 }
 ```
+
+The `usages` array contains up to 3 code locations where the key is used. `totalUsages` shows the total count (may exceed 3).
+
+### `scan_untranslated`
+
+Lists translation values that are identical to the primary locale, which may indicate they haven't been translated yet. Includes code usage locations.
+
+**Input:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `project_root_path` | string | Yes | Path to the project root directory |
+| `limit` | number | No | Results per page (default: 50, max: 100) |
+| `offset` | number | No | Offset for pagination (default: 0) |
+
+**Output:**
+
+```json
+{
+  "totalCount": 3,
+  "items": [
+    {
+      "key": "common.submit",
+      "value": "Submit",
+      "filePath": "./messages/en.json",
+      "line": 5,
+      "primaryLocale": "en",
+      "identicalIn": ["es", "fr"],
+      "usages": [
+        { "filePath": "./src/components/Button.tsx", "line": 12, "col": 8 }
+      ],
+      "totalUsages": 5
+    }
+  ],
+  "pagination": {
+    "offset": 0,
+    "limit": 50,
+    "hasMore": false
+  }
+}
+```
+
+The `identicalIn` array lists locales where the value is identical to the primary locale. The `usages` array contains up to 3 code locations where the key is used.
 
 ### `add_translations`
 

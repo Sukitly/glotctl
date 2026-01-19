@@ -160,7 +160,7 @@ pub fn validate_and_convert_value(value: &serde_json::Value) -> Result<serde_jso
 }
 
 /// Parse missing locales from details string.
-/// Format: "(value) missing in: de, fr, ja"
+/// Format: "(\"value\") missing in: de, fr, ja"
 ///
 /// # Note
 /// TODO: This implementation is fragile as it parses a human-readable string format.
@@ -170,6 +170,22 @@ pub fn validate_and_convert_value(value: &serde_json::Value) -> Result<serde_jso
 pub fn parse_missing_locales(details: &str) -> Vec<String> {
     if let Some(pos) = details.find("missing in:") {
         details[pos + "missing in:".len()..]
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect()
+    } else {
+        Vec::new()
+    }
+}
+
+/// Parse identical locales from details string.
+/// Format: "(\"value\") identical in: zh, ja"
+///
+/// Similar to parse_missing_locales but for untranslated issues.
+pub fn parse_identical_locales(details: &str) -> Vec<String> {
+    if let Some(pos) = details.find("identical in:") {
+        details[pos + "identical in:".len()..]
             .split(',')
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())

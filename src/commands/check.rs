@@ -7,12 +7,12 @@ use anyhow::Result;
 
 use crate::{
     checkers::{
-        extraction::{TranslationKeyVisitor, UsedKey},
+        extraction::{KeyExtractionResult as ExtractionResult, TranslationKeyVisitor, UsedKey},
         hardcoded::{HardcodedChecker, HardcodedIssue},
         key_objects::FileImports,
     },
     commands::context::Registries,
-    issue::Issue,
+    issue::{Issue, KeyUsage},
     parsers::{json::MessageMap, jsx::parse_jsx_file},
 };
 
@@ -63,9 +63,60 @@ pub fn find_missing_keys(used_keys: &[UsedKey], messages: &MessageMap) -> Vec<Us
         .collect()
 }
 
+/// Type alias for key usage map: full_key -> list of usage locations
+pub type KeyUsageMap = HashMap<String, Vec<KeyUsage>>;
+
+/// Build a map from full_key to all its usage locations across the codebase.
+///
+/// This is used by replica-lag and untranslated rules to show where keys are referenced.
+pub fn build_key_usage_map(extractions: &HashMap<String, ExtractionResult>) -> KeyUsageMap {
+    let mut map: KeyUsageMap = HashMap::new();
+
+    for extraction in extractions.values() {
+        for used_key in &extraction.used_keys {
+            map.entry(used_key.full_key.clone())
+                .or_default()
+                .push(KeyUsage {
+                    file_path: used_key.file_path.clone(),
+                    line: used_key.line,
+                    col: used_key.col,
+                });
+        }
+    }
+
+    // Sort usages by file path for deterministic output
+    for usages in map.values_mut() {
+        usages.sort();
+    }
+
+    map
+}
+
+/// Get usages for a key, limited to max_count.
+///
+/// Returns (usages, total_count) where usages.len() <= max_count.
+pub fn get_usages_for_key(
+    key_usages: &KeyUsageMap,
+    key: &str,
+    max_count: usize,
+) -> (Vec<KeyUsage>, usize) {
+    match key_usages.get(key) {
+        Some(usages) => {
+            let total = usages.len();
+            let limited: Vec<KeyUsage> = usages.iter().take(max_count).cloned().collect();
+            (limited, total)
+        }
+        None => (Vec::new(), 0),
+    }
+}
+
+/// Maximum number of usage locations to include in issues
+const MAX_USAGES: usize = 3;
+
 pub fn find_replica_lag(
     primary_locale: &str,
     all_messages: &HashMap<String, MessageMap>,
+    key_usages: &KeyUsageMap,
 ) -> Vec<Issue> {
     let Some(primary_messages) = all_messages.get(primary_locale) else {
         return Vec::new();
@@ -84,12 +135,15 @@ pub fn find_replica_lag(
             if missing_in.is_empty() {
                 None
             } else {
+                let (usages, total_usages) = get_usages_for_key(key_usages, key, MAX_USAGES);
                 Some(Issue::replica_lag(
                     key,
                     &entry.value,
                     &entry.file_path,
                     entry.line,
                     &missing_in,
+                    usages,
+                    total_usages,
                 ))
             }
         })
@@ -537,7 +591,8 @@ const e = <div>Detected 3</div>"#;
             create_message_map(&[("Common.submit", "提交")]), // missing cancel
         );
 
-        let missing = find_replica_lag("en", &all_messages);
+        let key_usages = KeyUsageMap::new();
+        let missing = find_replica_lag("en", &all_messages, &key_usages);
 
         assert_eq!(missing.len(), 1);
         assert_eq!(missing[0].message, "Common.cancel");
@@ -557,7 +612,8 @@ const e = <div>Detected 3</div>"#;
         all_messages.insert("zh".to_string(), create_message_map(&[]));
         all_messages.insert("ja".to_string(), create_message_map(&[]));
 
-        let missing = find_replica_lag("en", &all_messages);
+        let key_usages = KeyUsageMap::new();
+        let missing = find_replica_lag("en", &all_messages, &key_usages);
 
         assert_eq!(missing.len(), 1);
         assert_eq!(missing[0].message, "Common.submit");
@@ -578,7 +634,8 @@ const e = <div>Detected 3</div>"#;
             create_message_map(&[("Common.submit", "提交")]),
         );
 
-        let missing = find_replica_lag("en", &all_messages);
+        let key_usages = KeyUsageMap::new();
+        let missing = find_replica_lag("en", &all_messages, &key_usages);
 
         assert!(missing.is_empty());
     }
@@ -591,7 +648,8 @@ const e = <div>Detected 3</div>"#;
             create_message_map(&[("Common.submit", "提交")]),
         );
 
-        let missing = find_replica_lag("en", &all_messages);
+        let key_usages = KeyUsageMap::new();
+        let missing = find_replica_lag("en", &all_messages, &key_usages);
 
         assert!(missing.is_empty());
     }
@@ -604,7 +662,8 @@ const e = <div>Detected 3</div>"#;
             create_message_map(&[("Common.submit", "Submit")]),
         );
 
-        let missing = find_replica_lag("en", &all_messages);
+        let key_usages = KeyUsageMap::new();
+        let missing = find_replica_lag("en", &all_messages, &key_usages);
 
         assert!(missing.is_empty());
     }
@@ -622,7 +681,8 @@ const e = <div>Detected 3</div>"#;
         );
         all_messages.insert("zh".to_string(), create_message_map(&[]));
 
-        let missing = find_replica_lag("en", &all_messages);
+        let key_usages = KeyUsageMap::new();
+        let missing = find_replica_lag("en", &all_messages, &key_usages);
 
         assert_eq!(missing.len(), 3);
         assert_eq!(missing[0].message, "Common.apple");

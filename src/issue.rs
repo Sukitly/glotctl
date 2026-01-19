@@ -1,5 +1,14 @@
 use std::{cmp::Ordering, fmt};
 
+/// Represents a location where a translation key is used in code.
+/// Used by replica-lag and untranslated rules to show where keys are referenced.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct KeyUsage {
+    pub file_path: String,
+    pub line: usize,
+    pub col: usize,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Severity {
     Error,
@@ -56,6 +65,12 @@ pub struct Issue {
     pub details: Option<String>,
     pub source_line: Option<String>,
     pub hint: Option<String>,
+    /// Locations where this key is used in code (for replica-lag, untranslated).
+    /// None means this rule doesn't track usages.
+    /// Some([]) means no usages found.
+    pub usages: Option<Vec<KeyUsage>>,
+    /// Total count of usages (may be more than usages.len() if truncated).
+    pub total_usages: Option<usize>,
 }
 
 impl Issue {
@@ -76,6 +91,8 @@ impl Issue {
             details: None,
             source_line,
             hint: None,
+            usages: None,
+            total_usages: None,
         }
     }
 
@@ -96,6 +113,8 @@ impl Issue {
             details: None,
             source_line,
             hint: None,
+            usages: None,
+            total_usages: None,
         }
     }
 
@@ -118,6 +137,8 @@ impl Issue {
             details: Some(format!("from {} ({})", schema_name, schema_file)),
             source_line,
             hint: None,
+            usages: None,
+            total_usages: None,
         }
     }
 
@@ -138,6 +159,8 @@ impl Issue {
             details: None,
             source_line,
             hint: None,
+            usages: None,
+            total_usages: None,
         }
     }
 
@@ -159,6 +182,8 @@ impl Issue {
             details: None,
             source_line,
             hint,
+            usages: None,
+            total_usages: None,
         }
     }
 
@@ -168,6 +193,8 @@ impl Issue {
         file_path: &str,
         line: usize,
         missing_in: &[String],
+        usages: Vec<KeyUsage>,
+        total_usages: usize,
     ) -> Self {
         Self {
             file_path: Some(file_path.to_string()),
@@ -183,6 +210,8 @@ impl Issue {
             )),
             source_line: None,
             hint: None,
+            usages: Some(usages),
+            total_usages: Some(total_usages),
         }
     }
 
@@ -197,6 +226,8 @@ impl Issue {
             details: Some(format!("(\"{}\")", value)),
             source_line: None,
             hint: None,
+            usages: None,
+            total_usages: None,
         }
     }
 
@@ -211,6 +242,8 @@ impl Issue {
             details: Some(format!("in {} (\"{}\")", locale, value)),
             source_line: None,
             hint: None,
+            usages: None,
+            total_usages: None,
         }
     }
 
@@ -235,6 +268,8 @@ impl Issue {
             )),
             source_line,
             hint: None,
+            usages: None,
+            total_usages: None,
         }
     }
 
@@ -256,6 +291,8 @@ impl Issue {
             details: Some(format!("missing: {}", missing_keys.join(", "))),
             source_line,
             hint: None,
+            usages: None,
+            total_usages: None,
         }
     }
 
@@ -270,6 +307,8 @@ impl Issue {
             details: None,
             source_line: None,
             hint: None,
+            usages: None,
+            total_usages: None,
         }
     }
 
@@ -277,12 +316,17 @@ impl Issue {
     ///
     /// This is a warning because the value might intentionally be the same
     /// (e.g., brand names, technical terms).
+    ///
+    /// Points to the primary locale file (like replica-lag) since that's the
+    /// "source of truth" for translations.
     pub fn untranslated(
-        file_path: &str,
-        line: usize,
         key: &str,
         value: &str,
-        primary_locale: &str,
+        file_path: &str,
+        line: usize,
+        identical_in: &[String],
+        usages: Vec<KeyUsage>,
+        total_usages: usize,
     ) -> Self {
         Self {
             file_path: Some(file_path.to_string()),
@@ -291,12 +335,15 @@ impl Issue {
             message: key.to_string(),
             severity: Severity::Warning,
             rule: Rule::Untranslated,
-            details: Some(format!("\"{}\"", value)),
-            source_line: None,
-            hint: Some(format!(
-                "Value is identical to primary locale ({}), possibly not translated",
-                primary_locale
+            details: Some(format!(
+                "(\"{}\") identical in: {}",
+                value,
+                identical_in.join(", ")
             )),
+            source_line: None,
+            hint: None,
+            usages: Some(usages),
+            total_usages: Some(total_usages),
         }
     }
 }

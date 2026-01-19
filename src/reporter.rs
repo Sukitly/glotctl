@@ -115,6 +115,42 @@ pub fn print_report(issues: &[Issue]) {
             );
         }
 
+        // Print usages if present (for replica-lag, untranslated)
+        if let Some(usages) = &issue.usages {
+            if usages.is_empty() {
+                println!(
+                    "{:>width$} {} {} {}",
+                    "",
+                    "=".blue(),
+                    "used:".bold(),
+                    "(no usages found)".dimmed(),
+                    width = max_line_width
+                );
+            } else {
+                let total = issue.total_usages.unwrap_or(usages.len());
+                for (i, usage) in usages.iter().enumerate() {
+                    let is_last = i == usages.len() - 1;
+                    let remaining = total.saturating_sub(usages.len());
+                    let suffix = if is_last && remaining > 0 {
+                        format!(" (and {} more)", remaining)
+                    } else {
+                        String::new()
+                    };
+                    println!(
+                        "{:>width$} {} {} {}:{}:{}{}",
+                        "",
+                        "=".blue(),
+                        "used:".bold(),
+                        usage.file_path,
+                        usage.line,
+                        usage.col,
+                        suffix,
+                        width = max_line_width
+                    );
+                }
+            }
+        }
+
         println!(); // Empty line between issues
     }
 

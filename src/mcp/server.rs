@@ -20,15 +20,15 @@ use crate::{
     parsers::json::scan_message_files,
 };
 
-use super::helpers::{parse_missing_locales, process_locale_translation};
+use super::helpers::{parse_identical_locales, parse_missing_locales, process_locale_translation};
 use super::types::{
     AddTranslationsParams, AddTranslationsResult, AddTranslationsSummary, ConfigDto, ConfigValues,
     GetConfigParams, GetLocalesParams, HardcodedItem, HardcodedScanResult, HardcodedStats,
-    LocaleInfo, LocalesResult, Pagination, PrimaryMissingItem, PrimaryMissingScanResult,
-    PrimaryMissingStats, ReplicaLagItem, ReplicaLagScanResult, ReplicaLagStats,
-    ScanHardcodedParams, ScanOverviewParams, ScanOverviewResult, ScanPrimaryMissingParams,
-    ScanReplicaLagParams, ScanUntranslatedParams, UntranslatedItem, UntranslatedScanResult,
-    UntranslatedStats,
+    KeyUsageLocation, LocaleInfo, LocalesResult, Pagination, PrimaryMissingItem,
+    PrimaryMissingScanResult, PrimaryMissingStats, ReplicaLagItem, ReplicaLagScanResult,
+    ReplicaLagStats, ScanHardcodedParams, ScanOverviewParams, ScanOverviewResult,
+    ScanPrimaryMissingParams, ScanReplicaLagParams, ScanUntranslatedParams, UntranslatedItem,
+    UntranslatedScanResult, UntranslatedStats,
 };
 
 #[derive(Clone)]
@@ -297,7 +297,7 @@ impl GlotMcpServer {
 
     /// Scan for keys missing from non-primary locales (replica lag)
     #[tool(
-        description = "Scan for keys that exist in primary locale but missing in other locales. Returns paginated list."
+        description = "Scan for keys that exist in primary locale but missing in other locales. Returns paginated list with code usage locations to help prioritize fixes."
     )]
     async fn scan_replica_lag(
         &self,
@@ -334,23 +334,45 @@ impl GlotMcpServer {
             .filter(|i| i.rule == Rule::ReplicaLag)
             .filter_map(|issue| {
                 // Parse details to get missing locales
-                // Details format: "(value) missing in: de, fr, ja"
+                // Details format: "(\"value\") missing in: de, fr, ja"
                 let details = issue.details.as_ref()?;
                 let missing_in = parse_missing_locales(details);
 
-                // Extract value from details (between parentheses)
+                // Extract value from details (between parentheses, removing quotes)
                 let value = details
                     .split(')')
                     .next()
-                    .and_then(|s| s.strip_prefix('('))
+                    .and_then(|s| s.strip_prefix("(\""))
                     .unwrap_or("")
+                    .trim_end_matches('"')
                     .to_string();
+
+                // Extract usages from issue
+                let usages: Vec<KeyUsageLocation> = issue
+                    .usages
+                    .as_ref()
+                    .map(|u| {
+                        u.iter()
+                            .map(|usage| KeyUsageLocation {
+                                file_path: usage.file_path.clone(),
+                                line: usage.line,
+                                col: usage.col,
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
+
+                let total_usages = issue.total_usages.unwrap_or(0);
 
                 Some(ReplicaLagItem {
                     key: issue.message.clone(),
                     value,
+                    file_path: issue.file_path.clone().unwrap_or_default(),
+                    line: issue.line.unwrap_or(0),
                     exists_in: primary_locale.clone(),
                     missing_in,
+                    usages,
+                    total_usages,
                 })
             })
             .collect();
@@ -382,7 +404,7 @@ impl GlotMcpServer {
 
     /// Scan for values that are identical to primary locale (possibly not translated)
     #[tool(
-        description = "Scan for translation values identical to primary locale. These may indicate text was copied without translation. Returns paginated list."
+        description = "Scan for translation values identical to primary locale. These may indicate text was copied without translation. Returns paginated list with code usage locations."
     )]
     async fn scan_untranslated(
         &self,
@@ -418,25 +440,46 @@ impl GlotMcpServer {
             .iter()
             .filter(|i| i.rule == Rule::Untranslated)
             .filter_map(|issue| {
-                let file_path = issue.file_path.as_ref()?;
-                // Extract locale from file path
-                let locale = std::path::Path::new(file_path)
-                    .file_stem()
-                    .and_then(|s| s.to_str())?
+                // Parse details to get identical_in locales
+                // Details format: "(\"value\") identical in: zh, ja"
+                let details = issue.details.as_ref()?;
+                let identical_in = parse_identical_locales(details);
+
+                // Extract value from details (between parentheses, removing quotes)
+                let value = details
+                    .split(')')
+                    .next()
+                    .and_then(|s| s.strip_prefix("(\""))
+                    .unwrap_or("")
+                    .trim_end_matches('"')
                     .to_string();
 
-                // Extract value from details (format: "value")
-                let value = issue
-                    .details
+                // Extract usages from issue
+                let usages: Vec<KeyUsageLocation> = issue
+                    .usages
                     .as_ref()
-                    .map(|d| d.trim_matches('"').to_string())
+                    .map(|u| {
+                        u.iter()
+                            .map(|usage| KeyUsageLocation {
+                                file_path: usage.file_path.clone(),
+                                line: usage.line,
+                                col: usage.col,
+                            })
+                            .collect()
+                    })
                     .unwrap_or_default();
+
+                let total_usages = issue.total_usages.unwrap_or(0);
 
                 Some(UntranslatedItem {
                     key: issue.message.clone(),
                     value,
-                    locale,
+                    file_path: issue.file_path.clone().unwrap_or_default(),
+                    line: issue.line.unwrap_or(0),
+                    identical_in,
                     primary_locale: primary_locale.clone(),
+                    usages,
+                    total_usages,
                 })
             })
             .collect();

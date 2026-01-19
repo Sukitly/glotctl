@@ -13,6 +13,7 @@ exit_code: 1
 error: "Common.submit"  replica-lag
   --> ./messages/en.json:3:0
   = note: ("Submit") missing in: ja, zh
+  = used: (no usages found)
 
 warning: "Common.submit"  unused-key
   --> ./messages/en.json:3:0
