@@ -291,6 +291,44 @@ Now you can:
   See [Baseline Command](/commands/baseline) for more options and details.
 </Tip>
 
+## Dynamic Keys: Auto-Insert Declarations
+
+If your project uses dynamic translation keys like `` t(`items.${type}`) ``, use the `fix` command to automatically declare them:
+
+<CodeGroup>
+```bash npm
+npx glot fix --apply
+```
+
+```bash pnpm
+pnpm exec glot fix --apply
+```
+
+```bash yarn
+yarn glot fix --apply
+```
+
+```bash bun
+bunx glot fix --apply
+```
+
+</CodeGroup>
+
+This inserts `glot-message-keys` comments with inferred patterns:
+
+```tsx
+// Before
+t(`${prefix}.submit`)
+
+// After
+{/* glot-message-keys "Common.*.submit" */}
+t(`${prefix}.submit`)
+```
+
+<Tip>
+  See [Fix Command](/commands/fix) for more options and details.
+</Tip>
+
 ## Fixing Issues
 
 Replace hardcoded text with translation function calls:

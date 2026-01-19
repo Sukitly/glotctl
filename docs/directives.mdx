@@ -149,6 +149,16 @@ When you use dynamic keys like ``t(`items.${type}`)``, glot cannot determine whi
 
 Using `glot-message-keys` solves both problems by explicitly declaring which keys are used.
 
+<Tip>
+Instead of manually adding `glot-message-keys` comments, use the `fix` command to auto-insert them:
+
+```bash
+npx glot fix --apply
+```
+
+This is especially useful when you have many dynamic keys. See [glot fix](/commands/fix) for details.
+</Tip>
+
 ### Syntax
 
 **JavaScript/TypeScript comments:**
@@ -322,6 +332,35 @@ bunx glot baseline --apply
 
 This is useful when adopting glot in an existing project.
 
+## Fix Command
+
+For dynamic translation keys, the `fix` command automatically inserts `glot-message-keys` comments:
+
+<CodeGroup>
+```bash npm
+npx glot fix --apply
+```
+
+```bash pnpm
+pnpm exec glot fix --apply
+```
+
+```bash yarn
+yarn glot fix --apply
+```
+
+```bash bun
+bunx glot fix --apply
+```
+
+</CodeGroup>
+
+This analyzes template literal keys like `` t(`${prefix}.label`) `` and inserts appropriate patterns.
+
+<Tip>
+See [glot fix](/commands/fix) for more options and details.
+</Tip>
+
 ## Best Practices
 
 <CardGroup cols={2}>
@@ -358,6 +397,9 @@ This is useful when adopting glot in an existing project.
 ## Related
 
 <CardGroup cols={2}>
+  <Card title="Fix Command" icon="wand-magic-sparkles" href="/commands/fix">
+    Auto-insert glot-message-keys comments
+  </Card>
   <Card title="Clean Command" icon="broom" href="/commands/clean">
     Remove unused translation keys safely
   </Card>

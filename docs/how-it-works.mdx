@@ -416,6 +416,35 @@ const label = t(dynamicKey);
 <span>{t(dynamicKey)}</span>
 ```
 
+### Auto-Inserting with glot fix
+
+Instead of manually adding `glot-message-keys` comments, use the `fix` command:
+
+```bash
+# Preview changes
+npx glot fix
+
+# Apply changes
+npx glot fix --apply
+```
+
+Glot analyzes template literal keys and infers the appropriate pattern. For example:
+
+```tsx
+// Before
+t(`${prefix}.submit`)
+
+// After (glot fix --apply)
+{/* glot-message-keys "Common.*.submit" */}
+t(`${prefix}.submit`)
+```
+
+<Note>
+`glot fix` only works for template literal keys with expressions. Pure variable keys like `t(keyName)` cannot have patterns inferred and must be declared manually.
+</Note>
+
+See [glot fix](/commands/fix) for details.
+
 ---
 
 ## Limitations

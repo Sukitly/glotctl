@@ -1,0 +1,307 @@
+---
+title: glot fix
+description: Auto-insert glot-message-keys comments for dynamic translation keys
+---
+
+The `fix` command automatically inserts `glot-message-keys` comments for dynamic translation keys that cannot be statically analyzed. This declares expected keys so that glot can track them properly.
+
+## Usage
+
+<CodeGroup>
+```bash npm
+npx glot fix [OPTIONS]
+```
+
+```bash pnpm
+pnpm exec glot fix [OPTIONS]
+```
+
+```bash yarn
+yarn glot fix [OPTIONS]
+```
+
+```bash bun
+bunx glot fix [OPTIONS]
+```
+
+</CodeGroup>
+
+## Options
+
+<ParamField path="--apply" type="boolean" default="false">
+  Actually insert comments. Without this flag, glot runs in dry-run mode and
+  only shows what would be changed.
+</ParamField>
+
+<ParamField path="--path" type="string" default=".">
+  Directory to process.
+</ParamField>
+
+<ParamField path="-v, --verbose" type="boolean" default="false">
+  Enable verbose output.
+</ParamField>
+
+## Why Use Fix?
+
+When you use dynamic translation keys like `` t(`${prefix}.label`) ``, glot cannot determine which keys are used at build time. This causes two problems:
+
+1. **Dynamic key warnings** - The `check` command reports these as warnings
+2. **Clean refuses to run** - The `clean` command won't run to prevent accidental key deletion
+
+The solution is to add `glot-message-keys` comments that declare which keys are expected. The `fix` command automates this by:
+
+1. Analyzing your template literal keys
+2. Inferring appropriate glob patterns
+3. Inserting the correct comment syntax (JSX or JS)
+
+## What Gets Fixed
+
+<AccordionGroup>
+<Accordion title="Template literals with expressions">
+
+Keys using template literals with dynamic parts:
+
+```tsx
+t(`${prefix}.submit`)        // Fixed: pattern "Namespace.*.submit"
+t(`error.${code}`)           // Fixed: pattern "Namespace.error.*"
+t(`items.${type}.label`)     // Fixed: pattern "Namespace.items.*.label"
+```
+
+</Accordion>
+
+<Accordion title="What cannot be fixed">
+
+**Pure variable keys** cannot have patterns inferred:
+
+```tsx
+t(keyName)                   // Cannot fix - no pattern can be inferred
+t(getKey())                  // Cannot fix - runtime value
+```
+
+For these, you must manually add `glot-message-keys` comments.
+
+</Accordion>
+</AccordionGroup>
+
+## Dry-Run Mode (Default)
+
+Preview what comments would be inserted:
+
+<CodeGroup>
+```bash npm
+npx glot fix
+```
+
+```bash pnpm
+pnpm exec glot fix
+```
+
+```bash yarn
+yarn glot fix
+```
+
+```bash bun
+bunx glot fix
+```
+
+</CodeGroup>
+
+Output:
+
+```
+  --> ./src/components/Button.tsx:6:21
+     |
+   6 |     return <button>{t(`${prefix}.submit`)}</button>;
+     |                     ^
+   +     {/* glot-message-keys "Common.*.submit" */}
+
+Would insert 1 comment(s) in 1 file(s).
+Run with --apply to insert these comments.
+```
+
+If there are unfixable variable keys, they are reported separately:
+
+```
+Cannot fix 1 dynamic key(s) (variable keys without pattern hints):
+
+  --> ./src/components/Dynamic.tsx:5:19
+     |
+   5 |     return <span>{t(keyName)}</span>;
+     |                   ^
+   = reason: variable key
+```
+
+## Apply Changes
+
+Insert the declaration comments:
+
+<CodeGroup>
+```bash npm
+npx glot fix --apply
+```
+
+```bash pnpm
+pnpm exec glot fix --apply
+```
+
+```bash yarn
+yarn glot fix --apply
+```
+
+```bash bun
+bunx glot fix --apply
+```
+
+</CodeGroup>
+
+Output:
+
+```
+  --> ./src/components/Button.tsx:6:21
+     |
+   6 |     return <button>{t(`${prefix}.submit`)}</button>;
+     |                     ^
+   +     {/* glot-message-keys "Common.*.submit" */}
+
+Inserted 1 comment(s) in 1 file(s).
+```
+
+## Result
+
+Before:
+
+```tsx
+const t = useTranslations("Common");
+
+export function Button({ prefix }: { prefix: string }) {
+  return <button>{t(`${prefix}.submit`)}</button>;
+}
+```
+
+After:
+
+```tsx
+const t = useTranslations("Common");
+
+export function Button({ prefix }: { prefix: string }) {
+  {/* glot-message-keys "Common.*.submit" */}
+  return <button>{t(`${prefix}.submit`)}</button>;
+}
+```
+
+## JSX vs Non-JSX Context
+
+Glot automatically detects the context and uses the appropriate comment syntax:
+
+**JSX context** (inside JSX children):
+
+```tsx
+<div>
+  {/* glot-message-keys "Common.*.label" */}
+  <span>{t(`${type}.label`)}</span>
+</div>
+```
+
+**Non-JSX context** (regular JavaScript):
+
+```tsx
+function getLabel(type: string) {
+  // glot-message-keys "Common.*.label"
+  return t(`${type}.label`);
+}
+```
+
+## Pattern Inference
+
+Glot infers patterns based on the template literal structure:
+
+| Template | Inferred Pattern |
+|----------|------------------|
+| `` `${var}.key` `` | `Namespace.*.key` |
+| `` `prefix.${var}` `` | `Namespace.prefix.*` |
+| `` `${a}.${b}.suffix` `` | Cannot infer (multiple expressions) |
+
+<Note>
+Templates with multiple dynamic expressions cannot be automatically fixed because the pattern would be too broad. Add `glot-message-keys` manually for these cases.
+</Note>
+
+## Workflow
+
+<Steps>
+  <Step title="Run Fix (Dry-Run)">
+    Preview what comments would be inserted:
+    <CodeGroup>
+```bash npm
+npx glot fix
+```
+
+```bash pnpm
+pnpm exec glot fix
+```
+
+```bash yarn
+yarn glot fix
+```
+
+```bash bun
+bunx glot fix
+```
+
+</CodeGroup>
+  </Step>
+  <Step title="Review Changes">
+    Check that the inferred patterns make sense for your use case.
+  </Step>
+  <Step title="Apply Changes">
+    Insert the comments:
+    <CodeGroup>
+```bash npm
+npx glot fix --apply
+```
+
+```bash pnpm
+pnpm exec glot fix --apply
+```
+
+```bash yarn
+yarn glot fix --apply
+```
+
+```bash bun
+bunx glot fix --apply
+```
+
+</CodeGroup>
+  </Step>
+  <Step title="Handle Unfixable Keys">
+    For any reported variable keys that couldn't be fixed, manually add `glot-message-keys` comments:
+    ```tsx
+    // glot-message-keys "Namespace.key1", "Namespace.key2"
+    return <span>{t(dynamicKey)}</span>;
+    ```
+  </Step>
+  <Step title="Commit Changes">
+    Commit the changes to your repository:
+    ```bash
+    git add -A
+    git commit -m "chore: add glot-message-keys for dynamic translation keys"
+    ```
+  </Step>
+</Steps>
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Directives" icon="code" href="/directives">
+    Learn about glot-message-keys syntax and patterns
+  </Card>
+  <Card title="Missing Keys" icon="triangle-exclamation" href="/detection/missing-keys">
+    Understanding dynamic key detection
+  </Card>
+  <Card title="Check Command" icon="terminal" href="/commands/check">
+    Run i18n checks
+  </Card>
+  <Card title="Clean Command" icon="broom" href="/commands/clean">
+    Remove unused translation keys
+  </Card>
+</CardGroup>
