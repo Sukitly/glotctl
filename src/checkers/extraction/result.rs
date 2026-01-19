@@ -38,6 +38,10 @@ pub struct UsedKey {
     pub col: usize,
     /// The source line content.
     pub source_line: String,
+    /// Whether the key usage is in JSX context (for comment style).
+    pub in_jsx_context: bool,
+    /// Whether the untranslated rule is disabled for this usage.
+    pub untranslated_disabled: bool,
 }
 
 /// Reason why a key is considered dynamic.

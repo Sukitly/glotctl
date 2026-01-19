@@ -15,13 +15,13 @@ exit_code: 0
      |
    4 |             <span>JSX Text</span>
      |                   ^
-  +             {/* glot-disable-next-line */}
+  +             {/* glot-disable-next-line hardcoded */}
 
   --> ./src/app.tsx:6:29
      |
    6 |                 placeholder="Multi-line attr"
      |                             ^
-  +                 // glot-disable-next-line
+  +                 // glot-disable-next-line hardcoded
 
 Inserted 2 comment(s) in 1 file(s).
 

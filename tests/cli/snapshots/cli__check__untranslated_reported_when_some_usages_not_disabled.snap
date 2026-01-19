@@ -1,0 +1,23 @@
+---
+source: tests/cli/check.rs
+info:
+  program: glot
+  args:
+    - check
+    - untranslated
+  env:
+    NO_COLOR: "1"
+---
+success: true
+exit_code: 0
+----- stdout -----
+warning: "Common.submit"  untranslated
+  --> ./messages/en.json:1:0
+  = note: ("Submit") identical in: zh
+  = used: ./src/app.tsx:7:21
+  = used: ./src/other.tsx:7:21
+
+
+✘ 1 problems (0 errors, 1 warning)
+
+----- stderr -----

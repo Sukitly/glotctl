@@ -19,7 +19,7 @@ use crate::{
         context::CheckContext,
     },
     issue::{
-        DynamicKeyIssue, Issue, Location, MissingDynamicKeyCandidatesIssue, MissingKeyIssue,
+        DynamicKeyIssue, Issue, MissingDynamicKeyCandidatesIssue, MissingKeyIssue, SourceLocation,
         UntrackedNamespaceIssue,
     },
     rules::Checker,
@@ -60,7 +60,7 @@ impl Checker for MissingKeysRule {
             let missing = find_missing_keys(&extraction.used_keys, primary_messages);
             for key in missing {
                 issues.push(Issue::MissingKey(MissingKeyIssue {
-                    location: Location::new(&key.file_path, key.line).with_col(key.col),
+                    location: SourceLocation::new(&key.file_path, key.line).with_col(key.col),
                     key: key.full_key.clone(),
                     source_line: Some(key.source_line.clone()),
                     from_schema: None,
@@ -74,7 +74,8 @@ impl Checker for MissingKeysRule {
                     DynamicKeyReason::TemplateWithExpr => "template with expression",
                 };
                 issues.push(Issue::DynamicKey(DynamicKeyIssue {
-                    location: Location::new(&warning.file_path, warning.line).with_col(warning.col),
+                    location: SourceLocation::new(&warning.file_path, warning.line)
+                        .with_col(warning.col),
                     reason: reason.to_string(),
                     source_line: Some(warning.source_line.clone()),
                     hint: warning.hint.clone(),
@@ -84,7 +85,7 @@ impl Checker for MissingKeysRule {
             // Process pattern warnings
             for warning in &extraction.pattern_warnings {
                 issues.push(Issue::DynamicKey(DynamicKeyIssue {
-                    location: Location::new(&warning.file_path, warning.line).with_col(1),
+                    location: SourceLocation::new(&warning.file_path, warning.line).with_col(1),
                     reason: warning.message.clone(),
                     source_line: None,
                     hint: None,
@@ -103,7 +104,7 @@ impl Checker for MissingKeysRule {
                 for key in expand_result.keys {
                     if !key.has_namespace {
                         issues.push(Issue::UntrackedNamespace(UntrackedNamespaceIssue {
-                            location: Location::new(file_path.as_str(), call.line)
+                            location: SourceLocation::new(file_path.as_str(), call.line)
                                 .with_col(call.col),
                             raw_key: key.raw_key.clone(),
                             schema_name: key.from_schema.clone(),
@@ -120,7 +121,7 @@ impl Checker for MissingKeysRule {
                             .unwrap_or("unknown");
 
                         issues.push(Issue::MissingKey(MissingKeyIssue {
-                            location: Location::new(file_path.as_str(), call.line)
+                            location: SourceLocation::new(file_path.as_str(), call.line)
                                 .with_col(call.col),
                             key: key.full_key.clone(),
                             source_line: None,
@@ -152,7 +153,7 @@ impl Checker for MissingKeysRule {
                             let source_desc = resolved_key.source.source_description();
                             issues.push(Issue::MissingDynamicKeyCandidates(
                                 MissingDynamicKeyCandidatesIssue::new(
-                                    Location::new(&resolved_key.file_path, resolved_key.line)
+                                    SourceLocation::new(&resolved_key.file_path, resolved_key.line)
                                         .with_col(resolved_key.col),
                                     source_desc,
                                     missing_keys,

@@ -12,9 +12,9 @@ use crate::{
     issue::HardcodedIssue, parsers::jsx::parse_jsx_file, reporter::SUCCESS_MARK,
 };
 
-/// Comment to insert for baseline suppression
-const JS_COMMENT: &str = "// glot-disable-next-line";
-const JSX_COMMENT: &str = "{/* glot-disable-next-line */}";
+/// Comment to insert for hardcoded baseline suppression
+const JS_COMMENT_HARDCODED: &str = "// glot-disable-next-line hardcoded";
+const JSX_COMMENT_HARDCODED: &str = "{/* glot-disable-next-line hardcoded */}";
 
 /// Result of collecting hardcoded issues and translation call lines.
 type IssuesCollection = (Vec<HardcodedIssue>, HashMap<String, HashSet<usize>>);
@@ -290,10 +290,10 @@ impl BaselineRunner {
 
     fn preview_changes(&self, file_path: &str, issues: &[HardcodedIssue]) {
         for issue in issues {
-            let comment = if issue.in_jsx_context {
-                JSX_COMMENT
+            let comment = if issue.location.in_jsx_context {
+                JSX_COMMENT_HARDCODED
             } else {
-                JS_COMMENT
+                JS_COMMENT_HARDCODED
             };
 
             let col = issue.location.col.unwrap_or(1);
@@ -368,10 +368,10 @@ impl BaselineRunner {
         let mut insertions: Vec<CommentInsertion> = issues
             .iter()
             .map(|issue| {
-                let comment = if issue.in_jsx_context {
-                    JSX_COMMENT.to_string()
+                let comment = if issue.location.in_jsx_context {
+                    JSX_COMMENT_HARDCODED.to_string()
                 } else {
-                    JS_COMMENT.to_string()
+                    JS_COMMENT_HARDCODED.to_string()
                 };
 
                 let source_line = issue.source_line.as_deref().unwrap_or("");
@@ -428,14 +428,15 @@ impl BaselineRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::issue::Location;
+    use crate::issue::SourceLocation;
 
     fn create_test_issue(file_path: &str, line: usize, in_jsx_context: bool) -> HardcodedIssue {
         HardcodedIssue {
-            location: Location::new(file_path, line).with_col(1),
+            location: SourceLocation::new(file_path, line)
+                .with_col(1)
+                .with_jsx_context(in_jsx_context),
             text: "test text".to_string(),
             source_line: Some("    const x = <div>test text</div>".to_string()),
-            in_jsx_context,
         }
     }
 
@@ -513,7 +514,10 @@ mod tests {
 
     #[test]
     fn test_js_vs_jsx_comment_constants() {
-        assert_eq!(JS_COMMENT, "// glot-disable-next-line");
-        assert_eq!(JSX_COMMENT, "{/* glot-disable-next-line */}");
+        assert_eq!(JS_COMMENT_HARDCODED, "// glot-disable-next-line hardcoded");
+        assert_eq!(
+            JSX_COMMENT_HARDCODED,
+            "{/* glot-disable-next-line hardcoded */}"
+        );
     }
 }

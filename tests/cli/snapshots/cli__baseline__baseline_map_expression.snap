@@ -15,7 +15,7 @@ exit_code: 0
      |
    5 |                 <span key={item.id}>Item text</span>
      |                                     ^
-  +                 // glot-disable-next-line
+  +                 // glot-disable-next-line hardcoded
 
 Inserted 1 comment(s) in 1 file(s).
 

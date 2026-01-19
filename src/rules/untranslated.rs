@@ -12,10 +12,10 @@ use anyhow::Result;
 
 use crate::{
     commands::{
-        check::{build_key_usage_map, get_usages_for_key},
+        check::{build_key_disable_map, build_key_usage_map, get_usages_for_key},
         context::CheckContext,
     },
-    issue::{Issue, Location, MAX_KEY_USAGES, UntranslatedIssue},
+    issue::{Issue, MAX_KEY_USAGES, MessageLocation, UntranslatedIssue},
     rules::Checker,
     utils::contains_alphabetic,
 };
@@ -52,6 +52,8 @@ impl Checker for UntranslatedRule {
 
         // Build key usage map for showing where keys are used
         let key_usages = build_key_usage_map(extractions);
+        // Build key disable map for checking if untranslated rule is disabled
+        let key_disable = build_key_disable_map(extractions);
 
         let mut issues = Vec::new();
 
@@ -59,6 +61,14 @@ impl Checker for UntranslatedRule {
         for (key, primary_entry) in primary_messages {
             // Skip if value has no alphabetic characters (pure numbers/symbols)
             if !contains_alphabetic(&primary_entry.value) {
+                continue;
+            }
+
+            // Skip if all usages have untranslated rule disabled
+            // (one-vote-veto: if ANY usage is not disabled, report the issue)
+            if let Some(stats) = key_disable.get(key)
+                && stats.all_disabled()
+            {
                 continue;
             }
 
@@ -77,7 +87,7 @@ impl Checker for UntranslatedRule {
             if !identical_in.is_empty() {
                 let (usages, total_usages) = get_usages_for_key(&key_usages, key, MAX_KEY_USAGES);
                 issues.push(Issue::Untranslated(UntranslatedIssue {
-                    location: Location::new(&primary_entry.file_path, primary_entry.line),
+                    location: MessageLocation::new(&primary_entry.file_path, primary_entry.line),
                     key: key.clone(),
                     value: primary_entry.value.clone(),
                     primary_locale: primary_locale.clone(),

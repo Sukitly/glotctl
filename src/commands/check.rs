@@ -13,8 +13,8 @@ use crate::{
     },
     commands::context::Registries,
     issue::{
-        HardcodedIssue, Issue, KeyUsage, Location, MAX_KEY_USAGES, OrphanKeyIssue, ReplicaLagIssue,
-        UnusedKeyIssue,
+        HardcodedIssue, Issue, KeyUsage, MAX_KEY_USAGES, MessageLocation, OrphanKeyIssue,
+        ReplicaLagIssue, SourceLocation, UnusedKeyIssue,
     },
     parsers::{json::MessageMap, jsx::parse_jsx_file},
 };
@@ -50,6 +50,7 @@ pub fn extract_translation_keys(
     let visitor = TranslationKeyVisitor::new(
         file_path,
         &parsed_jsx.source_map,
+        &parsed_jsx.comments,
         registries,
         file_imports,
         &parsed_jsx.source,
@@ -79,11 +80,11 @@ pub fn build_key_usage_map(extractions: &HashMap<String, ExtractionResult>) -> K
         for used_key in &extraction.used_keys {
             map.entry(used_key.full_key.clone())
                 .or_default()
-                .push(KeyUsage {
-                    file_path: used_key.file_path.clone(),
-                    line: used_key.line,
-                    col: used_key.col,
-                });
+                .push(KeyUsage::new(
+                    SourceLocation::new(&used_key.file_path, used_key.line)
+                        .with_col(used_key.col)
+                        .with_jsx_context(used_key.in_jsx_context),
+                ));
         }
     }
 
@@ -113,6 +114,45 @@ pub fn get_usages_for_key(
     }
 }
 
+/// Stats about disable comments for a key's usages.
+#[derive(Debug, Default, Clone)]
+pub struct KeyDisableStats {
+    /// Total number of usages for this key.
+    pub total_usages: usize,
+    /// Number of usages with untranslated rule disabled.
+    pub disabled_usages: usize,
+}
+
+impl KeyDisableStats {
+    /// Returns true if all usages have the untranslated rule disabled.
+    pub fn all_disabled(&self) -> bool {
+        self.total_usages > 0 && self.disabled_usages == self.total_usages
+    }
+}
+
+/// Type alias for key disable stats map: full_key -> disable stats
+pub type KeyDisableMap = HashMap<String, KeyDisableStats>;
+
+/// Build a map of disable stats for untranslated rule from extractions.
+///
+/// For each key, tracks how many usages have `glot-disable-next-line untranslated`.
+/// A key is fully disabled if ALL its usages have the disable comment.
+pub fn build_key_disable_map(extractions: &HashMap<String, ExtractionResult>) -> KeyDisableMap {
+    let mut map: KeyDisableMap = HashMap::new();
+
+    for extraction in extractions.values() {
+        for used_key in &extraction.used_keys {
+            let stats = map.entry(used_key.full_key.clone()).or_default();
+            stats.total_usages += 1;
+            if used_key.untranslated_disabled {
+                stats.disabled_usages += 1;
+            }
+        }
+    }
+
+    map
+}
+
 pub fn find_replica_lag(
     primary_locale: &str,
     all_messages: &HashMap<String, MessageMap>,
@@ -137,7 +177,7 @@ pub fn find_replica_lag(
             } else {
                 let (usages, total_usages) = get_usages_for_key(key_usages, key, MAX_KEY_USAGES);
                 Some(Issue::ReplicaLag(ReplicaLagIssue {
-                    location: Location::new(&entry.file_path, entry.line),
+                    location: MessageLocation::new(&entry.file_path, entry.line),
                     key: key.clone(),
                     value: entry.value.clone(),
                     primary_locale: primary_locale.to_string(),
@@ -167,7 +207,7 @@ pub fn find_unused_keys(all_used_keys: &HashSet<String>, messages: &MessageMap) 
         .filter(|(key, _)| !all_used_keys.contains(*key))
         .map(|(key, entry)| {
             Issue::UnusedKey(UnusedKeyIssue {
-                location: Location::new(&entry.file_path, entry.line),
+                location: MessageLocation::new(&entry.file_path, entry.line),
                 key: key.clone(),
                 value: entry.value.clone(),
             })
@@ -202,7 +242,7 @@ pub fn find_orphan_keys(
                 .filter(|(key, _)| !primary_messages.contains_key(*key))
                 .map(|(key, entry)| {
                     Issue::OrphanKey(OrphanKeyIssue {
-                        location: Location::new(&entry.file_path, entry.line),
+                        location: MessageLocation::new(&entry.file_path, entry.line),
                         key: key.clone(),
                         value: entry.value.clone(),
                         locale: locale.clone(),
@@ -849,5 +889,224 @@ const e = <div>Detected 3</div>"#;
         let orphans = find_orphan_keys("en", &all_messages);
 
         assert!(orphans.is_empty());
+    }
+
+    // ============================================================
+    // Rule-Specific Disable Tests
+    // ============================================================
+
+    #[test]
+    fn test_glot_disable_next_line_hardcoded_only() {
+        // glot-disable-next-line hardcoded should disable hardcoded rule
+        let code = r#"// glot-disable-next-line hardcoded
+const a = <div>Ignored</div>
+const b = <div>Detected</div>"#;
+        let (_temp_dir, file_path) = create_temp_file(code).unwrap();
+        let issues = check_hardcoded(&file_path, &[], &empty_ignore_texts()).unwrap();
+        assert_eq!(issues.len(), 1);
+        assert_eq!(issues[0].text, "Detected");
+    }
+
+    #[test]
+    fn test_glot_disable_next_line_untranslated_does_not_affect_hardcoded() {
+        // glot-disable-next-line untranslated should NOT disable hardcoded rule
+        let code = r#"// glot-disable-next-line untranslated
+const a = <div>Detected 1</div>
+const b = <div>Detected 2</div>"#;
+        let (_temp_dir, file_path) = create_temp_file(code).unwrap();
+        let issues = check_hardcoded(&file_path, &[], &empty_ignore_texts()).unwrap();
+        // Both should be detected since untranslated doesn't affect hardcoded
+        assert_eq!(issues.len(), 2);
+        assert_eq!(issues[0].text, "Detected 1");
+        assert_eq!(issues[1].text, "Detected 2");
+    }
+
+    #[test]
+    fn test_glot_disable_enable_block_hardcoded_only() {
+        // glot-disable hardcoded / glot-enable hardcoded should work
+        let code = r#"const a = <div>Detected 1</div>
+// glot-disable hardcoded
+const b = <div>Ignored</div>
+// glot-enable hardcoded
+const c = <div>Detected 2</div>"#;
+        let (_temp_dir, file_path) = create_temp_file(code).unwrap();
+        let issues = check_hardcoded(&file_path, &[], &empty_ignore_texts()).unwrap();
+        assert_eq!(issues.len(), 2);
+        assert_eq!(issues[0].text, "Detected 1");
+        assert_eq!(issues[1].text, "Detected 2");
+    }
+
+    #[test]
+    fn test_glot_disable_untranslated_does_not_affect_hardcoded_range() {
+        // glot-disable untranslated / glot-enable untranslated should NOT affect hardcoded
+        let code = r#"const a = <div>Detected 1</div>
+// glot-disable untranslated
+const b = <div>Detected 2</div>
+// glot-enable untranslated
+const c = <div>Detected 3</div>"#;
+        let (_temp_dir, file_path) = create_temp_file(code).unwrap();
+        let issues = check_hardcoded(&file_path, &[], &empty_ignore_texts()).unwrap();
+        // All should be detected since untranslated doesn't affect hardcoded
+        assert_eq!(issues.len(), 3);
+        assert_eq!(issues[0].text, "Detected 1");
+        assert_eq!(issues[1].text, "Detected 2");
+        assert_eq!(issues[2].text, "Detected 3");
+    }
+
+    #[test]
+    fn test_glot_disable_next_line_both_rules_explicitly() {
+        // glot-disable-next-line hardcoded untranslated should disable hardcoded
+        let code = r#"// glot-disable-next-line hardcoded untranslated
+const a = <div>Ignored</div>
+const b = <div>Detected</div>"#;
+        let (_temp_dir, file_path) = create_temp_file(code).unwrap();
+        let issues = check_hardcoded(&file_path, &[], &empty_ignore_texts()).unwrap();
+        assert_eq!(issues.len(), 1);
+        assert_eq!(issues[0].text, "Detected");
+    }
+
+    #[test]
+    fn test_glot_disable_next_line_jsx_hardcoded_only() {
+        // JSX comment style with hardcoded only
+        let code = r#"const x = <>
+{/* glot-disable-next-line hardcoded */}
+<div>Ignored</div>
+<div>Detected</div>
+</>"#;
+        let (_temp_dir, file_path) = create_temp_file(code).unwrap();
+        let issues = check_hardcoded(&file_path, &[], &empty_ignore_texts()).unwrap();
+        assert_eq!(issues.len(), 1);
+        assert_eq!(issues[0].text, "Detected");
+    }
+
+    // ============================================================
+    // KeyDisableStats Tests
+    // ============================================================
+
+    #[test]
+    fn test_key_disable_stats_all_disabled_true() {
+        let stats = KeyDisableStats {
+            total_usages: 3,
+            disabled_usages: 3,
+        };
+        assert!(stats.all_disabled());
+    }
+
+    #[test]
+    fn test_key_disable_stats_all_disabled_false_some_not_disabled() {
+        let stats = KeyDisableStats {
+            total_usages: 3,
+            disabled_usages: 2,
+        };
+        assert!(!stats.all_disabled());
+    }
+
+    #[test]
+    fn test_key_disable_stats_all_disabled_false_no_usages() {
+        // No usages means not "all disabled" (key is not used at all)
+        let stats = KeyDisableStats {
+            total_usages: 0,
+            disabled_usages: 0,
+        };
+        assert!(!stats.all_disabled());
+    }
+
+    #[test]
+    fn test_key_disable_stats_default() {
+        let stats = KeyDisableStats::default();
+        assert_eq!(stats.total_usages, 0);
+        assert_eq!(stats.disabled_usages, 0);
+        assert!(!stats.all_disabled());
+    }
+
+    #[test]
+    fn test_build_key_disable_map_empty() {
+        let extractions: HashMap<String, ExtractionResult> = HashMap::new();
+        let map = build_key_disable_map(&extractions);
+        assert!(map.is_empty());
+    }
+
+    #[test]
+    fn test_build_key_disable_map_basic() {
+        use crate::checkers::extraction::UsedKey;
+
+        let mut extractions: HashMap<String, ExtractionResult> = HashMap::new();
+        extractions.insert(
+            "test.tsx".to_string(),
+            ExtractionResult {
+                used_keys: vec![
+                    UsedKey {
+                        full_key: "Common.submit".to_string(),
+                        file_path: "test.tsx".to_string(),
+                        line: 1,
+                        col: 1,
+                        source_line: String::new(),
+                        in_jsx_context: false,
+                        untranslated_disabled: false,
+                    },
+                    UsedKey {
+                        full_key: "Common.submit".to_string(),
+                        file_path: "test.tsx".to_string(),
+                        line: 2,
+                        col: 1,
+                        source_line: String::new(),
+                        in_jsx_context: false,
+                        untranslated_disabled: true, // One usage disabled
+                    },
+                ],
+                warnings: Vec::new(),
+                schema_calls: Vec::new(),
+                resolved_keys: Vec::new(),
+                pattern_warnings: Vec::new(),
+            },
+        );
+
+        let map = build_key_disable_map(&extractions);
+        let stats = map.get("Common.submit").unwrap();
+        assert_eq!(stats.total_usages, 2);
+        assert_eq!(stats.disabled_usages, 1);
+        assert!(!stats.all_disabled()); // Not all disabled
+    }
+
+    #[test]
+    fn test_build_key_disable_map_all_disabled() {
+        use crate::checkers::extraction::UsedKey;
+
+        let mut extractions: HashMap<String, ExtractionResult> = HashMap::new();
+        extractions.insert(
+            "test.tsx".to_string(),
+            ExtractionResult {
+                used_keys: vec![
+                    UsedKey {
+                        full_key: "Common.submit".to_string(),
+                        file_path: "test.tsx".to_string(),
+                        line: 1,
+                        col: 1,
+                        source_line: String::new(),
+                        in_jsx_context: false,
+                        untranslated_disabled: true,
+                    },
+                    UsedKey {
+                        full_key: "Common.submit".to_string(),
+                        file_path: "test.tsx".to_string(),
+                        line: 2,
+                        col: 1,
+                        source_line: String::new(),
+                        in_jsx_context: false,
+                        untranslated_disabled: true,
+                    },
+                ],
+                warnings: Vec::new(),
+                schema_calls: Vec::new(),
+                resolved_keys: Vec::new(),
+                pattern_warnings: Vec::new(),
+            },
+        );
+
+        let map = build_key_disable_map(&extractions);
+        let stats = map.get("Common.submit").unwrap();
+        assert_eq!(stats.total_usages, 2);
+        assert_eq!(stats.disabled_usages, 2);
+        assert!(stats.all_disabled()); // All disabled
     }
 }

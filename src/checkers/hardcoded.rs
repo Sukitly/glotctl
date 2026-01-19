@@ -7,114 +7,9 @@ use swc_ecma_ast::{
 };
 use swc_ecma_visit::{Visit, VisitWith};
 
-use crate::issue::{HardcodedIssue, Location};
+use crate::directives::{DisableContext, DisableRule};
+use crate::issue::{HardcodedIssue, SourceLocation};
 use crate::utils::contains_alphabetic;
-
-enum Directive {
-    Disable,
-    Enable,
-    DisableNextLine,
-}
-
-impl Directive {
-    fn parse(text: &str) -> Option<Self> {
-        match text {
-            "glot-disable" => Some(Self::Disable),
-            "glot-enable" => Some(Self::Enable),
-            "glot-disable-next-line" => Some(Self::DisableNextLine),
-            _ => None,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-struct DisabledRange {
-    start: usize,
-    end: usize,
-}
-
-impl DisabledRange {
-    fn new(start: usize, end: Option<usize>) -> Self {
-        Self {
-            start,
-            end: end.unwrap_or(usize::MAX),
-        }
-    }
-    fn single_line(line: usize) -> Self {
-        Self {
-            start: line,
-            end: line,
-        }
-    }
-}
-
-#[derive(Debug, Default)]
-struct IgnoreContext {
-    disabled_ranges: Vec<DisabledRange>,
-}
-
-impl IgnoreContext {
-    fn should_ignore(&self, line: usize) -> bool {
-        self.disabled_ranges
-            .iter()
-            .any(|r| (r.start..=r.end).contains(&line))
-    }
-
-    fn add_disabled_range(&mut self, start: usize, end: Option<usize>) {
-        self.disabled_ranges.push(DisabledRange::new(start, end));
-    }
-
-    fn add_disabled_line(&mut self, line: usize) {
-        self.disabled_ranges.push(DisabledRange::single_line(line));
-    }
-
-    fn build(comments: &SingleThreadedComments, source_map: &SourceMap) -> Self {
-        let mut ctx = IgnoreContext::default();
-        let (leading, trailing) = comments.borrow_all();
-
-        let mut all_comments: Vec<_> = leading
-            .iter()
-            .chain(trailing.iter())
-            .flat_map(|(_, cmts)| cmts.iter())
-            .collect();
-        all_comments.sort_by_key(|cmt| source_map.lookup_char_pos(cmt.span.lo).line);
-
-        let mut current_disable_line: Option<usize> = None;
-
-        for cmt in all_comments {
-            let text = cmt.text.trim();
-            let loc = source_map.lookup_char_pos(cmt.span.lo);
-
-            if let Some(directive) = Directive::parse(text) {
-                match directive {
-                    Directive::Disable => {
-                        // Only start a new range if not already in a disabled state
-                        // Consecutive disables are ignored - existing range continues
-                        if current_disable_line.is_none() {
-                            current_disable_line = Some(loc.line);
-                        }
-                    }
-                    Directive::Enable => {
-                        if let Some(start) = current_disable_line {
-                            let end = loc.line.saturating_sub(1);
-                            ctx.add_disabled_range(start, Some(end));
-                            current_disable_line = None;
-                        }
-                    }
-                    Directive::DisableNextLine => {
-                        let next_line = loc.line + 1;
-                        ctx.add_disabled_line(next_line);
-                    }
-                }
-            }
-        }
-        if let Some(start) = current_disable_line {
-            ctx.add_disabled_range(start, None);
-        }
-
-        ctx
-    }
-}
 
 /// Tracks JSX context state during AST traversal.
 ///
@@ -149,7 +44,7 @@ pub struct HardcodedChecker<'a> {
     checked_attributes: &'a [String],
     ignore_texts: &'a HashSet<String>,
     source_map: &'a SourceMap,
-    ignore_context: IgnoreContext,
+    disable_context: DisableContext,
     pub issues: Vec<HardcodedIssue>,
     jsx_state: JsxState,
 }
@@ -162,20 +57,23 @@ impl<'a> HardcodedChecker<'a> {
         source_map: &'a SourceMap,
         comments: &SingleThreadedComments,
     ) -> Self {
-        let ignore_context = IgnoreContext::build(comments, source_map);
+        let disable_context = DisableContext::from_comments(comments, source_map);
         Self {
             file_path,
             checked_attributes,
             ignore_texts,
             source_map,
-            ignore_context,
+            disable_context,
             issues: Vec::new(),
             jsx_state: JsxState::default(),
         }
     }
 
     fn should_report(&self, line: usize, text: &str) -> bool {
-        if self.ignore_context.should_ignore(line) {
+        if self
+            .disable_context
+            .should_ignore(line, DisableRule::Hardcoded)
+        {
             return false;
         }
         let text = text.trim();
@@ -227,10 +125,11 @@ impl<'a> HardcodedChecker<'a> {
         let use_jsx_comment = self.should_use_jsx_comment(&source_line);
 
         self.issues.push(HardcodedIssue {
-            location: Location::new(self.file_path, loc.line).with_col(loc.col_display + 1),
+            location: SourceLocation::new(self.file_path, loc.line)
+                .with_col(loc.col_display + 1)
+                .with_jsx_context(use_jsx_comment),
             text: value.to_owned(),
             source_line: Some(source_line),
-            in_jsx_context: use_jsx_comment,
         });
     }
 
@@ -540,7 +439,7 @@ function App() {
         // We expect in_jsx_context to be true (it is inside span which is inside div)
         // AND it should use JSX comment style because it is a child of span
         assert!(
-            issues[0].in_jsx_context,
+            issues[0].location.in_jsx_context,
             "Should use JSX comment style {{/* */}}"
         );
     }
@@ -594,7 +493,7 @@ function App() {
         // It must be // or /* */, NOT {/* */}
 
         assert!(
-            !issues[0].in_jsx_context,
+            !issues[0].location.in_jsx_context,
             "Should NOT use JSX comment style {{/* */}} inside ternary expression"
         );
     }
