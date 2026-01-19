@@ -25,6 +25,8 @@ pub enum Rule {
     OrphanKey,
     UntrackedNamespace,
     ParseError,
+    /// Translation value is identical to primary locale (possibly not translated)
+    Untranslated,
 }
 
 impl fmt::Display for Rule {
@@ -38,6 +40,7 @@ impl fmt::Display for Rule {
             Rule::OrphanKey => write!(f, "orphan-key"),
             Rule::UntrackedNamespace => write!(f, "untracked-namespace"),
             Rule::ParseError => write!(f, "parse-error"),
+            Rule::Untranslated => write!(f, "untranslated"),
         }
     }
 }
@@ -267,6 +270,33 @@ impl Issue {
             details: None,
             source_line: None,
             hint: None,
+        }
+    }
+
+    /// Create an untranslated issue (value is same as primary locale).
+    ///
+    /// This is a warning because the value might intentionally be the same
+    /// (e.g., brand names, technical terms).
+    pub fn untranslated(
+        file_path: &str,
+        line: usize,
+        key: &str,
+        value: &str,
+        primary_locale: &str,
+    ) -> Self {
+        Self {
+            file_path: Some(file_path.to_string()),
+            line: Some(line),
+            col: None,
+            message: key.to_string(),
+            severity: Severity::Warning,
+            rule: Rule::Untranslated,
+            details: Some(format!("\"{}\"", value)),
+            source_line: None,
+            hint: Some(format!(
+                "Value is identical to primary locale ({}), possibly not translated",
+                primary_locale
+            )),
         }
     }
 }

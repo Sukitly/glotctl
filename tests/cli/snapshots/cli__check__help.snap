@@ -15,7 +15,7 @@ A fast CLI tool for checking i18n issues in Next.js projects
 Usage: glot [COMMAND]
 
 Commands:
-  check     Check for i18n issues (hardcoded text, missing keys, orphan keys)
+  check     Check for i18n issues (hardcoded text, missing keys, orphan keys, untranslated values)
   clean     Remove unused or orphan translation keys from JSON files
   baseline  Insert glot-disable-next-line comments to suppress hardcoded text warnings
   fix       Insert glot-message-keys comments for dynamic translation keys

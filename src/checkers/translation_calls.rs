@@ -9,11 +9,7 @@ use swc_common::SourceMap;
 use swc_ecma_ast::{CallExpr, Callee, Expr, Module, Pat, VarDecl};
 use swc_ecma_visit::{Visit, VisitWith};
 
-const TRANSLATION_HOOKS: &[&str] = &["useTranslations", "getTranslations"];
-
-fn is_translation_hook(name: &str) -> bool {
-    TRANSLATION_HOOKS.contains(&name)
-}
+use super::is_translation_hook;
 
 /// Finds all lines that contain translation function calls.
 pub struct TranslationCallFinder<'a> {

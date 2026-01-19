@@ -7,6 +7,8 @@ use swc_ecma_ast::{
 };
 use swc_ecma_visit::{Visit, VisitWith};
 
+use crate::utils::contains_alphabetic;
+
 #[derive(Debug, Clone)]
 pub struct HardcodedIssue {
     pub file_path: String,
@@ -121,22 +123,6 @@ impl IgnoreContext {
 
         ctx
     }
-}
-
-/// Checks if the text contains at least one Unicode alphabetic character.
-/// Returns false for empty strings, pure numbers, or pure symbols.
-///
-/// Examples:
-/// - "Hello" -> true (contains letters)
-/// - "Hello123" -> true (contains letters)
-/// - "123" -> false (pure numbers)
-/// - "---" -> false (pure symbols)
-/// - "$100" -> false (no letters)
-pub fn contains_alphabetic(text: &str) -> bool {
-    if text.is_empty() {
-        return false;
-    }
-    text.chars().any(|c| c.is_alphabetic())
 }
 
 /// Tracks JSX context state during AST traversal.
@@ -416,16 +402,6 @@ impl<'a> Visit for HardcodedChecker<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_has_alphabetic() {
-        assert!(contains_alphabetic("Hello"));
-        assert!(contains_alphabetic("你好"));
-        assert!(contains_alphabetic("Hello123"));
-        assert!(!contains_alphabetic("123"));
-        assert!(!contains_alphabetic("---"));
-        assert!(!contains_alphabetic("$100"));
-    }
 
     #[test]
     fn test_consecutive_disable_ignored() {

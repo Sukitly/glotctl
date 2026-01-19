@@ -1,0 +1,16 @@
+---
+source: tests/cli/check.rs
+info:
+  program: glot
+  args:
+    - check
+    - untranslated
+  env:
+    NO_COLOR: "1"
+---
+success: true
+exit_code: 0
+----- stdout -----
+✓ Checked 1 source file, 2 locale files - no issues found
+
+----- stderr -----

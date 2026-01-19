@@ -1,0 +1,27 @@
+---
+source: tests/cli/check.rs
+info:
+  program: glot
+  args:
+    - check
+    - untranslated
+  env:
+    NO_COLOR: "1"
+---
+success: true
+exit_code: 0
+----- stdout -----
+warning: "Common.submit"  untranslated
+  --> ./messages/zh.json:3:0
+  = note: "Submit"
+  = hint: Value is identical to primary locale (en), possibly not translated
+
+warning: "Common.cancel"  untranslated
+  --> ./messages/zh.json:4:0
+  = note: "Cancel"
+  = hint: Value is identical to primary locale (en), possibly not translated
+
+
+✖ 2 problems (0 errors, 2 warnings)
+
+----- stderr -----
