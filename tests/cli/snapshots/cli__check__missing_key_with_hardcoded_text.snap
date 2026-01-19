@@ -23,6 +23,6 @@ error: "Hardcoded"  hardcoded-text
   |                     ^
 
 
-✖ 2 problems (2 errors, 0 warnings)
+✘ 2 problems (2 errors, 0 warnings)
 
 ----- stderr -----

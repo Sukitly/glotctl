@@ -17,6 +17,6 @@ error: "Landing.subtitle"  missing-key
   |                 ^
 
 
-✖ 1 problems (1 error, 0 warnings)
+✘ 1 problems (1 error, 0 warnings)
 
 ----- stderr -----

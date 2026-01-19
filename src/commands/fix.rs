@@ -12,6 +12,7 @@ use crate::{
     args::FixArgs,
     checkers::extraction::{DynamicKeyReason, DynamicKeyWarning},
     commands::context::CheckContext,
+    reporter::{FAILURE_MARK, SUCCESS_MARK},
 };
 
 /// Comment templates for glot-message-keys
@@ -100,7 +101,11 @@ impl FixRunner {
         let (fixable, unfixable) = self.collect_warnings();
 
         if fixable.is_empty() && unfixable.is_empty() {
-            println!("{}", "No dynamic keys found.".green());
+            println!(
+                "{} {}",
+                SUCCESS_MARK.green(),
+                "No dynamic keys found.".green()
+            );
             return Ok(RunResult {
                 error_count: 0,
                 warning_count: 0,
@@ -185,7 +190,8 @@ impl FixRunner {
 
     fn report_unfixable(&self, unfixable: &[DynamicKeyWarning]) {
         println!(
-            "{} {} dynamic key(s) (variable keys without pattern hints):\n",
+            "{} {} {} dynamic key(s) (variable keys without pattern hints):\n",
+            FAILURE_MARK.yellow(),
             "Cannot fix".yellow().bold(),
             unfixable.len()
         );

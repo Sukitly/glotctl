@@ -28,6 +28,6 @@ error: "Click"  hardcoded-text
   |                                                           ^
 
 
-✖ 3 problems (1 error, 2 warnings)
+✘ 3 problems (1 error, 2 warnings)
 
 ----- stderr -----

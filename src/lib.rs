@@ -1,10 +1,13 @@
 use std::{fs, path::Path};
 
+use colored::Colorize;
+
 use crate::{
     args::{Arguments, BaselineCommand, CheckCommand, CleanCommand, Command, FixCommand},
     commands::{baseline::BaselineRunner, clean::CleanRunner, fix::FixRunner, runner::CheckRunner},
     config::{CONFIG_FILE_NAME, default_config_json},
     issue::Issue,
+    reporter::SUCCESS_MARK,
 };
 use anyhow::Result;
 
@@ -118,7 +121,11 @@ fn init() -> Result<()> {
     }
 
     fs::write(config_path, default_config_json()?)?;
-    println!("Created {}", CONFIG_FILE_NAME);
+    println!(
+        "{} {}",
+        SUCCESS_MARK.green(),
+        format!("Created {}", CONFIG_FILE_NAME).green()
+    );
 
     Ok(())
 }

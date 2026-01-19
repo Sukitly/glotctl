@@ -15,6 +15,6 @@ error: "Form.titleRequired"  missing-key
   = note: from createFormSchema (./src/schemas.ts)
 
 
-✖ 1 problems (1 error, 0 warnings)
+✘ 1 problems (1 error, 0 warnings)
 
 ----- stderr -----

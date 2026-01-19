@@ -4,6 +4,11 @@
 //! to be used as a library without printing side effects.
 
 use colored::Colorize;
+
+/// Success mark for consistent output formatting
+pub const SUCCESS_MARK: &str = "\u{2713}"; // ✓
+/// Failure mark for consistent output formatting
+pub const FAILURE_MARK: &str = "\u{2718}"; // ✘
 use unicode_width::UnicodeWidthStr;
 
 use crate::issue::{Issue, Severity};
@@ -127,7 +132,7 @@ pub fn print_report(issues: &[Issue]) {
     if total_problems > 0 {
         println!(
             "\n{} {} problems ({} {}, {} {})",
-            "✖".red(),
+            FAILURE_MARK.red(),
             total_problems,
             total_errors,
             if total_errors == 1 { "error" } else { "errors" }.red(),
@@ -147,23 +152,29 @@ pub fn print_report(issues: &[Issue]) {
 /// Displays the number of files checked to give the user confidence
 /// that the check actually ran and covered the expected scope.
 pub fn print_success(source_files: usize, locale_files: usize) {
-    let checkmark = "\u{2713}".green();
-
     if locale_files == 0 {
         println!(
-            "{} Checked {} source {} - no issues found",
-            checkmark,
-            source_files,
-            if source_files == 1 { "file" } else { "files" }
+            "{} {}",
+            SUCCESS_MARK.green(),
+            format!(
+                "Checked {} source {} - no issues found",
+                source_files,
+                if source_files == 1 { "file" } else { "files" }
+            )
+            .green()
         );
     } else {
         println!(
-            "{} Checked {} source {}, {} locale {} - no issues found",
-            checkmark,
-            source_files,
-            if source_files == 1 { "file" } else { "files" },
-            locale_files,
-            if locale_files == 1 { "file" } else { "files" }
+            "{} {}",
+            SUCCESS_MARK.green(),
+            format!(
+                "Checked {} source {}, {} locale {} - no issues found",
+                source_files,
+                if source_files == 1 { "file" } else { "files" },
+                locale_files,
+                if locale_files == 1 { "file" } else { "files" }
+            )
+            .green()
         );
     }
 }
@@ -174,8 +185,10 @@ pub fn print_success(source_files: usize, locale_files: usize) {
 pub fn print_parse_warning(parse_error_count: usize, verbose: bool) {
     if parse_error_count > 0 && !verbose {
         eprintln!(
-            "Warning: {} file(s) could not be parsed (use -v for details)",
-            parse_error_count
+            "{} {} file(s) could not be parsed (use {} for details)",
+            "warning:".bold().yellow(),
+            parse_error_count,
+            "-v".cyan()
         );
     }
 }

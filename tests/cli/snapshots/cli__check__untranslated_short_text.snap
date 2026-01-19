@@ -22,6 +22,6 @@ warning: "Common.no"  untranslated
   = hint: Value is identical to primary locale (en), possibly not translated
 
 
-✖ 2 problems (0 errors, 2 warnings)
+✘ 2 problems (0 errors, 2 warnings)
 
 ----- stderr -----

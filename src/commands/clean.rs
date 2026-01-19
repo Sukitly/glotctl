@@ -16,6 +16,7 @@ use crate::{
     issue::{Issue, Rule},
     json_editor::JsonEditor,
     parsers::json::scan_message_files,
+    reporter::{FAILURE_MARK, SUCCESS_MARK},
 };
 
 /// Runner for the clean command.
@@ -59,7 +60,7 @@ impl CleanRunner {
         let cleanable = self.filter_cleanable_issues(&all_issues);
 
         if cleanable.is_empty() {
-            println!("{}", "No keys to clean.".green());
+            println!("{} {}", SUCCESS_MARK.green(), "No keys to clean.".green());
             return Ok(RunResult {
                 error_count: 0,
                 warning_count: 0,
@@ -211,9 +212,10 @@ impl CleanRunner {
 
         if dynamic_key_count > 0 {
             bail!(
-                "{}, {} dynamic key warning(s) found.\n\
+                "{} {}, {} dynamic key warning(s) found.\n\
                  Dynamic keys prevent tracking all key usage.\n\
                  Run `glot check` to see details, then fix or suppress them.",
+                FAILURE_MARK,
                 "Cannot clean".red().bold(),
                 dynamic_key_count
             );
@@ -221,9 +223,10 @@ impl CleanRunner {
 
         if parse_error_count > 0 {
             bail!(
-                "{}, {} file(s) could not be parsed.\n\
+                "{} {}, {} file(s) could not be parsed.\n\
                  Parse errors mean some files could not be analyzed.\n\
                  Run `glot check -v` to see details and fix them.",
+                FAILURE_MARK,
                 "Cannot clean".red().bold(),
                 parse_error_count
             );

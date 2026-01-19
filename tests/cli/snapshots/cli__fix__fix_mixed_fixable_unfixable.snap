@@ -10,7 +10,7 @@ info:
 success: true
 exit_code: 0
 ----- stdout -----
-Cannot fix 1 dynamic key(s) (variable keys without pattern hints):
+✘ Cannot fix 1 dynamic key(s) (variable keys without pattern hints):
 
   --> ./src/app.tsx:9:20
      |
