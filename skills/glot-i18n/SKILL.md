@@ -1,6 +1,6 @@
 ---
 name: glot-i18n
-description: Fix i18n issues in Next.js + next-intl projects using glot MCP server. Use when user needs to fix hardcoded text, missing translation keys, or sync translations across locales.
+description: Fix i18n issues in Next.js + next-intl projects using glot MCP server. Use when user needs to fix hardcoded text, missing translation keys, sync translations across locales, or detect untranslated values.
 compatibility: Requires glot MCP server configured
 metadata:
   author: glot
@@ -36,12 +36,14 @@ Activate this skill when:
 2. Fix hardcoded    → Replace text with t() calls, add keys to primary locale
 3. Fix primary_missing → Add missing keys to primary locale
 4. Fix replica_lag   → Sync keys to other locales
+5. Fix untranslated  → Translate values that are identical to primary locale
 ```
 
 Why this order matters:
 
 - Fixing hardcoded issues may create new primary_missing issues
 - Fixing primary_missing may create new replica_lag issues
+- Replica_lag fixes may create new untranslated issues (if text is copied without translation)
 - Following this order prevents duplicate work
 
 ## Available Tools
@@ -54,6 +56,7 @@ Why this order matters:
 | `scan_hardcoded`       | List hardcoded text issues            | When fixing hardcoded text            |
 | `scan_primary_missing` | List keys missing from primary locale | After fixing hardcoded issues         |
 | `scan_replica_lag`     | List keys missing from other locales  | After fixing primary_missing          |
+| `scan_untranslated`    | List values identical to primary locale | After fixing replica_lag (or anytime) |
 | `add_translations`     | Add keys to locale files              | When adding new translation keys      |
 
 ## Step-by-Step: Fixing Hardcoded Text
@@ -234,6 +237,41 @@ Parameters: {
 **Option B**: Ask user for translations
 
 If the user can provide translations, use their values. Otherwise, copy the primary value as a placeholder with a TODO comment in the code or a note to the user.
+
+## Step-by-Step: Fixing Untranslated Values
+
+Values that are identical to the primary locale may indicate text was copied without being translated.
+
+### 1. Scan for Untranslated Values
+
+```
+Call: scan_untranslated
+Parameters: { "project_root_path": "<project_path>" }
+```
+
+Each item shows:
+
+- `key`: The translation key
+- `value`: The value (same in both locales)
+- `locale`: The non-primary locale with the issue
+- `primary_locale`: The primary locale code
+
+### 2. Translate the Values
+
+For each untranslated key, provide the correct translation:
+
+```
+Call: add_translations
+Parameters: {
+  "project_root_path": "<project_path>",
+  "translations": [
+    { "locale": "de", "keys": { "common.submit": "Absenden" } },
+    { "locale": "fr", "keys": { "common.submit": "Soumettre" } }
+  ]
+}
+```
+
+**Note**: Some values may intentionally be the same across locales (e.g., brand names, technical terms). Use your judgment or ask the user.
 
 ## Key Naming Conventions
 

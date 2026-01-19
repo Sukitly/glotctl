@@ -383,3 +383,76 @@ If some hardcoded text should NOT be translated (e.g., brand names, code):
   "ignore_texts": ["ACME Corp", "GitHub", "TypeScript"]
 }
 ```
+
+## Fixing Untranslated Values
+
+When AI translation tools copy text without translating, glot can detect these issues.
+
+### scan_untranslated Response
+
+```json
+{
+  "totalCount": 3,
+  "items": [
+    {
+      "key": "common.submit",
+      "value": "Submit",
+      "locale": "de",
+      "primaryLocale": "en"
+    },
+    {
+      "key": "common.cancel",
+      "value": "Cancel",
+      "locale": "de",
+      "primaryLocale": "en"
+    },
+    {
+      "key": "auth.login.title",
+      "value": "Sign In",
+      "locale": "fr",
+      "primaryLocale": "en"
+    }
+  ],
+  "pagination": {
+    "offset": 0,
+    "limit": 50,
+    "hasMore": false
+  }
+}
+```
+
+### Fixing with Correct Translations
+
+```json
+{
+  "project_root_path": "/path/to/project",
+  "translations": [
+    {
+      "locale": "de",
+      "keys": {
+        "common.submit": "Absenden",
+        "common.cancel": "Abbrechen"
+      }
+    },
+    {
+      "locale": "fr",
+      "keys": {
+        "auth.login.title": "Connexion"
+      }
+    }
+  ]
+}
+```
+
+### Values That Should Stay the Same
+
+Some values are intentionally identical across locales:
+
+- Brand names: "GitHub", "TypeScript", "Next.js"
+- Technical terms that aren't translated in the target language
+- Proper nouns
+
+For these, you can either:
+
+1. Ignore them (they will continue to show as warnings)
+2. Add them to `ignore_texts` in `.glotrc.json` if they appear frequently
