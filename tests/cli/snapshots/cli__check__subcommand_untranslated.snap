@@ -17,6 +17,6 @@ warning: "Common.submit"  untranslated
   = hint: Value is identical to primary locale (en), possibly not translated
 
 
-✖ 1 problems (0 errors, 1 warning)
+✘ 1 problems (0 errors, 1 warning)
 
 ----- stderr -----

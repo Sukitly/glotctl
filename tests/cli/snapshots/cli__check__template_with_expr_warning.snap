@@ -22,6 +22,6 @@ warning: "template with expression"  dynamic-key
   = hint: add `{/* glot-message-keys "Common.*.submit" */}` to declare expected keys
 
 
-✖ 2 problems (0 errors, 2 warnings)
+✘ 2 problems (0 errors, 2 warnings)
 
 ----- stderr -----

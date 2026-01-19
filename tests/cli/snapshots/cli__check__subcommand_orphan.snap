@@ -20,6 +20,6 @@ warning: "Common.oldKey"  orphan-key
   = note: in zh ("旧的按钮")
 
 
-✖ 2 problems (0 errors, 2 warnings)
+✘ 2 problems (0 errors, 2 warnings)
 
 ----- stderr -----

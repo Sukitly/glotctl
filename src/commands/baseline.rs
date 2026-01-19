@@ -13,6 +13,7 @@ use crate::{
     checkers::translation_calls::TranslationCallFinder,
     commands::context::CheckContext,
     parsers::jsx::parse_jsx_file,
+    reporter::SUCCESS_MARK,
 };
 
 /// Comment to insert for baseline suppression
@@ -57,7 +58,11 @@ impl BaselineRunner {
         let (issues, translation_lines) = self.collect_issues()?;
 
         if issues.is_empty() {
-            println!("{}", "No hardcoded text found.".green());
+            println!(
+                "{} {}",
+                SUCCESS_MARK.green(),
+                "No hardcoded text found.".green()
+            );
             return Ok(RunResult {
                 error_count: 0,
                 warning_count: 0,

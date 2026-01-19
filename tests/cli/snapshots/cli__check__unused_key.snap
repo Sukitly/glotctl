@@ -15,6 +15,6 @@ warning: "Common.unused"  unused-key
   = note: ("Unused Button")
 
 
-✖ 1 problems (0 errors, 1 warning)
+✘ 1 problems (0 errors, 1 warning)
 
 ----- stderr -----

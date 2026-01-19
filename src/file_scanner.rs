@@ -3,6 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use colored::Colorize;
 use glob::{Pattern, glob};
 use walkdir::WalkDir;
 
@@ -41,7 +42,12 @@ pub fn scan_files(
                 Ok(pattern) => glob_patterns.push(pattern),
                 Err(e) => {
                     if verbose {
-                        eprintln!("Warning: Invalid ignore pattern '{}': {}", p, e);
+                        eprintln!(
+                            "{} Invalid ignore pattern '{}': {}",
+                            "warning:".bold().yellow(),
+                            p,
+                            e
+                        );
                     }
                 }
             }
@@ -80,7 +86,12 @@ pub fn scan_files(
                     }
                     Err(e) => {
                         if verbose {
-                            eprintln!("Warning: Invalid glob pattern '{}': {}", inc, e);
+                            eprintln!(
+                                "{} Invalid glob pattern '{}': {}",
+                                "warning:".bold().yellow(),
+                                inc,
+                                e
+                            );
                         }
                     }
                 }
@@ -90,7 +101,11 @@ pub fn scan_files(
                 if path.exists() {
                     paths.push(path);
                 } else if verbose {
-                    eprintln!("Warning: Include path does not exist: {}", path.display());
+                    eprintln!(
+                        "{} Include path does not exist: {}",
+                        "warning:".bold().yellow(),
+                        path.display()
+                    );
                 }
             }
         }
@@ -104,7 +119,7 @@ pub fn scan_files(
                 Err(e) => {
                     skipped_count += 1;
                     if verbose {
-                        eprintln!("Warning: Cannot access path: {}", e);
+                        eprintln!("{} Cannot access path: {}", "warning:".bold().yellow(), e);
                     }
                     continue;
                 }

@@ -21,6 +21,6 @@ warning: "dynamic key"  dynamic-key
   |                       ^
 
 
-✖ 2 problems (0 errors, 2 warnings)
+✘ 2 problems (0 errors, 2 warnings)
 
 ----- stderr -----

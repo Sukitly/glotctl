@@ -23,6 +23,6 @@ warning: "Common.orphan1"  orphan-key
   = note: in zh ("孤儿1")
 
 
-✖ 3 problems (0 errors, 3 warnings)
+✘ 3 problems (0 errors, 3 warnings)
 
 ----- stderr -----

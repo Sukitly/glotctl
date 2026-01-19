@@ -19,6 +19,6 @@ warning: "Common.submit"  unused-key
   = note: ("Submit")
 
 
-✖ 2 problems (1 error, 1 warning)
+✘ 2 problems (1 error, 1 warning)
 
 ----- stderr -----

@@ -21,6 +21,6 @@ error: "Common.submit"  missing-key
   |                       ^
 
 
-✖ 2 problems (1 error, 1 warning)
+✘ 2 problems (1 error, 1 warning)
 
 ----- stderr -----

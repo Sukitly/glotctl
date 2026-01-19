@@ -10,6 +10,6 @@ info:
 success: true
 exit_code: 0
 ----- stdout -----
-No dynamic keys found.
+✓ No dynamic keys found.
 
 ----- stderr -----
