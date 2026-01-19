@@ -432,3 +432,47 @@ export function Button({ prefix }: { prefix: string }) {
     );
     Ok(())
 }
+
+#[test]
+fn test_fix_jsx_attribute() -> Result<()> {
+    let test = CliTest::new()?;
+    setup_config(&test)?;
+
+    // Dynamic key in JSX attribute (not JSX children)
+    // The comment is inserted ABOVE the line, which is JS context
+    // So it should use // comment, not {/* */}
+    test.write_file(
+        "src/app.tsx",
+        r#"import { useTranslations } from "next-intl";
+
+const t = useTranslations("Common");
+
+export function App({ prefix }: { prefix: string }) {
+    return <Button label={t(`${prefix}.label`)} />;
+}
+"#,
+    )?;
+
+    test.write_file(
+        "messages/en.json",
+        r#"{"Common": {"test": {"label": "Label"}}}"#,
+    )?;
+
+    let mut cmd = test.fix_command();
+    cmd.arg("--apply");
+    assert_cmd_snapshot!(cmd);
+
+    // Verify JS comment was used (comment goes before the JSX element, which is JS context)
+    let content = test.read_file("src/app.tsx")?;
+    assert!(
+        content.contains("// glot-message-keys"),
+        "Expected JS comment for JSX attribute, got:\n{}",
+        content
+    );
+    assert!(
+        !content.contains("{/* glot-message-keys"),
+        "Should NOT have JSX comment for JSX attribute, got:\n{}",
+        content
+    );
+    Ok(())
+}
