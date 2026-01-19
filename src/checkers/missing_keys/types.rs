@@ -48,6 +48,8 @@ pub struct DynamicKeyWarning {
     /// The raw pattern inferred from template (e.g., "Common.*.submit")
     /// Used by fix command to generate glot-message-keys comments
     pub pattern: Option<String>,
+    /// Whether this warning is in JSX context (affects comment syntax in fix command)
+    pub in_jsx_context: bool,
 }
 
 /// Stores glot-message-keys annotation data for a line.

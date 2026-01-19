@@ -47,18 +47,30 @@ struct LineGroup {
     source_line: String,
     /// First column for display
     col: usize,
+    /// Whether any warning on this line is in JSX context
+    in_jsx_context: bool,
 }
 
-/// Determine if we should use JSX comment syntax based on the target line content.
+/// Determine if we should use JSX comment syntax.
 ///
-/// This checks where the comment will be inserted (the line above), not where
-/// the `t()` call is. The logic is:
-/// - If the target line starts with `<` (JSX element) -> use `{/* */}`
-/// - If the target line starts with `{/*` (existing JSX comment) -> use `{/* */}`
-/// - Otherwise -> use `//`
-fn should_use_jsx_comment(source_line: &str) -> bool {
+/// This combines AST context (is the `t()` call in JSX children?) with
+/// line content analysis (where will the comment be inserted?).
+///
+/// The logic:
+/// - If `in_jsx_context` is false -> use `//` (not in JSX)
+/// - If line starts with `<` (JSX element) -> use `{/* */}` (JSX child)
+/// - If line starts with `{` (JSX expression) -> use `{/* */}` (JSX child)
+/// - Otherwise -> use `//` (e.g., `return <...>` starts a JS statement)
+///
+/// This handles cases like:
+/// - `{t(...)}` inside JSX -> needs `{/* */}` (line starts with `{`)
+/// - `return <button>{t(...)}</button>` -> needs `//` (line starts with `return`)
+fn should_use_jsx_comment(in_jsx_context: bool, source_line: &str) -> bool {
+    if !in_jsx_context {
+        return false;
+    }
     let trimmed = source_line.trim_start();
-    trimmed.starts_with('<') || trimmed.starts_with("{/*")
+    trimmed.starts_with('<') || trimmed.starts_with('{')
 }
 
 /// Runner for the fix command.
@@ -233,11 +245,17 @@ impl FixRunner {
                 patterns: Vec::new(),
                 source_line: warning.source_line.clone(),
                 col: warning.col,
+                in_jsx_context: warning.in_jsx_context,
             });
 
             // Add pattern if not already present (deduplicate same pattern on same line)
             if !line_group.patterns.contains(&pattern) {
                 line_group.patterns.push(pattern);
+            }
+
+            // If any warning on this line is in JSX context, the group is in JSX context
+            if warning.in_jsx_context {
+                line_group.in_jsx_context = true;
             }
         }
 
@@ -338,7 +356,7 @@ impl FixRunner {
 
     fn preview_changes(&self, file_path: &str, line_groups: &[LineGroup]) {
         for group in line_groups {
-            let use_jsx = should_use_jsx_comment(&group.source_line);
+            let use_jsx = should_use_jsx_comment(group.in_jsx_context, &group.source_line);
             let comment = build_comment(&group.patterns, use_jsx);
 
             // Clickable location
@@ -412,7 +430,7 @@ impl FixRunner {
         let mut insertions: Vec<CommentInsertion> = line_groups
             .iter()
             .map(|group| {
-                let use_jsx = should_use_jsx_comment(&group.source_line);
+                let use_jsx = should_use_jsx_comment(group.in_jsx_context, &group.source_line);
                 let comment = build_comment(&group.patterns, use_jsx);
 
                 let indentation: String = group
@@ -521,22 +539,40 @@ mod tests {
     }
 
     #[test]
-    fn test_should_use_jsx_comment_element() {
-        assert!(should_use_jsx_comment("<span>{t(`key`)}</span>"));
-        assert!(should_use_jsx_comment("    <div>content</div>"));
+    fn test_should_use_jsx_comment_jsx_element() {
+        // Line starts with `<` and in JSX context -> JSX comment
+        assert!(should_use_jsx_comment(true, "<span>{t(`key`)}</span>"));
+        assert!(should_use_jsx_comment(true, "    <div>content</div>"));
     }
 
     #[test]
-    fn test_should_use_jsx_comment_existing_comment() {
-        assert!(should_use_jsx_comment("{/* existing comment */}"));
-        assert!(should_use_jsx_comment("  {/* comment */}"));
+    fn test_should_use_jsx_comment_jsx_expression() {
+        // Line starts with `{` and in JSX context -> JSX comment
+        assert!(should_use_jsx_comment(true, "{t(`key`)}"));
+        assert!(should_use_jsx_comment(true, "  {/* comment */}"));
+        assert!(should_use_jsx_comment(true, "{cond && <span />}"));
     }
 
     #[test]
-    fn test_should_use_jsx_comment_js_context() {
-        assert!(!should_use_jsx_comment("return <span>{t(`key`)}</span>;"));
-        assert!(!should_use_jsx_comment("const x = t(`key`);"));
-        assert!(!should_use_jsx_comment("    console.log(t(`key`));"));
+    fn test_should_use_jsx_comment_js_statement_with_jsx() {
+        // Line starts with JS keyword but in JSX context -> JS comment
+        // (because comment is inserted ABOVE the line, which is JS context)
+        assert!(!should_use_jsx_comment(
+            true,
+            "return <span>{t(`key`)}</span>;"
+        ));
+        assert!(!should_use_jsx_comment(
+            true,
+            "const x = <div>{t(`key`)}</div>;"
+        ));
+    }
+
+    #[test]
+    fn test_should_use_jsx_comment_not_in_jsx_context() {
+        // Not in JSX context -> always JS comment
+        assert!(!should_use_jsx_comment(false, "<span>{t(`key`)}</span>"));
+        assert!(!should_use_jsx_comment(false, "const x = t(`key`);"));
+        assert!(!should_use_jsx_comment(false, "    console.log(t(`key`));"));
     }
 
     #[test]

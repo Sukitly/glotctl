@@ -251,6 +251,7 @@ impl<'a> MissingKeyChecker<'a> {
             source_line,
             hint,
             pattern,
+            in_jsx_context: self.in_jsx_context,
         });
     }
 

@@ -333,10 +333,10 @@ export function App({ prefix }: { prefix: string }) {
 
     let content = test.read_file("src/app.tsx")?;
     // Comment should have matching indentation (16 spaces for the t() call line)
-    // Line starts with "{" not "<", so uses // comment
+    // Line starts with "{" and is in JSX context, so uses {/* */} comment
     assert!(
-        content.contains("                // glot-message-keys"),
-        "Expected comment with matching indentation, got:\n{}",
+        content.contains("                {/* glot-message-keys"),
+        "Expected JSX comment with matching indentation, got:\n{}",
         content
     );
     Ok(())
