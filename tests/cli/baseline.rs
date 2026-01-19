@@ -55,7 +55,7 @@ fn test_baseline_apply_jsx_context() -> Result<()> {
     // Verify JSX comment was inserted
     let content = test.read_file("src/app.tsx")?;
     assert!(
-        content.contains("{/* glot-disable-next-line */}"),
+        content.contains("{/* glot-disable-next-line hardcoded */}"),
         "Expected JSX comment, got:\n{}",
         content
     );
@@ -84,7 +84,7 @@ fn test_baseline_apply_js_context() -> Result<()> {
     // Attributes are in JS context (not JSX children)
     let content = test.read_file("src/app.tsx")?;
     assert!(
-        content.contains("// glot-disable-next-line"),
+        content.contains("// glot-disable-next-line hardcoded"),
         "Expected JS comment for attribute, got:\n{}",
         content
     );
@@ -169,7 +169,7 @@ fn test_baseline_preserves_indentation() -> Result<()> {
     let content = test.read_file("src/app.tsx")?;
     // Comment should have matching indentation (12 spaces for <span>)
     assert!(
-        content.contains("            {/* glot-disable-next-line */}"),
+        content.contains("            {/* glot-disable-next-line hardcoded */}"),
         "Expected comment with matching indentation, got:\n{}",
         content
     );
@@ -204,12 +204,12 @@ fn test_baseline_nested_element_same_line_attr() -> Result<()> {
     let content = test.read_file("src/app.tsx")?;
     // Line starts with <nav, so comment is in JSX children position
     assert!(
-        content.contains("{/* glot-disable-next-line */}"),
+        content.contains("{/* glot-disable-next-line hardcoded */}"),
         "Expected JSX comment (line starts with <), got:\n{}",
         content
     );
     assert!(
-        !content.contains("// glot-disable-next-line"),
+        !content.contains("// glot-disable-next-line hardcoded"),
         "Should NOT have JS comment, got:\n{}",
         content
     );
@@ -246,12 +246,12 @@ fn test_baseline_multiline_attr() -> Result<()> {
     let content = test.read_file("src/app.tsx")?;
     // Line doesn't start with <, so comment is in attribute list
     assert!(
-        content.contains("// glot-disable-next-line"),
+        content.contains("// glot-disable-next-line hardcoded"),
         "Expected JS comment (multi-line attr), got:\n{}",
         content
     );
     assert!(
-        !content.contains("{/* glot-disable-next-line */}"),
+        !content.contains("{/* glot-disable-next-line hardcoded */}"),
         "Should NOT have JSX comment, got:\n{}",
         content
     );
@@ -289,12 +289,12 @@ fn test_baseline_mixed_same_line_and_multiline() -> Result<()> {
     // <span> line starts with < → {/* */}
     // placeholder line doesn't start with < → //
     assert!(
-        content.contains("{/* glot-disable-next-line */}"),
+        content.contains("{/* glot-disable-next-line hardcoded */}"),
         "Expected JSX comment for text, got:\n{}",
         content
     );
     assert!(
-        content.contains("// glot-disable-next-line"),
+        content.contains("// glot-disable-next-line hardcoded"),
         "Expected JS comment for multi-line attr, got:\n{}",
         content
     );
@@ -331,14 +331,16 @@ fn test_baseline_inside_jsx_expression() -> Result<()> {
 
     let content = test.read_file("src/app.tsx")?;
     // Both are inside {expr}, so use //
-    let js_comment_count = content.matches("// glot-disable-next-line").count();
+    let js_comment_count = content
+        .matches("// glot-disable-next-line hardcoded")
+        .count();
     assert_eq!(
         js_comment_count, 2,
         "Expected 2 JS comments (inside {{expr}}), got {}:\n{}",
         js_comment_count, content
     );
     assert!(
-        !content.contains("{/* glot-disable-next-line */}"),
+        !content.contains("{/* glot-disable-next-line hardcoded */}"),
         "Should NOT have JSX comment inside {{expr}}, got:\n{}",
         content
     );
@@ -371,7 +373,7 @@ fn test_baseline_jsx_fragment_children() -> Result<()> {
 
     let content = test.read_file("src/app.tsx")?;
     assert!(
-        content.contains("{/* glot-disable-next-line */}"),
+        content.contains("{/* glot-disable-next-line hardcoded */}"),
         "Expected JSX comment in fragment, got:\n{}",
         content
     );
@@ -406,7 +408,7 @@ fn test_baseline_logical_and_expression() -> Result<()> {
     let content = test.read_file("src/app.tsx")?;
     // Line is inside <div> children, comment goes there too → {/* */}
     assert!(
-        content.contains("{/* glot-disable-next-line */}"),
+        content.contains("{/* glot-disable-next-line hardcoded */}"),
         "Expected JSX comment (line inside JSX children), got:\n{}",
         content
     );
@@ -442,7 +444,7 @@ fn test_baseline_map_expression() -> Result<()> {
     let content = test.read_file("src/app.tsx")?;
     // Inside {items.map(...)}, use //
     assert!(
-        content.contains("// glot-disable-next-line"),
+        content.contains("// glot-disable-next-line hardcoded"),
         "Expected JS comment (inside map), got:\n{}",
         content
     );
@@ -483,7 +485,7 @@ fn test_baseline_nested_element_in_expression() -> Result<()> {
     let content = test.read_file("src/app.tsx")?;
     // Text on its own line inside <span> should use {/* */}
     assert!(
-        content.contains("{/* glot-disable-next-line */}"),
+        content.contains("{/* glot-disable-next-line hardcoded */}"),
         "Expected JSX comment for text on own line inside element, got:\n{}",
         content
     );

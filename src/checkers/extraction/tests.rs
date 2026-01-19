@@ -1,7 +1,7 @@
 //! Tests for translation key extraction.
 
 use std::collections::{HashMap, HashSet};
-use swc_common::FileName;
+use swc_common::{FileName, comments::SingleThreadedComments};
 use swc_ecma_parser::{Parser, StringInput, Syntax, TsSyntax};
 use swc_ecma_visit::Visit;
 
@@ -47,7 +47,8 @@ fn parse_and_extract(code: &str) -> TranslationKeyVisitor<'static> {
         tsx: true,
         ..Default::default()
     });
-    let mut parser = Parser::new(syntax, StringInput::from(&*source_file), None);
+    let comments = Box::leak(Box::new(SingleThreadedComments::default()));
+    let mut parser = Parser::new(syntax, StringInput::from(&*source_file), Some(comments));
     let module = parser.parse_module().unwrap();
 
     let file_path = Box::leak(Box::new("test.tsx".to_string()));
@@ -57,6 +58,7 @@ fn parse_and_extract(code: &str) -> TranslationKeyVisitor<'static> {
     let mut visitor = TranslationKeyVisitor::new(
         file_path,
         source_map,
+        comments,
         registries,
         file_imports,
         code,
@@ -357,7 +359,8 @@ fn parse_and_extract_with_registries(
         tsx: true,
         ..Default::default()
     });
-    let mut parser = Parser::new(syntax, StringInput::from(&*source_file), None);
+    let comments = Box::leak(Box::new(SingleThreadedComments::default()));
+    let mut parser = Parser::new(syntax, StringInput::from(&*source_file), Some(comments));
     let module = parser.parse_module().unwrap();
 
     let file_path = Box::leak(Box::new("test.tsx".to_string()));
@@ -366,6 +369,7 @@ fn parse_and_extract_with_registries(
     let mut visitor = TranslationKeyVisitor::new(
         file_path,
         source_map,
+        comments,
         registries,
         file_imports,
         code,
@@ -740,6 +744,208 @@ fn test_mixed_absolute_and_relative_patterns() {
 }
 
 // ============================================================
+// Disable Info Tests
+// ============================================================
+
+#[test]
+fn test_used_key_untranslated_disabled_when_directive_present() {
+    // glot-disable-next-line untranslated should set untranslated_disabled = true
+    let code = r#"
+        const t = useTranslations("Common");
+        // glot-disable-next-line untranslated
+        const label = t("key1");
+        const other = t("key2");
+    "#;
+    let visitor = parse_and_extract(code);
+
+    assert_eq!(visitor.used_keys.len(), 2);
+
+    // Find key1 and key2
+    let key1 = visitor
+        .used_keys
+        .iter()
+        .find(|k| k.full_key == "Common.key1")
+        .expect("key1 should exist");
+    let key2 = visitor
+        .used_keys
+        .iter()
+        .find(|k| k.full_key == "Common.key2")
+        .expect("key2 should exist");
+
+    // key1 should have untranslated disabled
+    assert!(
+        key1.untranslated_disabled,
+        "key1 should have untranslated_disabled = true"
+    );
+    // key2 should NOT have untranslated disabled
+    assert!(
+        !key2.untranslated_disabled,
+        "key2 should have untranslated_disabled = false"
+    );
+}
+
+#[test]
+fn test_used_key_untranslated_not_disabled_when_hardcoded_only() {
+    // glot-disable-next-line hardcoded should NOT set untranslated_disabled
+    let code = r#"
+        const t = useTranslations("Common");
+        // glot-disable-next-line hardcoded
+        const label = t("key1");
+    "#;
+    let visitor = parse_and_extract(code);
+
+    assert_eq!(visitor.used_keys.len(), 1);
+    assert!(
+        !visitor.used_keys[0].untranslated_disabled,
+        "hardcoded-only disable should not affect untranslated_disabled"
+    );
+}
+
+#[test]
+fn test_used_key_untranslated_disabled_with_both_rules() {
+    // glot-disable-next-line hardcoded untranslated should set untranslated_disabled
+    let code = r#"
+        const t = useTranslations("Common");
+        // glot-disable-next-line hardcoded untranslated
+        const label = t("key1");
+    "#;
+    let visitor = parse_and_extract(code);
+
+    assert_eq!(visitor.used_keys.len(), 1);
+    assert!(
+        visitor.used_keys[0].untranslated_disabled,
+        "both rules disabled should set untranslated_disabled = true"
+    );
+}
+
+#[test]
+fn test_used_key_untranslated_disabled_no_args_means_all() {
+    // glot-disable-next-line (no args) should disable all rules including untranslated
+    let code = r#"
+        const t = useTranslations("Common");
+        // glot-disable-next-line
+        const label = t("key1");
+    "#;
+    let visitor = parse_and_extract(code);
+
+    assert_eq!(visitor.used_keys.len(), 1);
+    assert!(
+        visitor.used_keys[0].untranslated_disabled,
+        "no-args disable should disable all rules"
+    );
+}
+
+#[test]
+fn test_used_key_untranslated_disabled_range() {
+    // glot-disable untranslated / glot-enable untranslated range
+    let code = r#"
+        const t = useTranslations("Common");
+        const before = t("before");
+        // glot-disable untranslated
+        const inside = t("inside");
+        // glot-enable untranslated
+        const after = t("after");
+    "#;
+    let visitor = parse_and_extract(code);
+
+    assert_eq!(visitor.used_keys.len(), 3);
+
+    let before = visitor
+        .used_keys
+        .iter()
+        .find(|k| k.full_key == "Common.before")
+        .unwrap();
+    let inside = visitor
+        .used_keys
+        .iter()
+        .find(|k| k.full_key == "Common.inside")
+        .unwrap();
+    let after = visitor
+        .used_keys
+        .iter()
+        .find(|k| k.full_key == "Common.after")
+        .unwrap();
+
+    assert!(
+        !before.untranslated_disabled,
+        "before should not be disabled"
+    );
+    assert!(inside.untranslated_disabled, "inside should be disabled");
+    assert!(!after.untranslated_disabled, "after should not be disabled");
+}
+
+#[test]
+fn test_used_key_in_jsx_context_correctly_set() {
+    let code = r#"
+        const t = useTranslations("Common");
+        export function App() {
+            const notJsx = t("outside");
+            return <div>{t("inside")}</div>;
+        }
+    "#;
+    let visitor = parse_and_extract(code);
+
+    assert_eq!(visitor.used_keys.len(), 2);
+
+    let outside = visitor
+        .used_keys
+        .iter()
+        .find(|k| k.full_key == "Common.outside")
+        .unwrap();
+    let inside = visitor
+        .used_keys
+        .iter()
+        .find(|k| k.full_key == "Common.inside")
+        .unwrap();
+
+    assert!(
+        !outside.in_jsx_context,
+        "outside should not be in jsx context"
+    );
+    assert!(inside.in_jsx_context, "inside should be in jsx context");
+}
+
+#[test]
+fn test_used_key_jsx_disable_comment_style() {
+    // JSX comment style should work for disable
+    let code = r#"
+        const t = useTranslations("Common");
+        export function App() {
+            return (
+                <div>
+                    {/* glot-disable-next-line untranslated */}
+                    {t("disabled")}
+                    {t("not_disabled")}
+                </div>
+            );
+        }
+    "#;
+    let visitor = parse_and_extract(code);
+
+    assert_eq!(visitor.used_keys.len(), 2);
+
+    let disabled = visitor
+        .used_keys
+        .iter()
+        .find(|k| k.full_key == "Common.disabled")
+        .unwrap();
+    let not_disabled = visitor
+        .used_keys
+        .iter()
+        .find(|k| k.full_key == "Common.not_disabled")
+        .unwrap();
+
+    assert!(
+        disabled.untranslated_disabled,
+        "disabled key should have untranslated_disabled = true"
+    );
+    assert!(
+        !not_disabled.untranslated_disabled,
+        "not_disabled key should have untranslated_disabled = false"
+    );
+}
+
+// ============================================================
 // ValueSource Tests
 // ============================================================
 
@@ -757,7 +963,8 @@ mod value_source_tests {
             tsx: true,
             ..Default::default()
         });
-        let mut parser = Parser::new(syntax, StringInput::from(&*source_file), None);
+        let comments = Box::leak(Box::new(SingleThreadedComments::default()));
+        let mut parser = Parser::new(syntax, StringInput::from(&*source_file), Some(comments));
         let module = parser.parse_module().unwrap();
 
         let file_path_str = "test.tsx";
@@ -797,6 +1004,7 @@ mod value_source_tests {
         let mut visitor = TranslationKeyVisitor::new(
             file_path,
             source_map,
+            comments,
             registries,
             file_imports,
             code,

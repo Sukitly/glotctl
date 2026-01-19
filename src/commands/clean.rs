@@ -13,7 +13,10 @@ use crate::{
         context::{CheckContext, MessageData},
         shared,
     },
-    issue::{DynamicKeyIssue, Issue, IssueReport, Location, ParseErrorIssue, Rule, UnusedKeyIssue},
+    issue::{
+        DynamicKeyIssue, Issue, IssueReport, MessageLocation, ParseErrorIssue, Rule,
+        SourceLocation, UnusedKeyIssue,
+    },
     json_editor::JsonEditor,
     parsers::json::scan_message_files,
     reporter::{FAILURE_MARK, SUCCESS_MARK},
@@ -140,7 +143,8 @@ impl CleanRunner {
                     DynamicKeyReason::TemplateWithExpr => "template with expression",
                 };
                 issues.push(Issue::DynamicKey(DynamicKeyIssue {
-                    location: Location::new(&warning.file_path, warning.line).with_col(warning.col),
+                    location: SourceLocation::new(&warning.file_path, warning.line)
+                        .with_col(warning.col),
                     reason: reason.to_string(),
                     source_line: Some(warning.source_line.clone()),
                     hint: warning.hint.clone(),
@@ -149,7 +153,7 @@ impl CleanRunner {
 
             for warning in &extraction.pattern_warnings {
                 issues.push(Issue::DynamicKey(DynamicKeyIssue {
-                    location: Location::new(&warning.file_path, warning.line).with_col(1),
+                    location: SourceLocation::new(&warning.file_path, warning.line).with_col(1),
                     reason: warning.message.clone(),
                     source_line: None,
                     hint: None,
@@ -184,7 +188,7 @@ impl CleanRunner {
             for key in &unused_keys {
                 if let Some(entry) = locale_messages.get(key) {
                     issues.push(Issue::UnusedKey(UnusedKeyIssue {
-                        location: Location::new(&entry.file_path, entry.line),
+                        location: MessageLocation::new(&entry.file_path, entry.line),
                         key: key.clone(),
                         value: entry.value.clone(),
                     }));

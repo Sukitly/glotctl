@@ -140,9 +140,9 @@ pub fn print_report(issues: &[Issue]) {
                         "",
                         "=".blue(),
                         "used:".bold(),
-                        usage.file_path,
-                        usage.line,
-                        usage.col,
+                        usage.file_path(),
+                        usage.line(),
+                        usage.col(),
                         suffix,
                         width = max_line_width
                     );

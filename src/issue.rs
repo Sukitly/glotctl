@@ -5,6 +5,12 @@
 //! - The `Issue` enum wraps all issue types
 //! - The `IssueReport` trait provides a common interface for CLI output
 //! - Each issue type can have its own methods (e.g., `to_mcp_item()` for MCP conversion)
+//!
+//! ## Location Types
+//!
+//! Two distinct location types are used for type safety:
+//! - `SourceLocation`: For issues in source code (TSX/JSX), includes `in_jsx_context`
+//! - `MessageLocation`: For issues in message files (JSON), no JSX context
 
 use std::cmp::Ordering;
 use std::fmt;
@@ -22,18 +28,77 @@ use crate::mcp::types::{HardcodedItem, KeyUsageLocation, ReplicaLagItem, Untrans
 pub const MAX_KEY_USAGES: usize = 3;
 
 // ============================================================
-// Common Types
+// Location Types
 // ============================================================
 
-/// A location in a source file.
+/// Location in source code files (TSX/JSX/TS/JS).
+///
+/// Used for issues found in application code where JSX context matters
+/// for determining comment style (`//` vs `{/* */}`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SourceLocation {
+    pub file_path: String,
+    pub line: usize,
+    pub col: Option<usize>,
+    /// Whether this location is in JSX children context.
+    /// Determines comment style: JS `//` vs JSX `{/* */}`
+    pub in_jsx_context: bool,
+}
+
+impl SourceLocation {
+    pub fn new(file_path: impl Into<String>, line: usize) -> Self {
+        Self {
+            file_path: file_path.into(),
+            line,
+            col: None,
+            in_jsx_context: false,
+        }
+    }
+
+    pub fn with_col(mut self, col: usize) -> Self {
+        self.col = Some(col);
+        self
+    }
+
+    pub fn with_jsx_context(mut self, in_jsx: bool) -> Self {
+        self.in_jsx_context = in_jsx;
+        self
+    }
+
+    /// Get column with default value (for cases where col is required).
+    pub fn col_or_default(&self) -> usize {
+        self.col.unwrap_or(1)
+    }
+}
+
+// Manual Ord implementation - excludes in_jsx_context from ordering
+impl Ord for SourceLocation {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.file_path
+            .cmp(&other.file_path)
+            .then_with(|| self.line.cmp(&other.line))
+            .then_with(|| self.col.cmp(&other.col))
+    }
+}
+
+impl PartialOrd for SourceLocation {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+/// Location in message/locale files (JSON).
+///
+/// Used for issues found in translation files.
+/// Does not have JSX context since JSON files are not JSX.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Location {
+pub struct MessageLocation {
     pub file_path: String,
     pub line: usize,
     pub col: Option<usize>,
 }
 
-impl Location {
+impl MessageLocation {
     pub fn new(file_path: impl Into<String>, line: usize) -> Self {
         Self {
             file_path: file_path.into(),
@@ -46,23 +111,51 @@ impl Location {
         self.col = Some(col);
         self
     }
+
+    /// Get column with default value (for cases where col is required).
+    pub fn col_or_default(&self) -> usize {
+        self.col.unwrap_or(1)
+    }
 }
 
-/// Represents a location where a translation key is used in code.
+// ============================================================
+// KeyUsage - uses SourceLocation
+// ============================================================
+
+/// Represents a location where a translation key is used in source code.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct KeyUsage {
-    pub file_path: String,
-    pub line: usize,
-    pub col: usize,
+    pub location: SourceLocation,
 }
 
 impl KeyUsage {
+    pub fn new(location: SourceLocation) -> Self {
+        Self { location }
+    }
+
+    // Convenience accessors
+    pub fn file_path(&self) -> &str {
+        &self.location.file_path
+    }
+
+    pub fn line(&self) -> usize {
+        self.location.line
+    }
+
+    pub fn col(&self) -> usize {
+        self.location.col_or_default()
+    }
+
+    pub fn in_jsx_context(&self) -> bool {
+        self.location.in_jsx_context
+    }
+
     /// Convert to MCP response type.
     pub fn to_mcp_location(&self) -> KeyUsageLocation {
         KeyUsageLocation {
-            file_path: self.file_path.clone(),
-            line: self.line,
-            col: self.col,
+            file_path: self.location.file_path.clone(),
+            line: self.location.line,
+            col: self.location.col_or_default(),
         }
     }
 }
@@ -116,16 +209,15 @@ impl fmt::Display for Rule {
 }
 
 // ============================================================
-// Issue Types (each with its own struct)
+// Issue Types with SourceLocation (found in source code)
 // ============================================================
 
 /// Hardcoded text in JSX/TSX that should use translations.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HardcodedIssue {
-    pub location: Location,
+    pub location: SourceLocation,
     pub text: String,
     pub source_line: Option<String>,
-    pub in_jsx_context: bool,
 }
 
 impl HardcodedIssue {
@@ -134,7 +226,7 @@ impl HardcodedIssue {
         HardcodedItem {
             file_path: self.location.file_path.clone(),
             line: self.location.line,
-            col: self.location.col.unwrap_or(0),
+            col: self.location.col_or_default(),
             text: self.text.clone(),
             source_line: self.source_line.clone().unwrap_or_default(),
         }
@@ -144,7 +236,7 @@ impl HardcodedIssue {
 /// Translation key used in code but missing from primary locale.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MissingKeyIssue {
-    pub location: Location,
+    pub location: SourceLocation,
     pub key: String,
     pub source_line: Option<String>,
     /// If from schema validation: (schema_name, schema_file)
@@ -154,16 +246,59 @@ pub struct MissingKeyIssue {
 /// Dynamic key that cannot be statically analyzed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DynamicKeyIssue {
-    pub location: Location,
+    pub location: SourceLocation,
     pub reason: String,
     pub source_line: Option<String>,
     pub hint: Option<String>,
 }
 
+/// Namespace could not be determined for schema-derived key.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UntrackedNamespaceIssue {
+    pub location: SourceLocation,
+    pub raw_key: String,
+    pub schema_name: String,
+    pub source_line: Option<String>,
+}
+
+/// Some candidates from dynamic key source are missing.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MissingDynamicKeyCandidatesIssue {
+    pub location: SourceLocation,
+    pub source_object: String,
+    pub missing_keys: Vec<String>,
+    pub source_line: Option<String>,
+    /// Cached message for display (owned version to satisfy lifetime)
+    #[doc(hidden)]
+    message_cache: String,
+}
+
+impl MissingDynamicKeyCandidatesIssue {
+    pub fn new(
+        location: SourceLocation,
+        source_object: String,
+        missing_keys: Vec<String>,
+        source_line: Option<String>,
+    ) -> Self {
+        let message_cache = format!("dynamic key from \"{}\"", source_object);
+        Self {
+            location,
+            source_object,
+            missing_keys,
+            source_line,
+            message_cache,
+        }
+    }
+}
+
+// ============================================================
+// Issue Types with MessageLocation (found in JSON files)
+// ============================================================
+
 /// Key exists in primary locale but missing in other locales.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReplicaLagIssue {
-    pub location: Location,
+    pub location: MessageLocation,
     pub key: String,
     pub value: String,
     pub primary_locale: String,
@@ -191,7 +326,7 @@ impl ReplicaLagIssue {
 /// Key defined in locale files but not used in code.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UnusedKeyIssue {
-    pub location: Location,
+    pub location: MessageLocation,
     pub key: String,
     pub value: String,
 }
@@ -199,7 +334,7 @@ pub struct UnusedKeyIssue {
 /// Key exists in non-primary locale but not in primary locale.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OrphanKeyIssue {
-    pub location: Location,
+    pub location: MessageLocation,
     pub key: String,
     pub value: String,
     pub locale: String,
@@ -208,7 +343,7 @@ pub struct OrphanKeyIssue {
 /// Value is identical to primary locale (possibly not translated).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UntranslatedIssue {
-    pub location: Location,
+    pub location: MessageLocation,
     pub key: String,
     pub value: String,
     pub primary_locale: String,
@@ -233,44 +368,9 @@ impl UntranslatedIssue {
     }
 }
 
-/// Namespace could not be determined for schema-derived key.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct UntrackedNamespaceIssue {
-    pub location: Location,
-    pub raw_key: String,
-    pub schema_name: String,
-    pub source_line: Option<String>,
-}
-
-/// Some candidates from dynamic key source are missing.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct MissingDynamicKeyCandidatesIssue {
-    pub location: Location,
-    pub source_object: String,
-    pub missing_keys: Vec<String>,
-    pub source_line: Option<String>,
-    /// Cached message for display (owned version to satisfy lifetime)
-    #[doc(hidden)]
-    message_cache: String,
-}
-
-impl MissingDynamicKeyCandidatesIssue {
-    pub fn new(
-        location: Location,
-        source_object: String,
-        missing_keys: Vec<String>,
-        source_line: Option<String>,
-    ) -> Self {
-        let message_cache = format!("dynamic key from \"{}\"", source_object);
-        Self {
-            location,
-            source_object,
-            missing_keys,
-            source_line,
-            message_cache,
-        }
-    }
-}
+// ============================================================
+// Special Issue Types
+// ============================================================
 
 /// File could not be parsed.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -726,21 +826,106 @@ impl PartialOrd for Issue {
 mod tests {
     use super::*;
 
+    // ============================================================
+    // SourceLocation Tests
+    // ============================================================
+
     #[test]
-    fn test_location_builder() {
-        let loc = Location::new("./src/app.tsx", 10).with_col(5);
+    fn test_source_location_builder() {
+        let loc = SourceLocation::new("./src/app.tsx", 10)
+            .with_col(5)
+            .with_jsx_context(true);
         assert_eq!(loc.file_path, "./src/app.tsx");
         assert_eq!(loc.line, 10);
         assert_eq!(loc.col, Some(5));
+        assert!(loc.in_jsx_context);
     }
+
+    #[test]
+    fn test_source_location_col_or_default() {
+        let loc_with_col = SourceLocation::new("./src/app.tsx", 10).with_col(5);
+        assert_eq!(loc_with_col.col_or_default(), 5);
+
+        let loc_without_col = SourceLocation::new("./src/app.tsx", 10);
+        assert_eq!(loc_without_col.col_or_default(), 1);
+    }
+
+    #[test]
+    fn test_source_location_ordering_ignores_jsx_context() {
+        let loc1 = SourceLocation::new("./a.tsx", 10)
+            .with_col(5)
+            .with_jsx_context(true);
+        let loc2 = SourceLocation::new("./a.tsx", 10)
+            .with_col(5)
+            .with_jsx_context(false);
+
+        // Should be equal despite different in_jsx_context
+        assert_eq!(loc1.cmp(&loc2), Ordering::Equal);
+    }
+
+    // ============================================================
+    // MessageLocation Tests
+    // ============================================================
+
+    #[test]
+    fn test_message_location_builder() {
+        let loc = MessageLocation::new("./messages/en.json", 5).with_col(3);
+        assert_eq!(loc.file_path, "./messages/en.json");
+        assert_eq!(loc.line, 5);
+        assert_eq!(loc.col, Some(3));
+    }
+
+    #[test]
+    fn test_message_location_col_or_default() {
+        let loc_with_col = MessageLocation::new("./messages/en.json", 5).with_col(3);
+        assert_eq!(loc_with_col.col_or_default(), 3);
+
+        let loc_without_col = MessageLocation::new("./messages/en.json", 5);
+        assert_eq!(loc_without_col.col_or_default(), 1);
+    }
+
+    // ============================================================
+    // KeyUsage Tests
+    // ============================================================
+
+    #[test]
+    fn test_key_usage_new() {
+        let loc = SourceLocation::new("./src/Button.tsx", 25)
+            .with_col(10)
+            .with_jsx_context(true);
+        let usage = KeyUsage::new(loc);
+
+        assert_eq!(usage.file_path(), "./src/Button.tsx");
+        assert_eq!(usage.line(), 25);
+        assert_eq!(usage.col(), 10);
+        assert!(usage.in_jsx_context());
+    }
+
+    #[test]
+    fn test_key_usage_to_mcp_location() {
+        let loc = SourceLocation::new("./src/Button.tsx", 25)
+            .with_col(10)
+            .with_jsx_context(true);
+        let usage = KeyUsage::new(loc);
+
+        let mcp_loc = usage.to_mcp_location();
+        assert_eq!(mcp_loc.file_path, "./src/Button.tsx");
+        assert_eq!(mcp_loc.line, 25);
+        assert_eq!(mcp_loc.col, 10);
+    }
+
+    // ============================================================
+    // HardcodedIssue Tests
+    // ============================================================
 
     #[test]
     fn test_hardcoded_issue_report() {
         let issue = HardcodedIssue {
-            location: Location::new("./src/app.tsx", 10).with_col(5),
+            location: SourceLocation::new("./src/app.tsx", 10)
+                .with_col(5)
+                .with_jsx_context(false),
             text: "Hello".to_string(),
             source_line: Some("const x = \"Hello\";".to_string()),
-            in_jsx_context: false,
         };
 
         assert_eq!(issue.file_path(), Some("./src/app.tsx"));
@@ -756,18 +941,54 @@ mod tests {
     }
 
     #[test]
+    fn test_hardcoded_issue_jsx_context_accessible() {
+        let issue = HardcodedIssue {
+            location: SourceLocation::new("./src/app.tsx", 10)
+                .with_col(5)
+                .with_jsx_context(true),
+            text: "Hello".to_string(),
+            source_line: None,
+        };
+
+        // in_jsx_context is accessible through location
+        assert!(issue.location.in_jsx_context);
+    }
+
+    #[test]
+    fn test_hardcoded_to_mcp_item() {
+        let issue = HardcodedIssue {
+            location: SourceLocation::new("./src/app.tsx", 10)
+                .with_col(5)
+                .with_jsx_context(false),
+            text: "Hello".to_string(),
+            source_line: Some("const x = \"Hello\";".to_string()),
+        };
+
+        let item = issue.to_mcp_item();
+        assert_eq!(item.file_path, "./src/app.tsx");
+        assert_eq!(item.line, 10);
+        assert_eq!(item.col, 5);
+        assert_eq!(item.text, "Hello");
+        assert_eq!(item.source_line, "const x = \"Hello\";");
+    }
+
+    // ============================================================
+    // ReplicaLagIssue Tests
+    // ============================================================
+
+    #[test]
     fn test_replica_lag_issue_report() {
         let issue = ReplicaLagIssue {
-            location: Location::new("./messages/en.json", 5),
+            location: MessageLocation::new("./messages/en.json", 5),
             key: "Common.submit".to_string(),
             value: "Submit".to_string(),
             primary_locale: "en".to_string(),
             missing_in: vec!["zh".to_string(), "ja".to_string()],
-            usages: vec![KeyUsage {
-                file_path: "./src/Button.tsx".to_string(),
-                line: 25,
-                col: 10,
-            }],
+            usages: vec![KeyUsage::new(
+                SourceLocation::new("./src/Button.tsx", 25)
+                    .with_col(10)
+                    .with_jsx_context(true),
+            )],
             total_usages: 3,
         };
 
@@ -785,12 +1006,44 @@ mod tests {
         let (usages, total) = issue.usages().unwrap();
         assert_eq!(usages.len(), 1);
         assert_eq!(total, 3);
+        assert!(usages[0].in_jsx_context()); // KeyUsage has SourceLocation
     }
+
+    #[test]
+    fn test_replica_lag_to_mcp_item() {
+        let issue = ReplicaLagIssue {
+            location: MessageLocation::new("./messages/en.json", 5),
+            key: "Common.submit".to_string(),
+            value: "Submit".to_string(),
+            primary_locale: "en".to_string(),
+            missing_in: vec!["zh".to_string()],
+            usages: vec![KeyUsage::new(
+                SourceLocation::new("./src/Button.tsx", 25)
+                    .with_col(10)
+                    .with_jsx_context(true),
+            )],
+            total_usages: 1,
+        };
+
+        let item = issue.to_mcp_item();
+        assert_eq!(item.key, "Common.submit");
+        assert_eq!(item.value, "Submit");
+        assert_eq!(item.file_path, "./messages/en.json");
+        assert_eq!(item.line, 5);
+        assert_eq!(item.exists_in, "en");
+        assert_eq!(item.missing_in, vec!["zh"]);
+        assert_eq!(item.usages.len(), 1);
+        assert_eq!(item.total_usages, 1);
+    }
+
+    // ============================================================
+    // UntranslatedIssue Tests
+    // ============================================================
 
     #[test]
     fn test_untranslated_issue_report() {
         let issue = UntranslatedIssue {
-            location: Location::new("./messages/en.json", 5),
+            location: MessageLocation::new("./messages/en.json", 5),
             key: "Common.submit".to_string(),
             value: "Submit".to_string(),
             primary_locale: "en".to_string(),
@@ -809,114 +1062,9 @@ mod tests {
     }
 
     #[test]
-    fn test_unused_key_issue_report() {
-        let issue = UnusedKeyIssue {
-            location: Location::new("./messages/en.json", 5),
-            key: "Common.unused".to_string(),
-            value: "Unused".to_string(),
-        };
-
-        assert_eq!(issue.message(), "Common.unused");
-        assert_eq!(issue.severity(), Severity::Warning);
-        assert_eq!(issue.rule(), Rule::UnusedKey);
-        assert_eq!(issue.format_details(), Some("(\"Unused\")".to_string()));
-    }
-
-    #[test]
-    fn test_orphan_key_issue_report() {
-        let issue = OrphanKeyIssue {
-            location: Location::new("./messages/zh.json", 5),
-            key: "Common.orphan".to_string(),
-            value: "孤儿".to_string(),
-            locale: "zh".to_string(),
-        };
-
-        assert_eq!(issue.message(), "Common.orphan");
-        assert_eq!(issue.severity(), Severity::Warning);
-        assert_eq!(issue.rule(), Rule::OrphanKey);
-        assert_eq!(issue.format_details(), Some("in zh (\"孤儿\")".to_string()));
-    }
-
-    #[test]
-    fn test_issue_enum_delegates_to_inner() {
-        let inner = HardcodedIssue {
-            location: Location::new("./src/app.tsx", 10).with_col(5),
-            text: "Hello".to_string(),
-            source_line: None,
-            in_jsx_context: true,
-        };
-        let issue = Issue::Hardcoded(inner);
-
-        // IssueReport methods should delegate to inner type
-        assert_eq!(issue.file_path(), Some("./src/app.tsx"));
-        assert_eq!(issue.line(), Some(10));
-        assert_eq!(issue.col(), Some(5));
-        assert_eq!(issue.message(), "Hello");
-        assert_eq!(issue.severity(), Severity::Error);
-        assert_eq!(issue.rule(), Rule::HardcodedText);
-    }
-
-    #[test]
-    fn test_issue_sorting() {
-        let issue1 = Issue::Hardcoded(HardcodedIssue {
-            location: Location::new("./a.tsx", 10).with_col(5),
-            text: "A".to_string(),
-            source_line: None,
-            in_jsx_context: false,
-        });
-        let issue2 = Issue::Hardcoded(HardcodedIssue {
-            location: Location::new("./a.tsx", 10).with_col(10),
-            text: "B".to_string(),
-            source_line: None,
-            in_jsx_context: false,
-        });
-        let issue3 = Issue::Hardcoded(HardcodedIssue {
-            location: Location::new("./b.tsx", 5).with_col(1),
-            text: "C".to_string(),
-            source_line: None,
-            in_jsx_context: false,
-        });
-
-        let mut issues = [issue3.clone(), issue1.clone(), issue2.clone()];
-        issues.sort();
-
-        // Should be sorted by file_path, then line, then col
-        assert_eq!(issues[0].message(), "A");
-        assert_eq!(issues[1].message(), "B");
-        assert_eq!(issues[2].message(), "C");
-    }
-
-    #[test]
-    fn test_replica_lag_to_mcp_item() {
-        let issue = ReplicaLagIssue {
-            location: Location::new("./messages/en.json", 5),
-            key: "Common.submit".to_string(),
-            value: "Submit".to_string(),
-            primary_locale: "en".to_string(),
-            missing_in: vec!["zh".to_string()],
-            usages: vec![KeyUsage {
-                file_path: "./src/Button.tsx".to_string(),
-                line: 25,
-                col: 10,
-            }],
-            total_usages: 1,
-        };
-
-        let item = issue.to_mcp_item();
-        assert_eq!(item.key, "Common.submit");
-        assert_eq!(item.value, "Submit");
-        assert_eq!(item.file_path, "./messages/en.json");
-        assert_eq!(item.line, 5);
-        assert_eq!(item.exists_in, "en");
-        assert_eq!(item.missing_in, vec!["zh"]);
-        assert_eq!(item.usages.len(), 1);
-        assert_eq!(item.total_usages, 1);
-    }
-
-    #[test]
     fn test_untranslated_to_mcp_item() {
         let issue = UntranslatedIssue {
-            location: Location::new("./messages/en.json", 5),
+            location: MessageLocation::new("./messages/en.json", 5),
             key: "Common.submit".to_string(),
             value: "Submit".to_string(),
             primary_locale: "en".to_string(),
@@ -932,21 +1080,41 @@ mod tests {
         assert_eq!(item.identical_in, vec!["zh", "ja"]);
     }
 
+    // ============================================================
+    // UnusedKeyIssue Tests
+    // ============================================================
+
     #[test]
-    fn test_hardcoded_to_mcp_item() {
-        let issue = HardcodedIssue {
-            location: Location::new("./src/app.tsx", 10).with_col(5),
-            text: "Hello".to_string(),
-            source_line: Some("const x = \"Hello\";".to_string()),
-            in_jsx_context: false,
+    fn test_unused_key_issue_report() {
+        let issue = UnusedKeyIssue {
+            location: MessageLocation::new("./messages/en.json", 5),
+            key: "Common.unused".to_string(),
+            value: "Unused".to_string(),
         };
 
-        let item = issue.to_mcp_item();
-        assert_eq!(item.file_path, "./src/app.tsx");
-        assert_eq!(item.line, 10);
-        assert_eq!(item.col, 5);
-        assert_eq!(item.text, "Hello");
-        assert_eq!(item.source_line, "const x = \"Hello\";");
+        assert_eq!(issue.message(), "Common.unused");
+        assert_eq!(issue.severity(), Severity::Warning);
+        assert_eq!(issue.rule(), Rule::UnusedKey);
+        assert_eq!(issue.format_details(), Some("(\"Unused\")".to_string()));
+    }
+
+    // ============================================================
+    // OrphanKeyIssue Tests
+    // ============================================================
+
+    #[test]
+    fn test_orphan_key_issue_report() {
+        let issue = OrphanKeyIssue {
+            location: MessageLocation::new("./messages/zh.json", 5),
+            key: "Common.orphan".to_string(),
+            value: "孤儿".to_string(),
+            locale: "zh".to_string(),
+        };
+
+        assert_eq!(issue.message(), "Common.orphan");
+        assert_eq!(issue.severity(), Severity::Warning);
+        assert_eq!(issue.rule(), Rule::OrphanKey);
+        assert_eq!(issue.format_details(), Some("in zh (\"孤儿\")".to_string()));
     }
 
     // ============================================================
@@ -956,7 +1124,7 @@ mod tests {
     #[test]
     fn test_missing_key_issue_report() {
         let issue = MissingKeyIssue {
-            location: Location::new("./src/Button.tsx", 15).with_col(10),
+            location: SourceLocation::new("./src/Button.tsx", 15).with_col(10),
             key: "Common.submit".to_string(),
             source_line: Some("const label = t('Common.submit');".to_string()),
             from_schema: None,
@@ -980,7 +1148,7 @@ mod tests {
     #[test]
     fn test_missing_key_issue_with_schema() {
         let issue = MissingKeyIssue {
-            location: Location::new("./src/Form.tsx", 20).with_col(5),
+            location: SourceLocation::new("./src/Form.tsx", 20).with_col(5),
             key: "Form.email".to_string(),
             source_line: None,
             from_schema: Some((
@@ -1003,7 +1171,7 @@ mod tests {
     #[test]
     fn test_dynamic_key_issue_report() {
         let issue = DynamicKeyIssue {
-            location: Location::new("./src/utils.tsx", 30).with_col(12),
+            location: SourceLocation::new("./src/utils.tsx", 30).with_col(12),
             reason: "dynamic key".to_string(),
             source_line: Some("const msg = t(keyVar);".to_string()),
             hint: None,
@@ -1024,7 +1192,7 @@ mod tests {
     #[test]
     fn test_dynamic_key_issue_with_hint() {
         let issue = DynamicKeyIssue {
-            location: Location::new("./src/app.tsx", 25).with_col(8),
+            location: SourceLocation::new("./src/app.tsx", 25).with_col(8),
             reason: "template with expression".to_string(),
             source_line: Some("t(`prefix.${key}`)".to_string()),
             hint: Some("Consider using a key object pattern".to_string()),
@@ -1064,7 +1232,7 @@ mod tests {
     #[test]
     fn test_untracked_namespace_issue_report() {
         let issue = UntrackedNamespaceIssue {
-            location: Location::new("./src/dynamic.tsx", 40).with_col(15),
+            location: SourceLocation::new("./src/dynamic.tsx", 40).with_col(15),
             raw_key: "someKey".to_string(),
             schema_name: "dynamicSchema".to_string(),
             source_line: Some("t(schema.someKey)".to_string()),
@@ -1092,7 +1260,7 @@ mod tests {
     #[test]
     fn test_missing_dynamic_key_candidates_issue_report() {
         let issue = MissingDynamicKeyCandidatesIssue::new(
-            Location::new("./src/app.tsx", 50).with_col(20),
+            SourceLocation::new("./src/app.tsx", 50).with_col(20),
             "FEATURE_KEYS".to_string(),
             vec!["features.alpha".to_string(), "features.beta".to_string()],
             Some("FEATURE_KEYS.map(k => t(k))".to_string()),
@@ -1114,21 +1282,93 @@ mod tests {
     }
 
     // ============================================================
-    // KeyUsage Tests
+    // Issue Enum Tests
     // ============================================================
 
     #[test]
-    fn test_key_usage_to_mcp_location() {
-        let usage = KeyUsage {
-            file_path: "./src/Button.tsx".to_string(),
-            line: 25,
-            col: 10,
+    fn test_issue_enum_delegates_to_inner() {
+        let inner = HardcodedIssue {
+            location: SourceLocation::new("./src/app.tsx", 10)
+                .with_col(5)
+                .with_jsx_context(true),
+            text: "Hello".to_string(),
+            source_line: None,
         };
+        let issue = Issue::Hardcoded(inner);
 
-        let location = usage.to_mcp_location();
-        assert_eq!(location.file_path, "./src/Button.tsx");
-        assert_eq!(location.line, 25);
-        assert_eq!(location.col, 10);
+        // IssueReport methods should delegate to inner type
+        assert_eq!(issue.file_path(), Some("./src/app.tsx"));
+        assert_eq!(issue.line(), Some(10));
+        assert_eq!(issue.col(), Some(5));
+        assert_eq!(issue.message(), "Hello");
+        assert_eq!(issue.severity(), Severity::Error);
+        assert_eq!(issue.rule(), Rule::HardcodedText);
+    }
+
+    #[test]
+    fn test_issue_sorting() {
+        let issue1 = Issue::Hardcoded(HardcodedIssue {
+            location: SourceLocation::new("./a.tsx", 10)
+                .with_col(5)
+                .with_jsx_context(false),
+            text: "A".to_string(),
+            source_line: None,
+        });
+        let issue2 = Issue::Hardcoded(HardcodedIssue {
+            location: SourceLocation::new("./a.tsx", 10)
+                .with_col(10)
+                .with_jsx_context(false),
+            text: "B".to_string(),
+            source_line: None,
+        });
+        let issue3 = Issue::Hardcoded(HardcodedIssue {
+            location: SourceLocation::new("./b.tsx", 5)
+                .with_col(1)
+                .with_jsx_context(false),
+            text: "C".to_string(),
+            source_line: None,
+        });
+
+        let mut issues = [issue3.clone(), issue1.clone(), issue2.clone()];
+        issues.sort();
+
+        // Should be sorted by file_path, then line, then col
+        assert_eq!(issues[0].message(), "A");
+        assert_eq!(issues[1].message(), "B");
+        assert_eq!(issues[2].message(), "C");
+    }
+
+    #[test]
+    fn test_issue_sorting_mixed_types() {
+        // Test sorting across different issue types
+        let hardcoded = Issue::Hardcoded(HardcodedIssue {
+            location: SourceLocation::new("./a.tsx", 10)
+                .with_col(5)
+                .with_jsx_context(false),
+            text: "Hello".to_string(),
+            source_line: None,
+        });
+
+        let missing = Issue::MissingKey(MissingKeyIssue {
+            location: SourceLocation::new("./a.tsx", 5).with_col(1), // Same file, earlier line
+            key: "some.key".to_string(),
+            source_line: None,
+            from_schema: None,
+        });
+
+        let unused = Issue::UnusedKey(UnusedKeyIssue {
+            location: MessageLocation::new("./b.json", 1), // Different file
+            key: "unused.key".to_string(),
+            value: "Unused".to_string(),
+        });
+
+        let mut issues = [hardcoded.clone(), unused.clone(), missing.clone()];
+        issues.sort();
+
+        // Should be sorted by file_path, then line
+        assert_eq!(issues[0].message(), "some.key"); // ./a.tsx:5
+        assert_eq!(issues[1].message(), "Hello"); // ./a.tsx:10
+        assert_eq!(issues[2].message(), "unused.key"); // ./b.json:1
     }
 
     // ============================================================
@@ -1139,7 +1379,7 @@ mod tests {
     fn test_format_details_with_special_chars() {
         // Test that special characters in values are preserved correctly
         let issue = ReplicaLagIssue {
-            location: Location::new("./messages/en.json", 5),
+            location: MessageLocation::new("./messages/en.json", 5),
             key: "Common.greeting".to_string(),
             value: "Hello \"World\" (test)".to_string(), // Contains quotes and parens
             primary_locale: "en".to_string(),
@@ -1153,37 +1393,5 @@ mod tests {
             issue.format_details(),
             Some("(\"Hello \"World\" (test)\") missing in: zh".to_string())
         );
-    }
-
-    #[test]
-    fn test_issue_sorting_mixed_types() {
-        // Test sorting across different issue types
-        let hardcoded = Issue::Hardcoded(HardcodedIssue {
-            location: Location::new("./a.tsx", 10).with_col(5),
-            text: "Hello".to_string(),
-            source_line: None,
-            in_jsx_context: false,
-        });
-
-        let missing = Issue::MissingKey(MissingKeyIssue {
-            location: Location::new("./a.tsx", 5).with_col(1), // Same file, earlier line
-            key: "some.key".to_string(),
-            source_line: None,
-            from_schema: None,
-        });
-
-        let unused = Issue::UnusedKey(UnusedKeyIssue {
-            location: Location::new("./b.json", 1), // Different file
-            key: "unused.key".to_string(),
-            value: "Unused".to_string(),
-        });
-
-        let mut issues = [hardcoded.clone(), unused.clone(), missing.clone()];
-        issues.sort();
-
-        // Should be sorted by file_path, then line
-        assert_eq!(issues[0].message(), "some.key"); // ./a.tsx:5
-        assert_eq!(issues[1].message(), "Hello"); // ./a.tsx:10
-        assert_eq!(issues[2].message(), "unused.key"); // ./b.json:1
     }
 }

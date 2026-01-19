@@ -15,7 +15,7 @@ exit_code: 0
      |
    4 |             <span>Deeply indented</span>
      |                   ^
-  +             {/* glot-disable-next-line */}
+  +             {/* glot-disable-next-line hardcoded */}
 
 Inserted 1 comment(s) in 1 file(s).
 

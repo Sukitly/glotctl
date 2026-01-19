@@ -5,7 +5,7 @@
 
 use std::collections::HashSet;
 
-use swc_common::{Loc, SourceMap};
+use swc_common::{Loc, SourceMap, comments::SingleThreadedComments};
 use swc_ecma_ast::{
     CallExpr, Callee, CondExpr, Expr, FnDecl, JSXElement, JSXFragment, Lit, MemberProp, Module,
     ObjectPatProp, Pat, VarDecl, VarDeclarator,
@@ -26,6 +26,7 @@ use crate::checkers::{
     value_source::ResolvedKey,
 };
 use crate::commands::context::Registries;
+use crate::directives::{DisableContext, DisableRule};
 
 pub(crate) fn resolve_full_key(namespace: &Option<String>, key: &str) -> String {
     match namespace {
@@ -46,6 +47,7 @@ pub struct TranslationKeyVisitor<'a> {
     binding_context: BindingContext,
     annotation_store: AnnotationStore,
     value_analyzer: ValueAnalyzer<'a>,
+    disable_context: DisableContext,
 
     // Dependencies
     registries: &'a Registries,
@@ -65,6 +67,7 @@ impl<'a> TranslationKeyVisitor<'a> {
     pub fn new(
         file_path: &'a str,
         source_map: &'a SourceMap,
+        comments: &SingleThreadedComments,
         registries: &'a Registries,
         file_imports: &'a FileImports,
         source: &str,
@@ -72,6 +75,8 @@ impl<'a> TranslationKeyVisitor<'a> {
     ) -> Self {
         // Parse glot-message-keys annotations
         let annotation_store = AnnotationStore::parse(source, file_path, available_keys);
+        // Parse glot-disable directives
+        let disable_context = DisableContext::from_comments(comments, source_map);
 
         Self {
             file_path,
@@ -85,6 +90,7 @@ impl<'a> TranslationKeyVisitor<'a> {
                 &registries.string_array,
                 file_imports,
             ),
+            disable_context,
             registries,
             available_keys,
             used_keys: Vec::new(),
@@ -101,12 +107,17 @@ impl<'a> TranslationKeyVisitor<'a> {
             .get_line(loc.line - 1)
             .map(|cow| cow.to_string())
             .unwrap_or_default();
+        let untranslated_disabled = self
+            .disable_context
+            .should_ignore(loc.line, DisableRule::Untranslated);
         self.used_keys.push(UsedKey {
             full_key,
             file_path: self.file_path.to_string(),
             line: loc.line,
             col: loc.col_display + 1,
             source_line,
+            in_jsx_context: self.in_jsx_context,
+            untranslated_disabled,
         });
     }
 

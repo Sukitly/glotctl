@@ -1854,3 +1854,230 @@ export default function App() {
 
     Ok(())
 }
+
+// ============================================================
+// Untranslated with Disable Tests
+// ============================================================
+
+#[test]
+fn test_untranslated_skipped_when_all_usages_disabled() -> Result<()> {
+    // When ALL usages of a key have glot-disable-next-line untranslated,
+    // the untranslated issue should be suppressed.
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    test.write_file("messages/en.json", r#"{"Common": {"brand": "MyBrand"}}"#)?;
+
+    // Untranslated - same value as English (intentionally not translated brand name)
+    test.write_file("messages/zh.json", r#"{"Common": {"brand": "MyBrand"}}"#)?;
+
+    // All usages have disable comment
+    test.write_file(
+        "src/app.tsx",
+        r#"
+import {useTranslations} from 'next-intl';
+
+export default function App() {
+    const t = useTranslations('Common');
+    // glot-disable-next-line untranslated
+    return <div>{t('brand')}</div>;
+}
+"#,
+    )?;
+
+    // Should have no errors - the key is intentionally not translated
+    assert_cmd_snapshot!(test.check_command().arg("untranslated"));
+
+    Ok(())
+}
+
+#[test]
+fn test_untranslated_reported_when_some_usages_not_disabled() -> Result<()> {
+    // When SOME usages have disable but not all, the issue should still be reported.
+    // This is the "one-vote-veto" principle.
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    test.write_file("messages/en.json", r#"{"Common": {"submit": "Submit"}}"#)?;
+
+    // Untranslated - same value as English
+    test.write_file("messages/zh.json", r#"{"Common": {"submit": "Submit"}}"#)?;
+
+    // First file has disable, second does not
+    test.write_file(
+        "src/app.tsx",
+        r#"
+import {useTranslations} from 'next-intl';
+
+export function App1() {
+    const t = useTranslations('Common');
+    // glot-disable-next-line untranslated
+    return <button>{t('submit')}</button>;
+}
+"#,
+    )?;
+
+    test.write_file(
+        "src/other.tsx",
+        r#"
+import {useTranslations} from 'next-intl';
+
+export function App2() {
+    const t = useTranslations('Common');
+    // No disable comment here
+    return <button>{t('submit')}</button>;
+}
+"#,
+    )?;
+
+    // Should still report the untranslated issue because not all usages are disabled
+    assert_cmd_snapshot!(test.check_command().arg("untranslated"));
+
+    Ok(())
+}
+
+#[test]
+fn test_untranslated_reported_when_hardcoded_only_disabled() -> Result<()> {
+    // glot-disable-next-line hardcoded should NOT affect untranslated rule
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    test.write_file("messages/en.json", r#"{"Common": {"submit": "Submit"}}"#)?;
+
+    // Untranslated - same value as English
+    test.write_file("messages/zh.json", r#"{"Common": {"submit": "Submit"}}"#)?;
+
+    // Using hardcoded disable, NOT untranslated
+    test.write_file(
+        "src/app.tsx",
+        r#"
+import {useTranslations} from 'next-intl';
+
+export default function App() {
+    const t = useTranslations('Common');
+    // glot-disable-next-line hardcoded
+    return <button>{t('submit')}</button>;
+}
+"#,
+    )?;
+
+    // Should still report the untranslated issue - hardcoded doesn't affect untranslated
+    assert_cmd_snapshot!(test.check_command().arg("untranslated"));
+
+    Ok(())
+}
+
+#[test]
+fn test_untranslated_skipped_with_range_disable() -> Result<()> {
+    // glot-disable untranslated / glot-enable untranslated range should work
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    test.write_file(
+        "messages/en.json",
+        r#"{"Common": {"brand": "MyBrand", "submit": "Submit"}}"#,
+    )?;
+
+    // Both untranslated
+    test.write_file(
+        "messages/zh.json",
+        r#"{"Common": {"brand": "MyBrand", "submit": "Submit"}}"#,
+    )?;
+
+    // brand is inside disable range, submit is outside
+    test.write_file(
+        "src/app.tsx",
+        r#"
+import {useTranslations} from 'next-intl';
+
+export default function App() {
+    const t = useTranslations('Common');
+    // glot-disable untranslated
+    const brandName = t('brand');
+    // glot-enable untranslated
+    return (
+        <div>
+            <span>{brandName}</span>
+            <button>{t('submit')}</button>
+        </div>
+    );
+}
+"#,
+    )?;
+
+    // Should only report submit, not brand (brand is inside disable range)
+    assert_cmd_snapshot!(test.check_command().arg("untranslated"));
+
+    Ok(())
+}
+
+#[test]
+fn test_untranslated_skipped_with_no_args_disable() -> Result<()> {
+    // glot-disable-next-line (no args) should disable all rules including untranslated
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    test.write_file("messages/en.json", r#"{"Common": {"brand": "MyBrand"}}"#)?;
+
+    // Untranslated
+    test.write_file("messages/zh.json", r#"{"Common": {"brand": "MyBrand"}}"#)?;
+
+    // No args = disable all rules
+    test.write_file(
+        "src/app.tsx",
+        r#"
+import {useTranslations} from 'next-intl';
+
+export default function App() {
+    const t = useTranslations('Common');
+    // glot-disable-next-line
+    return <div>{t('brand')}</div>;
+}
+"#,
+    )?;
+
+    // Should have no errors
+    assert_cmd_snapshot!(test.check_command().arg("untranslated"));
+
+    Ok(())
+}
