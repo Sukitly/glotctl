@@ -877,7 +877,7 @@ mod tests {
             in_jsx_context: false,
         });
 
-        let mut issues = vec![issue3.clone(), issue1.clone(), issue2.clone()];
+        let mut issues = [issue3.clone(), issue1.clone(), issue2.clone()];
         issues.sort();
 
         // Should be sorted by file_path, then line, then col
@@ -1178,7 +1178,7 @@ mod tests {
             value: "Unused".to_string(),
         });
 
-        let mut issues = vec![hardcoded.clone(), unused.clone(), missing.clone()];
+        let mut issues = [hardcoded.clone(), unused.clone(), missing.clone()];
         issues.sort();
 
         // Should be sorted by file_path, then line
