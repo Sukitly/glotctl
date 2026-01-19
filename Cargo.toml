@@ -32,6 +32,7 @@ walkdir = "2.5.0"
 rmcp = { version = "0.13", features = ["server", "transport-io", "macros"] }
 tokio = { version = "1", features = ["rt", "macros"] }
 schemars = "1.2"
+enum_dispatch = "0.3.13"
 
 [dev-dependencies]
 insta = { version = "1.46.1", features = ["filters"] }

@@ -20,7 +20,7 @@ use crate::{
         check::extract_translation_keys,
         context::{AllExtractions, AllFileImports, CheckContext, Registries},
     },
-    issue::Issue,
+    issue::{Issue, ParseErrorIssue},
     parsers::jsx::parse_jsx_file,
 };
 
@@ -49,7 +49,10 @@ pub fn build_registries(ctx: &CheckContext) -> (Registries, AllFileImports, Vec<
                 if ctx.verbose {
                     eprintln!("Warning: {} - {}", file_path, e);
                 }
-                errors.push(Issue::parse_error(file_path, &e.to_string()));
+                errors.push(Issue::ParseError(ParseErrorIssue {
+                    file_path: file_path.clone(),
+                    error: e.to_string(),
+                }));
                 continue;
             }
         };
@@ -210,7 +213,10 @@ pub fn build_extractions(ctx: &CheckContext) -> (AllExtractions, Vec<Issue>) {
                 extractions.insert(file_path.clone(), result);
             }
             Err(e) => {
-                errors.push(Issue::parse_error(file_path, &e.to_string()));
+                errors.push(Issue::ParseError(ParseErrorIssue {
+                    file_path: file_path.clone(),
+                    error: e.to_string(),
+                }));
             }
         }
     }

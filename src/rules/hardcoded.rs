@@ -6,7 +6,7 @@ use anyhow::Result;
 
 use crate::{
     commands::{check::check_hardcoded, context::CheckContext},
-    issue::Issue,
+    issue::{Issue, ParseErrorIssue},
     rules::Checker,
 };
 
@@ -24,20 +24,17 @@ impl Checker for HardcodedRule {
             match check_hardcoded(file_path, &ctx.config.checked_attributes, &ctx.ignore_texts) {
                 Ok(hardcoded_issues) => {
                     for issue in hardcoded_issues {
-                        issues.push(Issue::hardcoded(
-                            &issue.file_path,
-                            issue.line,
-                            issue.col,
-                            &issue.text,
-                            Some(issue.source_line),
-                        ));
+                        issues.push(Issue::Hardcoded(issue));
                     }
                 }
                 Err(e) => {
                     if ctx.verbose {
                         eprintln!("Warning: {} - {}", file_path, e);
                     }
-                    issues.push(Issue::parse_error(file_path, &e.to_string()));
+                    issues.push(Issue::ParseError(ParseErrorIssue {
+                        file_path: file_path.to_string(),
+                        error: format!("Failed to parse: {}", e),
+                    }));
                 }
             }
         }

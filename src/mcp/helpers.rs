@@ -159,42 +159,6 @@ pub fn validate_and_convert_value(value: &serde_json::Value) -> Result<serde_jso
     }
 }
 
-/// Parse missing locales from details string.
-/// Format: "(\"value\") missing in: de, fr, ja"
-///
-/// # Note
-/// TODO: This implementation is fragile as it parses a human-readable string format.
-/// Any upstream change to the details wording (e.g., changing "missing in:" to
-/// "not found in:") will silently break locale extraction. For MCP server use cases,
-/// consider using structured fields instead of parsing formatted strings.
-pub fn parse_missing_locales(details: &str) -> Vec<String> {
-    if let Some(pos) = details.find("missing in:") {
-        details[pos + "missing in:".len()..]
-            .split(',')
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .collect()
-    } else {
-        Vec::new()
-    }
-}
-
-/// Parse identical locales from details string.
-/// Format: "(\"value\") identical in: zh, ja"
-///
-/// Similar to parse_missing_locales but for untranslated issues.
-pub fn parse_identical_locales(details: &str) -> Vec<String> {
-    if let Some(pos) = details.find("identical in:") {
-        details[pos + "identical in:".len()..]
-            .split(',')
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-            .collect()
-    } else {
-        Vec::new()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -693,27 +657,5 @@ mod tests {
         let content = fs::read_to_string(&file_path).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&content).unwrap();
         assert_eq!(parsed["key"], "value");
-    }
-
-    // ============================================================
-    // Parse Missing Locales Tests
-    // ============================================================
-
-    #[test]
-    fn test_parse_missing_locales_basic() {
-        let result = parse_missing_locales("(\"hello\") missing in: de, fr, ja");
-        assert_eq!(result, vec!["de", "fr", "ja"]);
-    }
-
-    #[test]
-    fn test_parse_missing_locales_single() {
-        let result = parse_missing_locales("(\"value\") missing in: zh-CN");
-        assert_eq!(result, vec!["zh-CN"]);
-    }
-
-    #[test]
-    fn test_parse_missing_locales_no_match() {
-        let result = parse_missing_locales("some other format");
-        assert!(result.is_empty());
     }
 }

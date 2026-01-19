@@ -8,11 +8,14 @@ use anyhow::Result;
 use crate::{
     checkers::{
         extraction::{KeyExtractionResult as ExtractionResult, TranslationKeyVisitor, UsedKey},
-        hardcoded::{HardcodedChecker, HardcodedIssue},
+        hardcoded::HardcodedChecker,
         key_objects::FileImports,
     },
     commands::context::Registries,
-    issue::{Issue, KeyUsage},
+    issue::{
+        HardcodedIssue, Issue, KeyUsage, Location, MAX_KEY_USAGES, OrphanKeyIssue, ReplicaLagIssue,
+        UnusedKeyIssue,
+    },
     parsers::{json::MessageMap, jsx::parse_jsx_file},
 };
 
@@ -110,9 +113,6 @@ pub fn get_usages_for_key(
     }
 }
 
-/// Maximum number of usage locations to include in issues
-const MAX_USAGES: usize = 3;
-
 pub fn find_replica_lag(
     primary_locale: &str,
     all_messages: &HashMap<String, MessageMap>,
@@ -135,16 +135,16 @@ pub fn find_replica_lag(
             if missing_in.is_empty() {
                 None
             } else {
-                let (usages, total_usages) = get_usages_for_key(key_usages, key, MAX_USAGES);
-                Some(Issue::replica_lag(
-                    key,
-                    &entry.value,
-                    &entry.file_path,
-                    entry.line,
-                    &missing_in,
+                let (usages, total_usages) = get_usages_for_key(key_usages, key, MAX_KEY_USAGES);
+                Some(Issue::ReplicaLag(ReplicaLagIssue {
+                    location: Location::new(&entry.file_path, entry.line),
+                    key: key.clone(),
+                    value: entry.value.clone(),
+                    primary_locale: primary_locale.to_string(),
+                    missing_in,
                     usages,
                     total_usages,
-                ))
+                }))
             }
         })
         .collect();
@@ -165,7 +165,13 @@ pub fn find_unused_keys(all_used_keys: &HashSet<String>, messages: &MessageMap) 
     let mut unused: Vec<_> = messages
         .iter()
         .filter(|(key, _)| !all_used_keys.contains(*key))
-        .map(|(key, entry)| Issue::unused_key(key, &entry.value, &entry.file_path, entry.line))
+        .map(|(key, entry)| {
+            Issue::UnusedKey(UnusedKeyIssue {
+                location: Location::new(&entry.file_path, entry.line),
+                key: key.clone(),
+                value: entry.value.clone(),
+            })
+        })
         .collect();
     unused.sort();
     unused
@@ -195,7 +201,12 @@ pub fn find_orphan_keys(
                 .iter()
                 .filter(|(key, _)| !primary_messages.contains_key(*key))
                 .map(|(key, entry)| {
-                    Issue::orphan_key(key, locale, &entry.value, &entry.file_path, entry.line)
+                    Issue::OrphanKey(OrphanKeyIssue {
+                        location: Location::new(&entry.file_path, entry.line),
+                        key: key.clone(),
+                        value: entry.value.clone(),
+                        locale: locale.clone(),
+                    })
                 })
         })
         .collect();
@@ -581,6 +592,8 @@ const e = <div>Detected 3</div>"#;
 
     #[test]
     fn test_find_missing_in_other_locales() {
+        use crate::issue::IssueReport;
+
         let mut all_messages = HashMap::new();
         all_messages.insert(
             "en".to_string(),
@@ -595,15 +608,17 @@ const e = <div>Detected 3</div>"#;
         let missing = find_replica_lag("en", &all_messages, &key_usages);
 
         assert_eq!(missing.len(), 1);
-        assert_eq!(missing[0].message, "Common.cancel");
+        assert_eq!(missing[0].message(), "Common.cancel");
         assert_eq!(
-            missing[0].details,
+            missing[0].format_details(),
             Some("(\"Cancel\") missing in: zh".to_string())
         );
     }
 
     #[test]
     fn test_missing_in_multiple_locales() {
+        use crate::issue::IssueReport;
+
         let mut all_messages = HashMap::new();
         all_messages.insert(
             "en".to_string(),
@@ -616,8 +631,8 @@ const e = <div>Detected 3</div>"#;
         let missing = find_replica_lag("en", &all_messages, &key_usages);
 
         assert_eq!(missing.len(), 1);
-        assert_eq!(missing[0].message, "Common.submit");
-        let details = missing[0].details.as_ref().unwrap();
+        assert_eq!(missing[0].message(), "Common.submit");
+        let details = missing[0].format_details().unwrap();
         assert!(details.contains("ja"));
         assert!(details.contains("zh"));
     }
@@ -670,6 +685,8 @@ const e = <div>Detected 3</div>"#;
 
     #[test]
     fn test_results_sorted_by_key() {
+        use crate::issue::IssueReport;
+
         let mut all_messages = HashMap::new();
         all_messages.insert(
             "en".to_string(),
@@ -685,14 +702,16 @@ const e = <div>Detected 3</div>"#;
         let missing = find_replica_lag("en", &all_messages, &key_usages);
 
         assert_eq!(missing.len(), 3);
-        assert_eq!(missing[0].message, "Common.apple");
-        assert_eq!(missing[1].message, "Common.mango");
-        assert_eq!(missing[2].message, "Common.zebra");
+        assert_eq!(missing[0].message(), "Common.apple");
+        assert_eq!(missing[1].message(), "Common.mango");
+        assert_eq!(missing[2].message(), "Common.zebra");
     }
 
     // Tests for find_unused_keys
     #[test]
     fn test_find_unused_keys_basic() {
+        use crate::issue::IssueReport;
+
         let messages = create_message_map(&[
             ("Common.submit", "Submit"),
             ("Common.cancel", "Cancel"),
@@ -703,9 +722,9 @@ const e = <div>Detected 3</div>"#;
         let unused = find_unused_keys(&used_keys, &messages);
 
         assert_eq!(unused.len(), 2);
-        let messages: Vec<_> = unused.iter().map(|i| i.message.as_str()).collect();
-        assert!(messages.contains(&"Common.cancel"));
-        assert!(messages.contains(&"Common.save"));
+        let keys: Vec<_> = unused.iter().map(|i| i.message()).collect();
+        assert!(keys.contains(&"Common.cancel"));
+        assert!(keys.contains(&"Common.save"));
     }
 
     #[test]
@@ -730,19 +749,23 @@ const e = <div>Detected 3</div>"#;
 
     #[test]
     fn test_find_unused_keys_empty_used() {
+        use crate::issue::IssueReport;
+
         let messages = create_message_map(&[("Common.submit", "Submit")]);
         let used_keys: HashSet<String> = HashSet::new();
 
         let unused = find_unused_keys(&used_keys, &messages);
 
         assert_eq!(unused.len(), 1);
-        assert_eq!(unused[0].message, "Common.submit");
-        assert_eq!(unused[0].details, Some("(\"Submit\")".to_string()));
+        assert_eq!(unused[0].message(), "Common.submit");
+        assert_eq!(unused[0].format_details(), Some("(\"Submit\")".to_string()));
     }
 
     // Tests for find_orphan_keys
     #[test]
     fn test_find_orphan_keys_basic() {
+        use crate::issue::IssueReport;
+
         let mut all_messages = HashMap::new();
         all_messages.insert(
             "en".to_string(),
@@ -756,12 +779,17 @@ const e = <div>Detected 3</div>"#;
         let orphans = find_orphan_keys("en", &all_messages);
 
         assert_eq!(orphans.len(), 1);
-        assert_eq!(orphans[0].message, "Common.oldKey");
-        assert_eq!(orphans[0].details, Some("in zh (\"旧的\")".to_string()));
+        assert_eq!(orphans[0].message(), "Common.oldKey");
+        assert_eq!(
+            orphans[0].format_details(),
+            Some("in zh (\"旧的\")".to_string())
+        );
     }
 
     #[test]
     fn test_find_orphan_keys_multiple_locales() {
+        use crate::issue::IssueReport;
+
         let mut all_messages = HashMap::new();
         all_messages.insert(
             "en".to_string(),
@@ -779,15 +807,15 @@ const e = <div>Detected 3</div>"#;
         let orphans = find_orphan_keys("en", &all_messages);
 
         assert_eq!(orphans.len(), 2);
-        let messages: Vec<_> = orphans.iter().map(|i| i.message.as_str()).collect();
-        assert!(messages.contains(&"Common.orphan1"));
-        assert!(messages.contains(&"Common.orphan2"));
+        let keys: Vec<_> = orphans.iter().map(|i| i.message()).collect();
+        assert!(keys.contains(&"Common.orphan1"));
+        assert!(keys.contains(&"Common.orphan2"));
         // Check that details contain the locale info
         for orphan in &orphans {
-            let details = orphan.details.as_ref().unwrap();
-            if orphan.message == "Common.orphan1" {
+            let details = orphan.format_details().unwrap();
+            if orphan.message() == "Common.orphan1" {
                 assert!(details.contains("zh"));
-            } else if orphan.message == "Common.orphan2" {
+            } else if orphan.message() == "Common.orphan2" {
                 assert!(details.contains("ja"));
             }
         }

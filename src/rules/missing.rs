@@ -18,7 +18,10 @@ use crate::{
         check::{build_key_usage_map, find_missing_keys, find_replica_lag},
         context::CheckContext,
     },
-    issue::Issue,
+    issue::{
+        DynamicKeyIssue, Issue, Location, MissingDynamicKeyCandidatesIssue, MissingKeyIssue,
+        UntrackedNamespaceIssue,
+    },
     rules::Checker,
 };
 
@@ -56,13 +59,12 @@ impl Checker for MissingKeysRule {
             // Check missing static keys
             let missing = find_missing_keys(&extraction.used_keys, primary_messages);
             for key in missing {
-                issues.push(Issue::missing_key(
-                    &key.file_path,
-                    key.line,
-                    key.col,
-                    &key.full_key,
-                    Some(key.source_line.clone()),
-                ));
+                issues.push(Issue::MissingKey(MissingKeyIssue {
+                    location: Location::new(&key.file_path, key.line).with_col(key.col),
+                    key: key.full_key.clone(),
+                    source_line: Some(key.source_line.clone()),
+                    from_schema: None,
+                }));
             }
 
             // Process dynamic key warnings
@@ -71,25 +73,22 @@ impl Checker for MissingKeysRule {
                     DynamicKeyReason::VariableKey => "dynamic key",
                     DynamicKeyReason::TemplateWithExpr => "template with expression",
                 };
-                issues.push(Issue::dynamic_key_with_hint(
-                    &warning.file_path,
-                    warning.line,
-                    warning.col,
-                    reason,
-                    Some(warning.source_line.clone()),
-                    warning.hint.clone(),
-                ));
+                issues.push(Issue::DynamicKey(DynamicKeyIssue {
+                    location: Location::new(&warning.file_path, warning.line).with_col(warning.col),
+                    reason: reason.to_string(),
+                    source_line: Some(warning.source_line.clone()),
+                    hint: warning.hint.clone(),
+                }));
             }
 
             // Process pattern warnings
             for warning in &extraction.pattern_warnings {
-                issues.push(Issue::dynamic_key(
-                    &warning.file_path,
-                    warning.line,
-                    1,
-                    &warning.message,
-                    None,
-                ));
+                issues.push(Issue::DynamicKey(DynamicKeyIssue {
+                    location: Location::new(&warning.file_path, warning.line).with_col(1),
+                    reason: warning.message.clone(),
+                    source_line: None,
+                    hint: None,
+                }));
             }
 
             // Process schema calls
@@ -103,14 +102,13 @@ impl Checker for MissingKeysRule {
                 );
                 for key in expand_result.keys {
                     if !key.has_namespace {
-                        issues.push(Issue::untracked_namespace(
-                            file_path,
-                            call.line,
-                            call.col,
-                            &key.from_schema,
-                            &key.raw_key,
-                            None,
-                        ));
+                        issues.push(Issue::UntrackedNamespace(UntrackedNamespaceIssue {
+                            location: Location::new(file_path.as_str(), call.line)
+                                .with_col(call.col),
+                            raw_key: key.raw_key.clone(),
+                            schema_name: key.from_schema.clone(),
+                            source_line: None,
+                        }));
                         continue;
                     }
 
@@ -121,15 +119,13 @@ impl Checker for MissingKeysRule {
                             .map(|s| s.file_path.as_str())
                             .unwrap_or("unknown");
 
-                        issues.push(Issue::missing_key_from_schema(
-                            file_path,
-                            call.line,
-                            call.col,
-                            &key.full_key,
-                            &key.from_schema,
-                            schema_file,
-                            None,
-                        ));
+                        issues.push(Issue::MissingKey(MissingKeyIssue {
+                            location: Location::new(file_path.as_str(), call.line)
+                                .with_col(call.col),
+                            key: key.full_key.clone(),
+                            source_line: None,
+                            from_schema: Some((key.from_schema.clone(), schema_file.to_string())),
+                        }));
                     }
                 }
             }
@@ -154,13 +150,14 @@ impl Checker for MissingKeysRule {
                         }
                         if !missing_keys.is_empty() {
                             let source_desc = resolved_key.source.source_description();
-                            issues.push(Issue::missing_dynamic_key_candidates(
-                                &resolved_key.file_path,
-                                resolved_key.line,
-                                resolved_key.col,
-                                &source_desc,
-                                &missing_keys,
-                                Some(resolved_key.source_line.clone()),
+                            issues.push(Issue::MissingDynamicKeyCandidates(
+                                MissingDynamicKeyCandidatesIssue::new(
+                                    Location::new(&resolved_key.file_path, resolved_key.line)
+                                        .with_col(resolved_key.col),
+                                    source_desc,
+                                    missing_keys,
+                                    Some(resolved_key.source_line.clone()),
+                                ),
                             ));
                         }
                     }

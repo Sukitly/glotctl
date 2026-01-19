@@ -11,7 +11,7 @@ pub const SUCCESS_MARK: &str = "\u{2713}"; // ✓
 pub const FAILURE_MARK: &str = "\u{2718}"; // ✘
 use unicode_width::UnicodeWidthStr;
 
-use crate::issue::{Issue, Severity};
+use crate::issue::{Issue, IssueReport, Severity};
 
 /// Print issues in a cargo-style format.
 ///
@@ -31,18 +31,18 @@ pub fn print_report(issues: &[Issue]) {
     // Calculate max line number width for alignment
     let max_line_width = file_issues
         .iter()
-        .filter_map(|i| i.line)
+        .filter_map(|i| i.line())
         .max()
         .map(|n| n.to_string().len())
         .unwrap_or(1);
 
     for issue in &file_issues {
-        let line = issue.line.unwrap_or(0);
-        let col = issue.col.unwrap_or(0);
-        let path = issue.file_path.as_deref().unwrap_or("");
+        let line = issue.line().unwrap_or(0);
+        let col = issue.col().unwrap_or(0);
+        let path = issue.file_path().unwrap_or("");
 
         // Print severity and message (cargo-style)
-        let severity_str = match issue.severity {
+        let severity_str = match issue.severity() {
             Severity::Error => "error".bold().red(),
             Severity::Warning => "warning".bold().yellow(),
         };
@@ -50,16 +50,16 @@ pub fn print_report(issues: &[Issue]) {
         println!(
             "{}: \"{}\"  {}",
             severity_str,
-            issue.message,
-            issue.rule.to_string().dimmed().cyan()
+            issue.message(),
+            issue.rule().to_string().dimmed().cyan()
         );
 
         // Print clickable location: --> path:line:col
         println!("  {} {}:{}:{}", "-->".blue(), path, line, col);
 
         // Print source context if available
-        if let Some(source_line) = &issue.source_line {
-            let caret_char = match issue.severity {
+        if let Some(source_line) = issue.source_line() {
+            let caret_char = match issue.severity() {
                 Severity::Error => "^".red(),
                 Severity::Warning => "^".yellow(),
             };
@@ -92,7 +92,7 @@ pub fn print_report(issues: &[Issue]) {
         }
 
         // Print details if present (cargo-style note)
-        if let Some(details) = &issue.details {
+        if let Some(details) = issue.format_details() {
             println!(
                 "{:>width$} {} {} {}",
                 "",
@@ -104,7 +104,7 @@ pub fn print_report(issues: &[Issue]) {
         }
 
         // Print hint if present
-        if let Some(hint) = &issue.hint {
+        if let Some(hint) = issue.hint() {
             println!(
                 "{:>width$} {} {} {}",
                 "",
@@ -116,7 +116,7 @@ pub fn print_report(issues: &[Issue]) {
         }
 
         // Print usages if present (for replica-lag, untranslated)
-        if let Some(usages) = &issue.usages {
+        if let Some((usages, total)) = issue.usages() {
             if usages.is_empty() {
                 println!(
                     "{:>width$} {} {} {}",
@@ -127,7 +127,6 @@ pub fn print_report(issues: &[Issue]) {
                     width = max_line_width
                 );
             } else {
-                let total = issue.total_usages.unwrap_or(usages.len());
                 for (i, usage) in usages.iter().enumerate() {
                     let is_last = i == usages.len() - 1;
                     let remaining = total.saturating_sub(usages.len());
@@ -157,11 +156,11 @@ pub fn print_report(issues: &[Issue]) {
     // Summary
     let total_errors = sorted
         .iter()
-        .filter(|i| i.severity == Severity::Error)
+        .filter(|i| i.severity() == Severity::Error)
         .count();
     let total_warnings = sorted
         .iter()
-        .filter(|i| i.severity == Severity::Warning)
+        .filter(|i| i.severity() == Severity::Warning)
         .count();
     let total_problems = total_errors + total_warnings;
 
