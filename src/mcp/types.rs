@@ -51,6 +51,19 @@ pub struct ScanReplicaLagParams {
     pub offset: Option<u64>,
 }
 
+/// Parameters for scan_untranslated tool
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ScanUntranslatedParams {
+    /// Path to the project root directory
+    pub project_root_path: String,
+    /// Maximum number of items to return (default: 50, max: 100)
+    #[serde(default)]
+    pub limit: Option<u64>,
+    /// Number of items to skip (default: 0)
+    #[serde(default)]
+    pub offset: Option<u64>,
+}
+
 /// Parameters for get_locales tool
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct GetLocalesParams {
@@ -279,6 +292,7 @@ pub struct ScanOverviewResult {
     pub hardcoded: HardcodedStats,
     pub primary_missing: PrimaryMissingStats,
     pub replica_lag: ReplicaLagStats,
+    pub untranslated: UntranslatedStats,
 }
 
 /// Statistics for hardcoded text issues
@@ -300,6 +314,14 @@ pub struct PrimaryMissingStats {
 #[derive(Debug, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ReplicaLagStats {
+    pub total_count: usize,
+    pub affected_locales: Vec<String>,
+}
+
+/// Statistics for untranslated values
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct UntranslatedStats {
     pub total_count: usize,
     pub affected_locales: Vec<String>,
 }
@@ -347,6 +369,29 @@ pub struct ReplicaLagItem {
     pub value: String,
     pub exists_in: String,
     pub missing_in: Vec<String>,
+}
+
+// ============================================================
+// Untranslated Scan Types (scan_untranslated)
+// ============================================================
+
+/// Result of scan_untranslated operation
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct UntranslatedScanResult {
+    pub total_count: usize,
+    pub items: Vec<UntranslatedItem>,
+    pub pagination: Pagination,
+}
+
+/// A value that is identical to primary locale (possibly not translated)
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct UntranslatedItem {
+    pub key: String,
+    pub value: String,
+    pub locale: String,
+    pub primary_locale: String,
 }
 
 // ============================================================
@@ -434,6 +479,18 @@ mod tests {
         let params: ScanReplicaLagParams = serde_json::from_value(json).unwrap();
         assert_eq!(params.project_root_path, "/path");
         assert_eq!(params.limit, None);
+        assert_eq!(params.offset, None);
+    }
+
+    #[test]
+    fn test_scan_untranslated_params() {
+        let json = json!({
+            "project_root_path": "/path",
+            "limit": 30
+        });
+        let params: ScanUntranslatedParams = serde_json::from_value(json).unwrap();
+        assert_eq!(params.project_root_path, "/path");
+        assert_eq!(params.limit, Some(30));
         assert_eq!(params.offset, None);
     }
 
@@ -563,6 +620,7 @@ mod tests {
             schemars::schema_for!(ScanOverviewParams),
             schemars::schema_for!(ScanPrimaryMissingParams),
             schemars::schema_for!(ScanReplicaLagParams),
+            schemars::schema_for!(ScanUntranslatedParams),
             schemars::schema_for!(GetLocalesParams),
             schemars::schema_for!(GetConfigParams),
             schemars::schema_for!(AddTranslationsParams),

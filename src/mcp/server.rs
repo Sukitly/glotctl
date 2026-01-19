@@ -27,7 +27,8 @@ use super::types::{
     LocaleInfo, LocalesResult, Pagination, PrimaryMissingItem, PrimaryMissingScanResult,
     PrimaryMissingStats, ReplicaLagItem, ReplicaLagScanResult, ReplicaLagStats,
     ScanHardcodedParams, ScanOverviewParams, ScanOverviewResult, ScanPrimaryMissingParams,
-    ScanReplicaLagParams,
+    ScanReplicaLagParams, ScanUntranslatedParams, UntranslatedItem, UntranslatedScanResult,
+    UntranslatedStats,
 };
 
 #[derive(Clone)]
@@ -137,7 +138,8 @@ impl GlotMcpServer {
         let runner = CheckRunner::new(check_args)
             .map_err(|e| McpError::internal_error(format!("Failed to initialize: {}", e), None))?
             .add(CheckType::Hardcoded)
-            .add(CheckType::Missing);
+            .add(CheckType::Missing)
+            .add(CheckType::Untranslated);
 
         let result = runner
             .run()
@@ -163,7 +165,7 @@ impl GlotMcpServer {
             .count();
 
         // Count replica lag and collect affected locales
-        let mut affected_locales: HashSet<String> = HashSet::new();
+        let mut replica_lag_locales: HashSet<String> = HashSet::new();
         let replica_lag_count = result
             .issues
             .iter()
@@ -171,14 +173,36 @@ impl GlotMcpServer {
             .map(|issue| {
                 if let Some(details) = &issue.details {
                     for locale in parse_missing_locales(details) {
-                        affected_locales.insert(locale);
+                        replica_lag_locales.insert(locale);
                     }
                 }
             })
             .count();
 
-        let mut affected_locales_vec: Vec<String> = affected_locales.into_iter().collect();
-        affected_locales_vec.sort();
+        let mut replica_lag_locales_vec: Vec<String> = replica_lag_locales.into_iter().collect();
+        replica_lag_locales_vec.sort();
+
+        // Count untranslated and collect affected locales
+        let mut untranslated_locales: HashSet<String> = HashSet::new();
+        let untranslated_count = result
+            .issues
+            .iter()
+            .filter(|i| i.rule == Rule::Untranslated)
+            .map(|issue| {
+                if let Some(file_path) = &issue.file_path {
+                    // Extract locale from file path (e.g., "messages/zh.json" -> "zh")
+                    if let Some(locale) = std::path::Path::new(file_path)
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                    {
+                        untranslated_locales.insert(locale.to_string());
+                    }
+                }
+            })
+            .count();
+
+        let mut untranslated_locales_vec: Vec<String> = untranslated_locales.into_iter().collect();
+        untranslated_locales_vec.sort();
 
         let overview = ScanOverviewResult {
             hardcoded: HardcodedStats {
@@ -190,7 +214,11 @@ impl GlotMcpServer {
             },
             replica_lag: ReplicaLagStats {
                 total_count: replica_lag_count,
-                affected_locales: affected_locales_vec,
+                affected_locales: replica_lag_locales_vec,
+            },
+            untranslated: UntranslatedStats {
+                total_count: untranslated_count,
+                affected_locales: untranslated_locales_vec,
             },
         };
 
@@ -336,6 +364,92 @@ impl GlotMcpServer {
         let has_more = offset + paginated.len() < total_count;
 
         let scan_result = ReplicaLagScanResult {
+            total_count,
+            items: paginated,
+            pagination: Pagination {
+                offset,
+                limit,
+                has_more,
+            },
+        };
+
+        let json_str = serde_json::to_string_pretty(&scan_result).map_err(|e| {
+            McpError::internal_error(format!("JSON serialization failed: {}", e), None)
+        })?;
+
+        Ok(CallToolResult::success(vec![Content::text(json_str)]))
+    }
+
+    /// Scan for values that are identical to primary locale (possibly not translated)
+    #[tool(
+        description = "Scan for translation values identical to primary locale. These may indicate text was copied without translation. Returns paginated list."
+    )]
+    async fn scan_untranslated(
+        &self,
+        params: Parameters<ScanUntranslatedParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let path = &params.0.project_root_path;
+        let limit = params.0.limit.map(|v| v as usize).unwrap_or(50).min(100);
+        let offset = params.0.offset.map(|v| v as usize).unwrap_or(0);
+
+        let check_args = CheckArgs {
+            common: CommonArgs {
+                path: std::path::PathBuf::from(path),
+                verbose: false,
+            },
+        };
+
+        let runner = CheckRunner::new(check_args)
+            .map_err(|e| McpError::internal_error(format!("Failed to initialize: {}", e), None))?
+            .add(CheckType::Untranslated);
+
+        let result = runner
+            .run()
+            .map_err(|e| McpError::internal_error(format!("Scan failed: {}", e), None))?;
+
+        // Get primary locale from config
+        let config = load_config(Path::new(path))
+            .map_err(|e| McpError::internal_error(format!("Failed to load config: {}", e), None))?;
+        let primary_locale = config.config.primary_locale.clone();
+
+        // Collect untranslated items
+        let all_items: Vec<UntranslatedItem> = result
+            .issues
+            .iter()
+            .filter(|i| i.rule == Rule::Untranslated)
+            .filter_map(|issue| {
+                let file_path = issue.file_path.as_ref()?;
+                // Extract locale from file path
+                let locale = std::path::Path::new(file_path)
+                    .file_stem()
+                    .and_then(|s| s.to_str())?
+                    .to_string();
+
+                // Extract value from details (format: "value")
+                let value = issue
+                    .details
+                    .as_ref()
+                    .map(|d| d.trim_matches('"').to_string())
+                    .unwrap_or_default();
+
+                Some(UntranslatedItem {
+                    key: issue.message.clone(),
+                    value,
+                    locale,
+                    primary_locale: primary_locale.clone(),
+                })
+            })
+            .collect();
+
+        let total_count = all_items.len();
+
+        // Apply pagination
+        let paginated: Vec<UntranslatedItem> =
+            all_items.into_iter().skip(offset).take(limit).collect();
+
+        let has_more = offset + paginated.len() < total_count;
+
+        let scan_result = UntranslatedScanResult {
             total_count,
             items: paginated,
             pagination: Pagination {
@@ -524,16 +638,18 @@ impl ServerHandler for GlotMcpServer {
                  Available tools:\n\
                  1. get_config - Get project configuration\n\
                  2. get_locales - Get available locale files and their key counts\n\
-                 3. scan_overview - Get statistics of all i18n issues (hardcoded, primary missing, replica lag)\n\
+                 3. scan_overview - Get statistics of all i18n issues (hardcoded, primary missing, replica lag, untranslated)\n\
                  4. scan_hardcoded - Get detailed hardcoded text list (paginated)\n\
                  5. scan_primary_missing - Get keys missing from primary locale (paginated)\n\
                  6. scan_replica_lag - Get keys missing from non-primary locales (paginated)\n\
-                 7. add_translations - Add keys to locale files\n\n\
+                 7. scan_untranslated - Get values identical to primary locale (paginated)\n\
+                 8. add_translations - Add keys to locale files\n\n\
                  Recommended Workflow:\n\
                  1. Use scan_overview to understand the overall state\n\
                  2. Fix hardcoded issues first (replace text with t() calls, add keys to primary locale)\n\
                  3. Then fix primary_missing issues (add missing keys to primary locale)\n\
-                 4. Finally fix replica_lag issues (sync keys to other locales)\n\n\
+                 4. Fix replica_lag issues (sync keys to other locales)\n\
+                 5. Finally fix untranslated issues (translate values that are identical to primary locale)\n\n\
                  IMPORTANT: Follow this order! Fixing hardcoded may create new primary_missing,\n\
                  and fixing primary_missing may create new replica_lag. This order minimizes rework."
                     .into(),
