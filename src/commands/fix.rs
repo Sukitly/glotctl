@@ -10,7 +10,7 @@ use unicode_width::UnicodeWidthStr;
 use crate::{
     RunResult,
     args::FixArgs,
-    checkers::missing_keys::{DynamicKeyReason, DynamicKeyWarning},
+    checkers::extraction::{DynamicKeyReason, DynamicKeyWarning},
     commands::context::CheckContext,
 };
 

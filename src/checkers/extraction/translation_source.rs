@@ -1,66 +1,10 @@
-//! Type definitions for missing key detection.
-
-use crate::checkers::schema::SchemaCallInfo;
-use crate::checkers::value_source::ResolvedKey;
-use crate::parsers::comment::PatternWarning;
-
-/// Result of scanning a file for missing translation keys.
-#[derive(Debug, Default)]
-pub struct MissingKeyResult {
-    pub used_keys: Vec<UsedKey>,
-    pub warnings: Vec<DynamicKeyWarning>,
-    pub schema_calls: Vec<SchemaCallInfo>,
-    /// Resolved keys from ValueAnalyzer
-    pub resolved_keys: Vec<ResolvedKey>,
-    /// Warnings from glot-message-keys annotation parsing
-    pub pattern_warnings: Vec<PatternWarning>,
-}
-
-/// A translation key used in code.
-#[derive(Debug, Clone)]
-pub struct UsedKey {
-    pub full_key: String,
-    pub file_path: String,
-    pub line: usize,
-    pub col: usize,
-    pub source_line: String,
-}
-
-/// Reason why a key is considered dynamic.
-#[derive(Debug, Clone)]
-pub enum DynamicKeyReason {
-    /// Key is a variable: t(keyName)
-    VariableKey,
-    /// Key is a template with expressions: t(`${prefix}.key`)
-    TemplateWithExpr,
-}
-
-/// Warning about a dynamic key that cannot be statically analyzed.
-#[derive(Debug, Clone)]
-pub struct DynamicKeyWarning {
-    pub file_path: String,
-    pub line: usize,
-    pub col: usize,
-    pub reason: DynamicKeyReason,
-    pub source_line: String,
-    /// Suggested pattern hint for the user (formatted message)
-    pub hint: Option<String>,
-    /// The raw pattern inferred from template (e.g., "Common.*.submit")
-    /// Used by fix command to generate glot-message-keys comments
-    pub pattern: Option<String>,
-    /// Whether this warning is in JSX context (affects comment syntax in fix command)
-    pub in_jsx_context: bool,
-}
-
-/// Stores glot-message-keys annotation data for a line.
-#[derive(Debug, Clone)]
-pub(super) struct GlotAnnotation {
-    /// Absolute keys after glob expansion (fully qualified keys).
-    pub keys: Vec<String>,
-    /// Relative patterns (starting with `.`) that need namespace expansion.
-    /// e.g., `.features.*.title` will become `Namespace.features.*.title`
-    pub relative_patterns: Vec<String>,
-}
+//! Translation function source types.
+//!
+//! Defines how translation functions are obtained in code:
+//! - Direct: `const t = useTranslations("Namespace")`
+//! - FromProps: `function Component({ t }: Props)`
+//! - FromFnCall: `const fn = (t) => { ... }`
+//! - Shadowed: parameter that shadows an outer binding
 
 /// Source of a translation function binding.
 ///
