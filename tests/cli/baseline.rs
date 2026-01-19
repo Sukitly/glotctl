@@ -562,3 +562,290 @@ export function App() {
     );
     Ok(())
 }
+
+// ============================================================
+// Untranslated Rule Tests
+// ============================================================
+
+#[test]
+fn test_baseline_untranslated_single_usage() -> Result<()> {
+    let test = CliTest::new()?;
+    setup_config(&test)?;
+
+    test.write_file(
+        "src/app.tsx",
+        r#"import { useTranslations } from "next-intl";
+export function App() {
+    const t = useTranslations("Common");
+    return <div>{t("greeting")}</div>;
+}
+"#,
+    )?;
+
+    // Same value in en and zh = untranslated
+    test.write_file("messages/en.json", r#"{"Common": {"greeting": "Hello"}}"#)?;
+    test.write_file("messages/zh.json", r#"{"Common": {"greeting": "Hello"}}"#)?;
+
+    assert_cmd_snapshot!(test.baseline_command());
+    Ok(())
+}
+
+#[test]
+fn test_baseline_untranslated_apply() -> Result<()> {
+    let test = CliTest::new()?;
+    setup_config(&test)?;
+
+    test.write_file(
+        "src/app.tsx",
+        r#"import { useTranslations } from "next-intl";
+export function App() {
+    const t = useTranslations("Common");
+    return <div>{t("greeting")}</div>;
+}
+"#,
+    )?;
+
+    test.write_file("messages/en.json", r#"{"Common": {"greeting": "Hello"}}"#)?;
+    test.write_file("messages/zh.json", r#"{"Common": {"greeting": "Hello"}}"#)?;
+
+    let mut cmd = test.baseline_command();
+    cmd.arg("--apply");
+    assert_cmd_snapshot!(cmd);
+
+    // Verify comment was inserted
+    let content = test.read_file("src/app.tsx")?;
+    assert!(
+        content.contains("glot-disable-next-line untranslated"),
+        "Expected untranslated comment, got:\n{}",
+        content
+    );
+    Ok(())
+}
+
+#[test]
+fn test_baseline_untranslated_multiple_usages() -> Result<()> {
+    let test = CliTest::new()?;
+    setup_config(&test)?;
+
+    // Same key used in two different files
+    test.write_file(
+        "src/app.tsx",
+        r#"import { useTranslations } from "next-intl";
+export function App() {
+    const t = useTranslations("Common");
+    return <div>{t("greeting")}</div>;
+}
+"#,
+    )?;
+
+    test.write_file(
+        "src/other.tsx",
+        r#"import { useTranslations } from "next-intl";
+export function Other() {
+    const t = useTranslations("Common");
+    return <span>{t("greeting")}</span>;
+}
+"#,
+    )?;
+
+    test.write_file("messages/en.json", r#"{"Common": {"greeting": "Hello"}}"#)?;
+    test.write_file("messages/zh.json", r#"{"Common": {"greeting": "Hello"}}"#)?;
+
+    let mut cmd = test.baseline_command();
+    cmd.arg("--apply");
+    assert_cmd_snapshot!(cmd);
+
+    // Verify comments were inserted in both files
+    let app_content = test.read_file("src/app.tsx")?;
+    let other_content = test.read_file("src/other.tsx")?;
+
+    assert!(
+        app_content.contains("glot-disable-next-line untranslated"),
+        "Expected untranslated comment in app.tsx, got:\n{}",
+        app_content
+    );
+    assert!(
+        other_content.contains("glot-disable-next-line untranslated"),
+        "Expected untranslated comment in other.tsx, got:\n{}",
+        other_content
+    );
+    Ok(())
+}
+
+#[test]
+fn test_baseline_rule_hardcoded_only() -> Result<()> {
+    let test = CliTest::new()?;
+    setup_config(&test)?;
+
+    // File has both hardcoded text and uses untranslated key
+    test.write_file(
+        "src/app.tsx",
+        r#"import { useTranslations } from "next-intl";
+export function App() {
+    const t = useTranslations("Common");
+    return (
+        <div>
+            <span>Hardcoded text</span>
+            <span>{t("greeting")}</span>
+        </div>
+    );
+}
+"#,
+    )?;
+
+    test.write_file("messages/en.json", r#"{"Common": {"greeting": "Hello"}}"#)?;
+    test.write_file("messages/zh.json", r#"{"Common": {"greeting": "Hello"}}"#)?;
+
+    // Only process hardcoded rule
+    let mut cmd = test.baseline_command();
+    cmd.args(["--apply", "--rule", "hardcoded"]);
+    assert_cmd_snapshot!(cmd);
+
+    let content = test.read_file("src/app.tsx")?;
+    // Should have hardcoded comment
+    assert!(
+        content.contains("glot-disable-next-line hardcoded"),
+        "Expected hardcoded comment, got:\n{}",
+        content
+    );
+    // Should NOT have untranslated comment
+    assert!(
+        !content.contains("untranslated"),
+        "Should not have untranslated comment when --rule hardcoded, got:\n{}",
+        content
+    );
+    Ok(())
+}
+
+#[test]
+fn test_baseline_rule_untranslated_only() -> Result<()> {
+    let test = CliTest::new()?;
+    setup_config(&test)?;
+
+    test.write_file(
+        "src/app.tsx",
+        r#"import { useTranslations } from "next-intl";
+export function App() {
+    const t = useTranslations("Common");
+    return (
+        <div>
+            <span>Hardcoded text</span>
+            <span>{t("greeting")}</span>
+        </div>
+    );
+}
+"#,
+    )?;
+
+    test.write_file("messages/en.json", r#"{"Common": {"greeting": "Hello"}}"#)?;
+    test.write_file("messages/zh.json", r#"{"Common": {"greeting": "Hello"}}"#)?;
+
+    // Only process untranslated rule
+    let mut cmd = test.baseline_command();
+    cmd.args(["--apply", "--rule", "untranslated"]);
+    assert_cmd_snapshot!(cmd);
+
+    let content = test.read_file("src/app.tsx")?;
+    // Should have untranslated comment
+    assert!(
+        content.contains("glot-disable-next-line untranslated"),
+        "Expected untranslated comment, got:\n{}",
+        content
+    );
+    // Should NOT have hardcoded comment (only untranslated was requested)
+    let hardcoded_count = content.matches("hardcoded").count();
+    assert_eq!(
+        hardcoded_count, 0,
+        "Should not have hardcoded comment when --rule untranslated, got:\n{}",
+        content
+    );
+    Ok(())
+}
+
+#[test]
+fn test_baseline_mixed_rules_same_line() -> Result<()> {
+    let test = CliTest::new()?;
+    setup_config(&test)?;
+
+    // Line has both hardcoded text AND uses untranslated key
+    test.write_file(
+        "src/app.tsx",
+        r#"import { useTranslations } from "next-intl";
+export function App() {
+    const t = useTranslations("Common");
+    return <div>{t("greeting")} suffix</div>;
+}
+"#,
+    )?;
+
+    test.write_file("messages/en.json", r#"{"Common": {"greeting": "Hello"}}"#)?;
+    test.write_file("messages/zh.json", r#"{"Common": {"greeting": "Hello"}}"#)?;
+
+    let mut cmd = test.baseline_command();
+    cmd.arg("--apply");
+    assert_cmd_snapshot!(cmd);
+
+    let content = test.read_file("src/app.tsx")?;
+    // The hardcoded "suffix" is on a line with t() call, so it should be skipped for hardcoded
+    // But untranslated should still be inserted for the t("greeting") usage
+    assert!(
+        content.contains("glot-disable-next-line untranslated"),
+        "Expected untranslated comment, got:\n{}",
+        content
+    );
+    Ok(())
+}
+
+#[test]
+fn test_baseline_no_untranslated_when_properly_translated() -> Result<()> {
+    let test = CliTest::new()?;
+    setup_config(&test)?;
+
+    test.write_file(
+        "src/app.tsx",
+        r#"import { useTranslations } from "next-intl";
+export function App() {
+    const t = useTranslations("Common");
+    return <div>{t("greeting")}</div>;
+}
+"#,
+    )?;
+
+    // Different values = properly translated
+    test.write_file("messages/en.json", r#"{"Common": {"greeting": "Hello"}}"#)?;
+    test.write_file("messages/zh.json", r#"{"Common": {"greeting": "你好"}}"#)?;
+
+    let mut cmd = test.baseline_command();
+    cmd.args(["--rule", "untranslated"]);
+    assert_cmd_snapshot!(cmd);
+    Ok(())
+}
+
+#[test]
+fn test_baseline_stats_output() -> Result<()> {
+    let test = CliTest::new()?;
+    setup_config(&test)?;
+
+    test.write_file(
+        "src/app.tsx",
+        r#"import { useTranslations } from "next-intl";
+export function App() {
+    const t = useTranslations("Common");
+    return (
+        <div>
+            <span>Hardcoded one</span>
+            <span>Hardcoded two</span>
+            <span>{t("greeting")}</span>
+        </div>
+    );
+}
+"#,
+    )?;
+
+    test.write_file("messages/en.json", r#"{"Common": {"greeting": "Hello"}}"#)?;
+    test.write_file("messages/zh.json", r#"{"Common": {"greeting": "Hello"}}"#)?;
+
+    // Dry-run to see stats
+    assert_cmd_snapshot!(test.baseline_command());
+    Ok(())
+}

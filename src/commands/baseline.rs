@@ -7,19 +7,44 @@ use colored::Colorize;
 use unicode_width::UnicodeWidthStr;
 
 use crate::{
-    RunResult, args::BaselineArgs, checkers::hardcoded::HardcodedChecker,
-    checkers::translation_calls::TranslationCallFinder, commands::context::CheckContext,
-    issue::HardcodedIssue, parsers::jsx::parse_jsx_file, reporter::SUCCESS_MARK,
+    RunResult,
+    args::BaselineArgs,
+    checkers::hardcoded::HardcodedChecker,
+    checkers::translation_calls::TranslationCallFinder,
+    commands::context::CheckContext,
+    directives::DisableRule,
+    issue::{HardcodedIssue, Issue},
+    parsers::jsx::parse_jsx_file,
+    reporter::SUCCESS_MARK,
+    rules::{Checker, untranslated::UntranslatedRule},
 };
 
-/// Comment to insert for hardcoded baseline suppression
-const JS_COMMENT_HARDCODED: &str = "// glot-disable-next-line hardcoded";
-const JSX_COMMENT_HARDCODED: &str = "{/* glot-disable-next-line hardcoded */}";
+/// Represents a location where a disable comment should be inserted.
+#[derive(Debug, Clone)]
+struct InsertionTarget {
+    file_path: String,
+    line: usize,
+    col: usize,
+    in_jsx_context: bool,
+    rules: HashSet<DisableRule>,
+}
 
-/// Result of collecting hardcoded issues and translation call lines.
-type IssuesCollection = (Vec<HardcodedIssue>, HashMap<String, HashSet<usize>>);
+/// Statistics for the insertion operation.
+#[derive(Debug, Default)]
+struct InsertionStats {
+    hardcoded: usize,
+    untranslated: usize,
+}
 
-/// Represents a comment insertion operation
+/// Result of collecting insertion targets.
+/// Contains: (targets grouped by file, stats, skipped hardcoded issues)
+type CollectResult = (
+    HashMap<String, Vec<InsertionTarget>>,
+    InsertionStats,
+    Vec<HardcodedIssue>,
+);
+
+/// Represents a comment insertion operation (used during file modification).
 #[derive(Debug, Clone)]
 struct CommentInsertion {
     /// 1-based line number where comment goes (above the issue line)
@@ -32,32 +57,41 @@ struct CommentInsertion {
 
 /// Runner for the baseline command.
 ///
-/// BaselineRunner identifies hardcoded text and optionally inserts
-/// `glot-disable-next-line` comments to suppress them.
+/// BaselineRunner identifies hardcoded text and untranslated keys, then optionally
+/// inserts `glot-disable-next-line` comments to suppress them.
 pub struct BaselineRunner {
     ctx: CheckContext,
     apply: bool,
+    rules: HashSet<DisableRule>,
 }
 
 impl BaselineRunner {
     pub fn new(args: BaselineArgs) -> Result<Self> {
         let ctx = CheckContext::new(&args.common)?;
 
+        // If no rules specified, process all rules
+        let rules = if args.rule.is_empty() {
+            DisableRule::all()
+        } else {
+            args.rule.into_iter().collect()
+        };
+
         Ok(Self {
             ctx,
             apply: args.apply,
+            rules,
         })
     }
 
     pub fn run(self) -> Result<RunResult> {
-        // Step 1: Collect all hardcoded issues and translation call lines
-        let (issues, translation_lines) = self.collect_issues()?;
+        // Step 1: Collect all insertion targets and stats
+        let (targets, stats, skipped_hardcoded) = self.collect_targets()?;
 
-        if issues.is_empty() {
+        if targets.is_empty() && skipped_hardcoded.is_empty() {
             println!(
                 "{} {}",
                 SUCCESS_MARK.green(),
-                "No hardcoded text found.".green()
+                "No issues found to baseline.".green()
             );
             return Ok(RunResult {
                 error_count: 0,
@@ -70,132 +104,155 @@ impl BaselineRunner {
             });
         }
 
-        // Step 2: Group by file and deduplicate by line
-        let grouped = Self::group_by_file(&issues);
-
-        // Step 3: Execute (dry-run or apply)
-        self.execute(grouped, &translation_lines)
+        // Step 2: Execute (dry-run or apply)
+        self.execute(targets, stats, skipped_hardcoded)
     }
 
-    /// Collects hardcoded issues and lines with translation calls.
-    ///
-    /// Returns a tuple of (issues, translation_lines_per_file).
-    fn collect_issues(&self) -> Result<IssuesCollection> {
-        let mut all_issues = Vec::new();
-        let mut translation_lines: HashMap<String, HashSet<usize>> = HashMap::new();
+    /// Collects all insertion targets from hardcoded and untranslated issues.
+    fn collect_targets(&self) -> Result<CollectResult> {
+        // Map from (file_path, line) to InsertionTarget for merging rules on same line
+        let mut targets_map: HashMap<(String, usize), InsertionTarget> = HashMap::new();
+        let mut stats = InsertionStats::default();
+        let mut skipped_hardcoded: Vec<HardcodedIssue> = Vec::new();
 
-        for file_path in &self.ctx.files {
-            let parsed = match parse_jsx_file(Path::new(file_path)) {
-                Ok(p) => p,
-                Err(e) => {
-                    if self.ctx.verbose {
-                        eprintln!("Warning: {} - {}", file_path, e);
+        // Collect hardcoded issues (if enabled)
+        if self.rules.contains(&DisableRule::Hardcoded) {
+            let mut translation_lines: HashMap<String, HashSet<usize>> = HashMap::new();
+
+            for file_path in &self.ctx.files {
+                let parsed = match parse_jsx_file(Path::new(file_path)) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        if self.ctx.verbose {
+                            eprintln!("Warning: {} - {}", file_path, e);
+                        }
+                        continue;
                     }
-                    continue;
+                };
+
+                // Find hardcoded issues
+                let checker = HardcodedChecker::new(
+                    file_path,
+                    &self.ctx.config.checked_attributes,
+                    &self.ctx.ignore_texts,
+                    &parsed.source_map,
+                    &parsed.comments,
+                );
+                let issues = checker.check(&parsed.module);
+
+                // Find lines with translation calls (for skip logic)
+                let lines = TranslationCallFinder::new(&parsed.source_map).find(&parsed.module);
+                if !lines.is_empty() {
+                    translation_lines.insert(file_path.clone(), lines);
                 }
-            };
 
-            // Find hardcoded issues
-            let checker = HardcodedChecker::new(
-                file_path,
-                &self.ctx.config.checked_attributes,
-                &self.ctx.ignore_texts,
-                &parsed.source_map,
-                &parsed.comments,
-            );
-            let issues = checker.check(&parsed.module);
-            all_issues.extend(issues);
-
-            // Find lines with translation calls (using AST, not string matching)
-            let lines = TranslationCallFinder::new(&parsed.source_map).find(&parsed.module);
-            if !lines.is_empty() {
-                translation_lines.insert(file_path.clone(), lines);
+                // Add hardcoded issues to targets (skip lines with translation calls)
+                let file_translation_lines = translation_lines.get(file_path);
+                for issue in issues {
+                    let has_translation = file_translation_lines
+                        .is_some_and(|lines| lines.contains(&issue.location.line));
+                    if has_translation {
+                        skipped_hardcoded.push(issue);
+                    } else {
+                        let key = (issue.location.file_path.clone(), issue.location.line);
+                        targets_map
+                            .entry(key.clone())
+                            .or_insert_with(|| InsertionTarget {
+                                file_path: issue.location.file_path.clone(),
+                                line: issue.location.line,
+                                col: issue.location.col.unwrap_or(1),
+                                in_jsx_context: issue.location.in_jsx_context,
+                                rules: HashSet::new(),
+                            })
+                            .rules
+                            .insert(DisableRule::Hardcoded);
+                        stats.hardcoded += 1;
+                    }
+                }
             }
         }
 
-        Ok((all_issues, translation_lines))
-    }
+        // Collect untranslated issues (if enabled)
+        if self.rules.contains(&DisableRule::Untranslated) {
+            let rule = UntranslatedRule;
+            let issues = rule.check(&self.ctx)?;
 
-    fn group_by_file(issues: &[HardcodedIssue]) -> HashMap<String, Vec<HardcodedIssue>> {
-        let mut grouped: HashMap<String, Vec<HardcodedIssue>> = HashMap::new();
-
-        for issue in issues {
-            grouped
-                .entry(issue.location.file_path.clone())
-                .or_default()
-                .push(issue.clone());
-        }
-
-        // Deduplicate: only keep one issue per line (first occurrence)
-        for issues in grouped.values_mut() {
-            issues.sort_by_key(|i| i.location.line);
-            issues.dedup_by_key(|i| i.location.line);
-        }
-
-        grouped
-    }
-
-    fn execute(
-        &self,
-        grouped: HashMap<String, Vec<HardcodedIssue>>,
-        translation_lines: &HashMap<String, HashSet<usize>>,
-    ) -> Result<RunResult> {
-        // Split issues into insertable and skipped (has translation call on same line)
-        let mut insertable: HashMap<String, Vec<HardcodedIssue>> = HashMap::new();
-        let mut skipped: Vec<HardcodedIssue> = Vec::new();
-
-        for (file_path, issues) in &grouped {
-            let file_translation_lines = translation_lines.get(file_path);
             for issue in issues {
-                let has_translation = file_translation_lines
-                    .is_some_and(|lines| lines.contains(&issue.location.line));
-                if has_translation {
-                    skipped.push(issue.clone());
-                } else {
-                    insertable
-                        .entry(file_path.clone())
-                        .or_default()
-                        .push(issue.clone());
+                if let Issue::Untranslated(ui) = issue {
+                    // Add each usage location as an insertion target
+                    for usage in &ui.usages {
+                        let key = (usage.file_path().to_string(), usage.line());
+                        targets_map
+                            .entry(key.clone())
+                            .or_insert_with(|| InsertionTarget {
+                                file_path: usage.file_path().to_string(),
+                                line: usage.line(),
+                                col: usage.col(),
+                                in_jsx_context: usage.in_jsx_context(),
+                                rules: HashSet::new(),
+                            })
+                            .rules
+                            .insert(DisableRule::Untranslated);
+                        stats.untranslated += 1;
+                    }
                 }
             }
         }
 
         // Sort skipped for deterministic output
-        skipped.sort_by(|a, b| {
+        skipped_hardcoded.sort_by(|a, b| {
             (&a.location.file_path, a.location.line).cmp(&(&b.location.file_path, b.location.line))
         });
 
-        let file_count = insertable.len();
-        let total_insertable: usize = insertable.values().map(|v| v.len()).sum();
-        let skip_count = skipped.len();
+        // Group targets by file path
+        let mut grouped: HashMap<String, Vec<InsertionTarget>> = HashMap::new();
+        for target in targets_map.into_values() {
+            grouped
+                .entry(target.file_path.clone())
+                .or_default()
+                .push(target);
+        }
+
+        // Sort targets within each file by line number
+        for targets in grouped.values_mut() {
+            targets.sort_by_key(|t| t.line);
+        }
+
+        Ok((grouped, stats, skipped_hardcoded))
+    }
+
+    fn execute(
+        &self,
+        targets: HashMap<String, Vec<InsertionTarget>>,
+        stats: InsertionStats,
+        skipped_hardcoded: Vec<HardcodedIssue>,
+    ) -> Result<RunResult> {
+        let file_count = targets.len();
+        let total_insertable: usize = targets.values().map(|v| v.len()).sum();
+        let skip_count = skipped_hardcoded.len();
 
         // Sort file paths for deterministic output
-        let mut sorted_paths: Vec<_> = insertable.keys().collect();
+        let mut sorted_paths: Vec<_> = targets.keys().collect();
         sorted_paths.sort();
 
-        // Show warnings for skipped issues first
-        if !skipped.is_empty() {
+        // Show warnings for skipped hardcoded issues first
+        if !skipped_hardcoded.is_empty() {
             println!("{} (line has translation call):", "Skipped".yellow().bold());
-            for issue in &skipped {
-                self.preview_issue(&issue.location.file_path, issue);
+            for issue in &skipped_hardcoded {
+                self.preview_skipped_issue(&issue.location.file_path, issue);
             }
         }
 
         if self.apply {
             // Actually insert comments
             for file_path in &sorted_paths {
-                let issues = insertable.get(*file_path).unwrap();
-                self.preview_changes(file_path, issues);
-                self.insert_comments(file_path, issues)?;
+                let file_targets = targets.get(*file_path).unwrap();
+                self.preview_targets(file_path, file_targets);
+                self.insert_comments(file_path, file_targets)?;
             }
 
             if total_insertable > 0 {
-                println!(
-                    "{} {} comment(s) in {} file(s).",
-                    "Inserted".green().bold(),
-                    total_insertable,
-                    file_count
-                );
+                self.print_stats("Inserted", &stats, file_count, true);
             }
 
             if skip_count > 0 {
@@ -218,17 +275,12 @@ impl BaselineRunner {
         } else {
             // Dry-run: preview changes
             for file_path in &sorted_paths {
-                let issues = insertable.get(*file_path).unwrap();
-                self.preview_changes(file_path, issues);
+                let file_targets = targets.get(*file_path).unwrap();
+                self.preview_targets(file_path, file_targets);
             }
 
             if total_insertable > 0 {
-                println!(
-                    "{} {} comment(s) in {} file(s).",
-                    "Would insert".yellow().bold(),
-                    total_insertable,
-                    file_count
-                );
+                self.print_stats("Would insert", &stats, file_count, false);
                 println!("Run with {} to insert these comments.", "--apply".cyan());
             }
 
@@ -253,7 +305,34 @@ impl BaselineRunner {
         }
     }
 
-    fn preview_issue(&self, file_path: &str, issue: &HardcodedIssue) {
+    /// Print statistics about inserted/would-insert comments.
+    fn print_stats(&self, action: &str, stats: &InsertionStats, file_count: usize, is_apply: bool) {
+        let total = stats.hardcoded + stats.untranslated;
+        if is_apply {
+            println!(
+                "{} {} comment(s) in {} file(s):",
+                action.green().bold(),
+                total,
+                file_count
+            );
+        } else {
+            println!(
+                "{} {} comment(s) in {} file(s):",
+                action.yellow().bold(),
+                total,
+                file_count
+            );
+        }
+        if stats.hardcoded > 0 {
+            println!("  - hardcoded: {}", stats.hardcoded);
+        }
+        if stats.untranslated > 0 {
+            println!("  - untranslated: {}", stats.untranslated);
+        }
+    }
+
+    /// Preview a skipped hardcoded issue (line has translation call).
+    fn preview_skipped_issue(&self, file_path: &str, issue: &HardcodedIssue) {
         let col = issue.location.col.unwrap_or(1);
         let source_line = issue.source_line.as_deref().unwrap_or("");
 
@@ -288,37 +367,42 @@ impl BaselineRunner {
         println!();
     }
 
-    fn preview_changes(&self, file_path: &str, issues: &[HardcodedIssue]) {
-        for issue in issues {
-            let comment = if issue.location.in_jsx_context {
-                JSX_COMMENT_HARDCODED
-            } else {
-                JS_COMMENT_HARDCODED
-            };
+    /// Preview insertion targets for a file.
+    fn preview_targets(&self, file_path: &str, targets: &[InsertionTarget]) {
+        // Read file content once for all targets in this file
+        let content = fs::read_to_string(file_path).unwrap_or_default();
+        let lines: Vec<&str> = content.lines().collect();
 
-            let col = issue.location.col.unwrap_or(1);
-            let source_line = issue.source_line.as_deref().unwrap_or("");
+        for target in targets {
+            let comment = Self::make_comment(target.in_jsx_context, &target.rules);
+            let source_line = lines
+                .get(target.line.saturating_sub(1))
+                .copied()
+                .unwrap_or("");
 
             // Clickable location: --> path:line:col
             println!(
                 "  {} {}:{}:{}",
                 "-->".blue(),
                 file_path,
-                issue.location.line,
-                col
+                target.line,
+                target.col
             );
 
             // Source context with line number
             println!("     {}", "|".blue());
             println!(
                 " {:>3} {} {}",
-                issue.location.line.to_string().blue(),
+                target.line.to_string().blue(),
                 "|".blue(),
                 source_line
             );
 
             // Caret pointing to column
-            let prefix: String = source_line.chars().take(col - 1).collect();
+            let prefix: String = source_line
+                .chars()
+                .take(target.col.saturating_sub(1))
+                .collect();
             let caret_padding = UnicodeWidthStr::width(prefix.as_str());
             println!(
                 "     {} {:>padding$}{}",
@@ -343,15 +427,25 @@ impl BaselineRunner {
         }
     }
 
-    /// Inserts `glot-disable-next-line` comments above each issue line.
+    /// Generate comment string for the given rules.
+    fn make_comment(in_jsx_context: bool, rules: &HashSet<DisableRule>) -> String {
+        let rules_str = DisableRule::format_rules(rules);
+        if in_jsx_context {
+            format!("{{/* glot-disable-next-line {} */}}", rules_str)
+        } else {
+            format!("// glot-disable-next-line {}", rules_str)
+        }
+    }
+
+    /// Inserts `glot-disable-next-line` comments above each target line.
     ///
     /// # Behavior
     /// - Comments are inserted from bottom to top to preserve line numbers
-    /// - Each comment matches the indentation of the issue line
+    /// - Each comment matches the indentation of the target line
     /// - Uses `{/* */}` for JSX context, `//` for JS context
     /// - Preserves original file newline style (CRLF or LF)
     /// - Preserves trailing newline if present
-    fn insert_comments(&self, file_path: &str, issues: &[HardcodedIssue]) -> Result<()> {
+    fn insert_comments(&self, file_path: &str, targets: &[InsertionTarget]) -> Result<()> {
         let content = fs::read_to_string(file_path)?;
 
         // Detect original newline style (CRLF vs LF)
@@ -365,23 +459,23 @@ impl BaselineRunner {
         let mut lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
 
         // Build insertions, sorted by line descending (insert from bottom up)
-        let mut insertions: Vec<CommentInsertion> = issues
+        let mut insertions: Vec<CommentInsertion> = targets
             .iter()
-            .map(|issue| {
-                let comment = if issue.location.in_jsx_context {
-                    JSX_COMMENT_HARDCODED.to_string()
-                } else {
-                    JS_COMMENT_HARDCODED.to_string()
-                };
+            .map(|target| {
+                let comment = Self::make_comment(target.in_jsx_context, &target.rules);
 
-                let source_line = issue.source_line.as_deref().unwrap_or("");
+                // Get indentation from the actual source line
+                let source_line = lines
+                    .get(target.line.saturating_sub(1))
+                    .map(|s| s.as_str())
+                    .unwrap_or("");
                 let indentation: String = source_line
                     .chars()
                     .take_while(|c| c.is_whitespace())
                     .collect();
 
                 CommentInsertion {
-                    line: issue.location.line,
+                    line: target.line,
                     comment,
                     indentation,
                 }
@@ -428,96 +522,78 @@ impl BaselineRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::issue::SourceLocation;
 
-    fn create_test_issue(file_path: &str, line: usize, in_jsx_context: bool) -> HardcodedIssue {
-        HardcodedIssue {
-            location: SourceLocation::new(file_path, line)
-                .with_col(1)
-                .with_jsx_context(in_jsx_context),
-            text: "test text".to_string(),
-            source_line: Some("    const x = <div>test text</div>".to_string()),
-        }
+    #[test]
+    fn test_insertion_target_struct() {
+        let target = InsertionTarget {
+            file_path: "src/app.tsx".to_string(),
+            line: 10,
+            col: 5,
+            in_jsx_context: true,
+            rules: [DisableRule::Hardcoded].into_iter().collect(),
+        };
+
+        assert_eq!(target.file_path, "src/app.tsx");
+        assert_eq!(target.line, 10);
+        assert_eq!(target.col, 5);
+        assert!(target.in_jsx_context);
+        assert!(target.rules.contains(&DisableRule::Hardcoded));
     }
 
     #[test]
-    fn test_group_by_file_single_file() {
-        let issues = vec![
-            create_test_issue("src/app.tsx", 10, true),
-            create_test_issue("src/app.tsx", 20, true),
-        ];
-
-        let grouped = BaselineRunner::group_by_file(&issues);
-
-        assert_eq!(grouped.len(), 1);
-        assert!(grouped.contains_key("src/app.tsx"));
-        assert_eq!(grouped.get("src/app.tsx").unwrap().len(), 2);
-    }
-
-    #[test]
-    fn test_group_by_file_multiple_files() {
-        let issues = vec![
-            create_test_issue("src/app.tsx", 10, true),
-            create_test_issue("src/utils.ts", 5, false),
-            create_test_issue("src/app.tsx", 20, true),
-        ];
-
-        let grouped = BaselineRunner::group_by_file(&issues);
-
-        assert_eq!(grouped.len(), 2);
-        assert_eq!(grouped.get("src/app.tsx").unwrap().len(), 2);
-        assert_eq!(grouped.get("src/utils.ts").unwrap().len(), 1);
-    }
-
-    #[test]
-    fn test_group_by_file_deduplicates_same_line() {
-        let issues = vec![
-            create_test_issue("src/app.tsx", 10, true),
-            create_test_issue("src/app.tsx", 10, true), // Same line
-            create_test_issue("src/app.tsx", 20, true),
-        ];
-
-        let grouped = BaselineRunner::group_by_file(&issues);
-
-        // Should only have 2 issues (line 10 deduplicated)
-        assert_eq!(grouped.get("src/app.tsx").unwrap().len(), 2);
-    }
-
-    #[test]
-    fn test_group_by_file_sorted_by_line() {
-        let issues = vec![
-            create_test_issue("src/app.tsx", 30, true),
-            create_test_issue("src/app.tsx", 10, true),
-            create_test_issue("src/app.tsx", 20, true),
-        ];
-
-        let grouped = BaselineRunner::group_by_file(&issues);
-        let file_issues = grouped.get("src/app.tsx").unwrap();
-
-        assert_eq!(file_issues[0].location.line, 10);
-        assert_eq!(file_issues[1].location.line, 20);
-        assert_eq!(file_issues[2].location.line, 30);
+    fn test_insertion_stats_default() {
+        let stats = InsertionStats::default();
+        assert_eq!(stats.hardcoded, 0);
+        assert_eq!(stats.untranslated, 0);
     }
 
     #[test]
     fn test_comment_insertion_struct() {
         let insertion = CommentInsertion {
             line: 5,
-            comment: "// glot-disable-next-line".to_string(),
+            comment: "// glot-disable-next-line hardcoded".to_string(),
             indentation: "    ".to_string(),
         };
 
         assert_eq!(insertion.line, 5);
-        assert_eq!(insertion.comment, "// glot-disable-next-line");
+        assert_eq!(insertion.comment, "// glot-disable-next-line hardcoded");
         assert_eq!(insertion.indentation, "    ");
     }
 
     #[test]
-    fn test_js_vs_jsx_comment_constants() {
-        assert_eq!(JS_COMMENT_HARDCODED, "// glot-disable-next-line hardcoded");
+    fn test_make_comment_js_single_rule() {
+        let rules: HashSet<DisableRule> = [DisableRule::Hardcoded].into_iter().collect();
+        let comment = BaselineRunner::make_comment(false, &rules);
+        assert_eq!(comment, "// glot-disable-next-line hardcoded");
+    }
+
+    #[test]
+    fn test_make_comment_jsx_single_rule() {
+        let rules: HashSet<DisableRule> = [DisableRule::Untranslated].into_iter().collect();
+        let comment = BaselineRunner::make_comment(true, &rules);
+        assert_eq!(comment, "{/* glot-disable-next-line untranslated */}");
+    }
+
+    #[test]
+    fn test_make_comment_js_multiple_rules() {
+        let rules: HashSet<DisableRule> = [DisableRule::Hardcoded, DisableRule::Untranslated]
+            .into_iter()
+            .collect();
+        let comment = BaselineRunner::make_comment(false, &rules);
+        // Rules should be sorted alphabetically
+        assert_eq!(comment, "// glot-disable-next-line hardcoded untranslated");
+    }
+
+    #[test]
+    fn test_make_comment_jsx_multiple_rules() {
+        let rules: HashSet<DisableRule> = [DisableRule::Untranslated, DisableRule::Hardcoded]
+            .into_iter()
+            .collect();
+        let comment = BaselineRunner::make_comment(true, &rules);
+        // Rules should be sorted alphabetically
         assert_eq!(
-            JSX_COMMENT_HARDCODED,
-            "{/* glot-disable-next-line hardcoded */}"
+            comment,
+            "{/* glot-disable-next-line hardcoded untranslated */}"
         );
     }
 }

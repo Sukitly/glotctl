@@ -17,6 +17,7 @@ exit_code: 0
      |                               ^
   +     // glot-disable-next-line hardcoded
 
-Inserted 1 comment(s) in 1 file(s).
+Inserted 1 comment(s) in 1 file(s):
+  - hardcoded: 1
 
 ----- stderr -----

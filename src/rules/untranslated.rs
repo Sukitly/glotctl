@@ -12,10 +12,10 @@ use anyhow::Result;
 
 use crate::{
     commands::{
-        check::{build_key_disable_map, build_key_usage_map, get_usages_for_key},
+        check::{build_key_disable_map, build_key_usage_map},
         context::CheckContext,
     },
-    issue::{Issue, MAX_KEY_USAGES, MessageLocation, UntranslatedIssue},
+    issue::{Issue, MessageLocation, UntranslatedIssue},
     rules::Checker,
     utils::contains_alphabetic,
 };
@@ -85,7 +85,9 @@ impl Checker for UntranslatedRule {
             identical_in.sort();
 
             if !identical_in.is_empty() {
-                let (usages, total_usages) = get_usages_for_key(&key_usages, key, MAX_KEY_USAGES);
+                // Store all usages (no limit) so baseline can insert comments at every location
+                let usages = key_usages.get(key).cloned().unwrap_or_default();
+                let total_usages = usages.len();
                 issues.push(Issue::Untranslated(UntranslatedIssue {
                     location: MessageLocation::new(&primary_entry.file_path, primary_entry.line),
                     key: key.clone(),
