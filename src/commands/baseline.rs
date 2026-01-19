@@ -32,8 +32,12 @@ struct InsertionTarget {
 /// Statistics for the insertion operation.
 #[derive(Debug, Default)]
 struct InsertionStats {
+    /// Number of comments inserted for hardcoded rule
     hardcoded: usize,
+    /// Number of comments inserted for untranslated rule
     untranslated: usize,
+    /// Number of unique untranslated keys processed
+    untranslated_keys: usize,
 }
 
 /// Result of collecting insertion targets.
@@ -112,8 +116,9 @@ impl BaselineRunner {
     fn collect_targets(&self) -> Result<CollectResult> {
         // Map from (file_path, line) to InsertionTarget for merging rules on same line
         let mut targets_map: HashMap<(String, usize), InsertionTarget> = HashMap::new();
-        let mut stats = InsertionStats::default();
         let mut skipped_hardcoded: Vec<HardcodedIssue> = Vec::new();
+        // Track unique untranslated keys for statistics
+        let mut untranslated_keys: HashSet<String> = HashSet::new();
 
         // Collect hardcoded issues (if enabled)
         if self.rules.contains(&DisableRule::Hardcoded) {
@@ -166,7 +171,6 @@ impl BaselineRunner {
                             })
                             .rules
                             .insert(DisableRule::Hardcoded);
-                        stats.hardcoded += 1;
                     }
                 }
             }
@@ -179,6 +183,9 @@ impl BaselineRunner {
 
             for issue in issues {
                 if let Issue::Untranslated(ui) = issue {
+                    // Track unique keys for statistics
+                    untranslated_keys.insert(ui.key.clone());
+
                     // Add each usage location as an insertion target
                     for usage in &ui.usages {
                         let key = (usage.file_path().to_string(), usage.line());
@@ -193,7 +200,6 @@ impl BaselineRunner {
                             })
                             .rules
                             .insert(DisableRule::Untranslated);
-                        stats.untranslated += 1;
                     }
                 }
             }
@@ -203,6 +209,20 @@ impl BaselineRunner {
         skipped_hardcoded.sort_by(|a, b| {
             (&a.location.file_path, a.location.line).cmp(&(&b.location.file_path, b.location.line))
         });
+
+        // Build statistics from actual targets (not from issue/usage counts)
+        let mut stats = InsertionStats {
+            untranslated_keys: untranslated_keys.len(),
+            ..Default::default()
+        };
+        for target in targets_map.values() {
+            if target.rules.contains(&DisableRule::Hardcoded) {
+                stats.hardcoded += 1;
+            }
+            if target.rules.contains(&DisableRule::Untranslated) {
+                stats.untranslated += 1;
+            }
+        }
 
         // Group targets by file path
         let mut grouped: HashMap<String, Vec<InsertionTarget>> = HashMap::new();
@@ -324,10 +344,13 @@ impl BaselineRunner {
             );
         }
         if stats.hardcoded > 0 {
-            println!("  - hardcoded: {}", stats.hardcoded);
+            println!("  - hardcoded: {} comment(s)", stats.hardcoded);
         }
         if stats.untranslated > 0 {
-            println!("  - untranslated: {}", stats.untranslated);
+            println!(
+                "  - untranslated: {} comment(s), {} key(s)",
+                stats.untranslated, stats.untranslated_keys
+            );
         }
     }
 
@@ -545,6 +568,7 @@ mod tests {
         let stats = InsertionStats::default();
         assert_eq!(stats.hardcoded, 0);
         assert_eq!(stats.untranslated, 0);
+        assert_eq!(stats.untranslated_keys, 0);
     }
 
     #[test]

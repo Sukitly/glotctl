@@ -20,6 +20,6 @@ exit_code: 0
   +             {/* glot-disable-next-line untranslated */}
 
 Inserted 1 comment(s) in 1 file(s):
-  - untranslated: 1
+  - untranslated: 1 comment(s), 1 key(s)
 
 ----- stderr -----

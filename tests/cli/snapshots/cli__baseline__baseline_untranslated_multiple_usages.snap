@@ -24,6 +24,6 @@ exit_code: 0
   +     {/* glot-disable-next-line untranslated */}
 
 Inserted 2 comment(s) in 2 file(s):
-  - untranslated: 2
+  - untranslated: 2 comment(s), 1 key(s)
 
 ----- stderr -----
