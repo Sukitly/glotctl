@@ -219,6 +219,14 @@ Options for handling dynamic keys:
    return <span>{t(`${item.type}.label`)}</span>;
    ```
 
+   <Tip>
+   Use `glot fix` to automatically insert these comments:
+   ```bash
+   npx glot fix --apply
+   ```
+   See [glot fix](/commands/fix) for details.
+   </Tip>
+
 3. **Suppress the warning** (last resort):
 
    ```tsx

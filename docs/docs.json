@@ -23,6 +23,7 @@
               "commands/init",
               "commands/check",
               "commands/baseline",
+              "commands/fix",
               "commands/clean"
             ]
           },

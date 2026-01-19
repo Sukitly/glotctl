@@ -11,6 +11,7 @@ use tempfile::TempDir;
 mod baseline;
 mod check;
 mod clean;
+mod fix;
 mod init;
 
 const BIN_NAME: &str = "glot";
@@ -77,6 +78,12 @@ impl CliTest {
     pub fn baseline_command(&self) -> Command {
         let mut cmd = self.command();
         cmd.arg("baseline");
+        cmd
+    }
+
+    pub fn fix_command(&self) -> Command {
+        let mut cmd = self.command();
+        cmd.arg("fix");
         cmd
     }
 

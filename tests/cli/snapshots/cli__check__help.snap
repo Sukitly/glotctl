@@ -18,6 +18,7 @@ Commands:
   check     Check for i18n issues (hardcoded text, missing keys, orphan keys)
   clean     Remove unused or orphan translation keys from JSON files
   baseline  Insert glot-disable-next-line comments to suppress hardcoded text warnings
+  fix       Insert glot-message-keys comments for dynamic translation keys
   init      Initialize a new .glotrc.json configuration file
   serve     Start MCP server for AI coding agents
   help      Print this message or the help of the given subcommand(s)

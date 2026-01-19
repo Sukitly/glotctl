@@ -1,0 +1,31 @@
+---
+source: tests/cli/fix.rs
+info:
+  program: glot
+  args:
+    - fix
+  env:
+    NO_COLOR: "1"
+---
+success: true
+exit_code: 0
+----- stdout -----
+Cannot fix 1 dynamic key(s) (variable keys without pattern hints):
+
+  --> ./src/app.tsx:9:20
+     |
+   9 |             <span>{t(keyName)}</span>
+     |                    ^
+   = reason: variable key
+
+  --> ./src/app.tsx:8:20
+     |
+   8 |             <span>{t(`${prefix}.title`)}</span>
+     |                    ^
+   +             {/* glot-message-keys "Common.*.title" */}
+
+Would insert 1 comment(s) in 1 file(s).
+Run with --apply to insert these comments.
+Note: 1 dynamic key(s) cannot be fixed (variable keys).
+
+----- stderr -----

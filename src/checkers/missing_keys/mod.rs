@@ -15,7 +15,7 @@ mod checker;
 mod types;
 
 pub use checker::MissingKeyChecker;
-pub use types::{DynamicKeyReason, MissingKeyResult, UsedKey};
+pub use types::{DynamicKeyReason, DynamicKeyWarning, MissingKeyResult, UsedKey};
 
 #[cfg(test)]
 mod tests;

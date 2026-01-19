@@ -516,6 +516,16 @@ Or use glob patterns:
 return <span>{t(`items.${item.type}`)}</span>;
 ```
 
+**Option 4: Use `glot fix` to auto-insert declarations**
+
+Run the fix command to automatically insert `glot-message-keys` comments:
+
+```bash
+npx glot fix --apply
+```
+
+This analyzes your template literal keys and inserts appropriate patterns. See [glot fix](/commands/fix) for details.
+
 </Accordion>
 
 <Info>

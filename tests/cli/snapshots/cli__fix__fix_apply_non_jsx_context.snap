@@ -1,0 +1,22 @@
+---
+source: tests/cli/fix.rs
+info:
+  program: glot
+  args:
+    - fix
+    - "--apply"
+  env:
+    NO_COLOR: "1"
+---
+success: true
+exit_code: 0
+----- stdout -----
+  --> ./src/app.tsx:6:17
+     |
+   6 |     console.log(t(`error.${code}`));
+     |                 ^
+   +     // glot-message-keys "Common.error.*"
+
+Inserted 1 comment(s) in 1 file(s).
+
+----- stderr -----

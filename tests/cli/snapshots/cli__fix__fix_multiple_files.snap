@@ -1,0 +1,28 @@
+---
+source: tests/cli/fix.rs
+info:
+  program: glot
+  args:
+    - fix
+    - "--apply"
+  env:
+    NO_COLOR: "1"
+---
+success: true
+exit_code: 0
+----- stdout -----
+  --> ./src/app.tsx:6:18
+     |
+   6 |     return <div>{t(`${prefix}.title`)}</div>;
+     |                  ^
+   +     // glot-message-keys "Common.*.title"
+
+  --> ./src/button.tsx:6:21
+     |
+   6 |     return <button>{t(`${type}.label`)}</button>;
+     |                     ^
+   +     // glot-message-keys "Button.*.label"
+
+Inserted 2 comment(s) in 2 file(s).
+
+----- stderr -----
