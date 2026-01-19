@@ -26,6 +26,7 @@ impl Arguments {
             Some(Command::Check(cmd)) => cmd.args.common.verbose,
             Some(Command::Clean(cmd)) => cmd.args.common.verbose,
             Some(Command::Baseline(cmd)) => cmd.args.common.verbose,
+            Some(Command::Fix(cmd)) => cmd.args.common.verbose,
             Some(Command::Init) | Some(Command::Serve) | None => false,
         }
     }
@@ -97,6 +98,22 @@ pub struct BaselineCommand {
     pub args: BaselineArgs,
 }
 
+#[derive(Debug, Parser)]
+pub struct FixArgs {
+    #[command(flatten)]
+    pub common: CommonArgs,
+
+    /// Actually insert comments (default is dry-run)
+    #[arg(long)]
+    pub apply: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct FixCommand {
+    #[command(flatten)]
+    pub args: FixArgs,
+}
+
 #[derive(Debug, Subcommand)]
 pub enum Command {
     /// Check for i18n issues (hardcoded text, missing keys, orphan keys)
@@ -105,6 +122,8 @@ pub enum Command {
     Clean(CleanCommand),
     /// Insert glot-disable-next-line comments to suppress hardcoded text warnings
     Baseline(BaselineCommand),
+    /// Insert glot-message-keys comments for dynamic translation keys
+    Fix(FixCommand),
     /// Initialize a new .glotrc.json configuration file
     Init,
     /// Start MCP server for AI coding agents

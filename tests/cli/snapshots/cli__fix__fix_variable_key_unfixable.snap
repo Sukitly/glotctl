@@ -1,0 +1,24 @@
+---
+source: tests/cli/fix.rs
+info:
+  program: glot
+  args:
+    - fix
+  env:
+    NO_COLOR: "1"
+---
+success: true
+exit_code: 0
+----- stdout -----
+Cannot fix 1 dynamic key(s) (variable keys without pattern hints):
+
+  --> ./src/app.tsx:6:19
+     |
+   6 |     return <span>{t(keyName)}</span>;
+     |                   ^
+   = reason: variable key
+
+
+Note: No fixable dynamic keys (all are variable keys without hints).
+
+----- stderr -----

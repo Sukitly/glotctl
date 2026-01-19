@@ -1,0 +1,22 @@
+---
+source: tests/cli/fix.rs
+info:
+  program: glot
+  args:
+    - fix
+  env:
+    NO_COLOR: "1"
+---
+success: true
+exit_code: 0
+----- stdout -----
+  --> ./src/app.tsx:6:21
+     |
+   6 |     return <button>{t(`${prefix}.submit`)}</button>;
+     |                     ^
+   +     {/* glot-message-keys "Common.*.submit" */}
+
+Would insert 1 comment(s) in 1 file(s).
+Run with --apply to insert these comments.
+
+----- stderr -----

@@ -1,0 +1,22 @@
+---
+source: tests/cli/fix.rs
+info:
+  program: glot
+  args:
+    - fix
+    - "--apply"
+  env:
+    NO_COLOR: "1"
+---
+success: true
+exit_code: 0
+----- stdout -----
+  --> ./src/app.tsx:9:18
+     |
+   9 |                 {t(`${prefix}.deeply.nested`)}
+     |                  ^
+   +                 {/* glot-message-keys "Common.*.deeply.nested" */}
+
+Inserted 1 comment(s) in 1 file(s).
+
+----- stderr -----

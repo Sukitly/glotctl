@@ -1,8 +1,8 @@
 use std::{fs, path::Path};
 
 use crate::{
-    args::{Arguments, BaselineCommand, CheckCommand, CleanCommand, Command},
-    commands::{baseline::BaselineRunner, clean::CleanRunner, runner::CheckRunner},
+    args::{Arguments, BaselineCommand, CheckCommand, CleanCommand, Command, FixCommand},
+    commands::{baseline::BaselineRunner, clean::CleanRunner, fix::FixRunner, runner::CheckRunner},
     config::{CONFIG_FILE_NAME, default_config_json},
     issue::Issue,
 };
@@ -61,6 +61,7 @@ pub fn run(Arguments { command }: Arguments) -> Result<RunResult> {
         Some(Command::Check(cmd)) => check(cmd),
         Some(Command::Clean(cmd)) => clean(cmd),
         Some(Command::Baseline(cmd)) => baseline(cmd),
+        Some(Command::Fix(cmd)) => fix(cmd),
         Some(Command::Init) => {
             init()?;
             Ok(RunResult {
@@ -103,6 +104,10 @@ fn clean(cmd: CleanCommand) -> Result<RunResult> {
 
 fn baseline(cmd: BaselineCommand) -> Result<RunResult> {
     BaselineRunner::new(cmd.args)?.run()
+}
+
+fn fix(cmd: FixCommand) -> Result<RunResult> {
+    FixRunner::new(cmd.args)?.run()
 }
 
 fn init() -> Result<()> {

@@ -231,7 +231,13 @@ impl<'a> MissingKeyChecker<'a> {
         }
     }
 
-    fn add_warning(&mut self, loc: Loc, reason: DynamicKeyReason, hint: Option<String>) {
+    fn add_warning(
+        &mut self,
+        loc: Loc,
+        reason: DynamicKeyReason,
+        hint: Option<String>,
+        pattern: Option<String>,
+    ) {
         let source_line = loc
             .file
             .get_line(loc.line - 1)
@@ -244,6 +250,8 @@ impl<'a> MissingKeyChecker<'a> {
             reason,
             source_line,
             hint,
+            pattern,
+            in_jsx_context: self.in_jsx_context,
         });
     }
 
@@ -326,7 +334,7 @@ impl<'a> MissingKeyChecker<'a> {
                     DynamicKeyReason::VariableKey
                 };
                 // No hint for ternary - pattern inference is complex
-                self.add_warning(loc, reason, None);
+                self.add_warning(loc, reason, None, None);
             }
             _ => {
                 // New ValueAnalyzer can resolve, skip legacy warning
@@ -935,7 +943,7 @@ impl<'a> Visit for MissingKeyChecker<'a> {
                             } else {
                                 // No annotation - emit warning with hint if applicable
                                 let unwrapped = crate::checkers::unwrap_paren(&arg.expr);
-                                let (reason, hint) = if let Expr::Tpl(tpl) = unwrapped {
+                                let (reason, hint, pattern) = if let Expr::Tpl(tpl) = unwrapped {
                                     // For indirect sources (FromProps, FromFnCall), suggest relative pattern (starting with .)
                                     // For Direct, use absolute pattern with namespace
                                     let pattern = if translation_source.is_indirect() {
@@ -944,7 +952,7 @@ impl<'a> Visit for MissingKeyChecker<'a> {
                                     } else {
                                         Self::infer_pattern_from_template(tpl, &namespace)
                                     };
-                                    let hint = pattern.map(|p| {
+                                    let hint = pattern.as_ref().map(|p| {
                                         if self.in_jsx_context {
                                             format!(
                                                 "add `{{/* glot-message-keys \"{}\" */}}` to declare expected keys",
@@ -957,11 +965,11 @@ impl<'a> Visit for MissingKeyChecker<'a> {
                                             )
                                         }
                                     });
-                                    (DynamicKeyReason::TemplateWithExpr, hint)
+                                    (DynamicKeyReason::TemplateWithExpr, hint, pattern)
                                 } else {
-                                    (DynamicKeyReason::VariableKey, None)
+                                    (DynamicKeyReason::VariableKey, None, None)
                                 };
-                                self.add_warning(loc, reason, hint);
+                                self.add_warning(loc, reason, hint, pattern);
                             }
                         }
                         _ => {}
