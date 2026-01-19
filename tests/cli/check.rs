@@ -952,6 +952,64 @@ export function Tool({ toolName }) {
     Ok(())
 }
 
+/// Test that both static and dynamic missing keys are reported together.
+/// This ensures the CLI output is consistent when both types of issues exist.
+///
+/// The test verifies that:
+/// - Static missing keys (directly used t("key")) are reported
+/// - Dynamic missing keys from resolvable objects are expanded and reported
+/// - The total count reflects all individual missing keys
+#[test]
+fn test_missing_key_static_and_dynamic_combined() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    // Only Common.title exists
+    test.write_file(
+        "messages/en.json",
+        r#"{
+            "Tools": {
+                "create": "Create"
+            }
+        }"#,
+    )?;
+
+    test.write_file(
+        "src/app.tsx",
+        r#"
+// Static missing key
+const t = useTranslations("Tools");
+const missing = t("delete");
+
+// Dynamic missing keys from object (resolvable pattern)
+const toolKeys = {
+    update: "update",
+    archive: "archive",
+};
+function Tool({ name }: { name: keyof typeof toolKeys }) {
+    const key = toolKeys[name];
+    return t(key);
+}
+"#,
+    )?;
+
+    // Should report:
+    // - 1 static missing key (Tools.delete)
+    // - 2 dynamic missing keys (Tools.update, Tools.archive from toolKeys)
+    // Total: 3 missing keys
+    assert_cmd_snapshot!(test.check_command());
+
+    Ok(())
+}
+
 // ============================================
 // String Array Iteration Tests
 // ============================================

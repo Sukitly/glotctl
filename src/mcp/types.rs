@@ -346,6 +346,9 @@ pub struct PrimaryMissingItem {
     pub key: String,
     pub file_path: String,
     pub line: usize,
+    /// Source of the key if from dynamic key resolution (e.g., "from \"FEATURE_KEYS\"")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
 }
 
 // ============================================================

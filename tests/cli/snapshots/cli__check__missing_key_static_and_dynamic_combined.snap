@@ -1,0 +1,33 @@
+---
+source: tests/cli/check.rs
+info:
+  program: glot
+  args:
+    - check
+  env:
+    NO_COLOR: "1"
+---
+success: false
+exit_code: 1
+----- stdout -----
+warning: "Tools.create"  unused-key
+  --> ./messages/en.json:3:0
+   = note: ("Create")
+
+error: "Tools.delete"  missing-key
+  --> ./src/app.tsx:4:17
+   |
+ 4 | const missing = t("delete");
+   |                 ^
+
+error: "dynamic key from "object "toolKeys"""  missing-key
+  --> ./src/app.tsx:13:12
+   |
+13 |     return t(key);
+   |            ^
+   = note: missing: Tools.update, Tools.archive
+
+
+✘ 3 problems (2 errors, 1 warning)
+
+----- stderr -----
