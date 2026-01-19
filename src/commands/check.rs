@@ -7,16 +7,16 @@ use anyhow::Result;
 
 use crate::{
     checkers::{
+        extraction::{TranslationKeyVisitor, UsedKey},
         hardcoded::{HardcodedChecker, HardcodedIssue},
         key_objects::FileImports,
-        missing_keys::{MissingKeyChecker, UsedKey},
     },
     commands::context::Registries,
     issue::Issue,
     parsers::{json::MessageMap, jsx::parse_jsx_file},
 };
 
-pub use crate::checkers::missing_keys::MissingKeyResult;
+pub use crate::checkers::extraction::KeyExtractionResult;
 
 pub fn check_hardcoded(
     file_path: &str,
@@ -42,9 +42,9 @@ pub fn extract_translation_keys(
     registries: &Registries,
     file_imports: &FileImports,
     available_keys: &HashSet<String>,
-) -> Result<MissingKeyResult> {
+) -> Result<KeyExtractionResult> {
     let parsed_jsx = parse_jsx_file(Path::new(file_path))?;
-    let checker = MissingKeyChecker::new(
+    let visitor = TranslationKeyVisitor::new(
         file_path,
         &parsed_jsx.source_map,
         registries,
@@ -52,7 +52,7 @@ pub fn extract_translation_keys(
         &parsed_jsx.source,
         available_keys,
     );
-    Ok(checker.check(&parsed_jsx.module))
+    Ok(visitor.extract(&parsed_jsx.module))
 }
 
 pub fn find_missing_keys(used_keys: &[UsedKey], messages: &MessageMap) -> Vec<UsedKey> {

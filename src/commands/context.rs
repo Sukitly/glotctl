@@ -8,11 +8,11 @@ use anyhow::{Context as _, Result, anyhow};
 
 use crate::{
     args::CommonArgs,
+    checkers::extraction::KeyExtractionResult,
     checkers::key_objects::{
         KeyArrayRegistry, KeyObjectRegistry, StringArrayRegistry, TranslationFnCallRegistry,
         TranslationPropRegistry,
     },
-    checkers::missing_keys::MissingKeyResult,
     checkers::schema::SchemaRegistry,
     commands::shared,
     config::Config,
@@ -29,7 +29,7 @@ use std::collections::HashMap;
 pub type AllFileImports = HashMap<String, crate::checkers::key_objects::FileImports>;
 
 /// Type alias for all extraction results (one per file).
-pub type AllExtractions = HashMap<String, MissingKeyResult>;
+pub type AllExtractions = HashMap<String, KeyExtractionResult>;
 
 /// Registry of parsed symbol information (schemas, objects, arrays, translation props).
 /// Does NOT contain file_imports - that's stored separately.

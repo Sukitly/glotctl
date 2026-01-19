@@ -12,7 +12,7 @@ use anyhow::Result;
 
 use crate::{
     checkers::{
-        missing_keys::DynamicKeyReason, schema::expand_schema_keys, value_source::ValueSource,
+        extraction::DynamicKeyReason, schema::expand_schema_keys, value_source::ValueSource,
     },
     commands::{
         check::{find_missing_keys, find_replica_lag},
