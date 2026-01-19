@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Untranslated Detection**: Detect translation values identical to primary locale
+  - Reports as warnings (some values may intentionally be the same)
+  - Helps catch AI translation mistakes where text was copied without translation
+  - Run with `glot check untranslated` or included in `glot check`
+
 ## [0.1.0] - 2025-01-07
 
 ### Added

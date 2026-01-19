@@ -7,6 +7,7 @@ A fast CLI for checking internationalization (i18n) issues in Next.js projects u
 ## Features
 
 - 🔍 **Hardcoded Text Detection** - Find untranslated text in JSX/TSX
+- 🌐 **Untranslated Detection** - Detect values identical to primary locale
 - 🔑 **Missing Key Detection** - Identify keys used in code but missing from locale files
 - 🧹 **Orphan Key Detection** - Find unused keys in locale files
 - 🤖 **AI Integration** - MCP server for AI coding agents
@@ -98,6 +99,33 @@ warning: common.oldButton  orphan-key
   --> ./messages/en.json
   |
   | Key exists in locale file but is not used in code
+```
+
+### Untranslated Values
+
+Values in non-primary locales that are identical to the primary locale, possibly not translated:
+
+```jsonc
+// messages/en.json (primary)
+{
+  "common": {
+    "submit": "Submit"
+  }
+}
+
+// messages/zh.json - same as English!
+{
+  "common": {
+    "submit": "Submit"
+  }
+}
+```
+
+```
+warning: common.submit  untranslated
+  --> ./messages/zh.json:3:0
+  = note: "Submit"
+  = hint: Value is identical to primary locale (en), possibly not translated
 ```
 
 Clean up orphan keys:
