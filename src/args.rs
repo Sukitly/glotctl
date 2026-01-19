@@ -116,7 +116,7 @@ pub struct FixCommand {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
-    /// Check for i18n issues (hardcoded text, missing keys, orphan keys)
+    /// Check for i18n issues (hardcoded text, missing keys, orphan keys, untranslated values)
     Check(CheckCommand),
     /// Remove unused or orphan translation keys from JSON files
     Clean(CleanCommand),
