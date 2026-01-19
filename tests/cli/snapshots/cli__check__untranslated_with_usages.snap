@@ -11,15 +11,15 @@ info:
 success: true
 exit_code: 0
 ----- stdout -----
-warning: "Common.ok"  untranslated
-  --> ./messages/en.json:3:0
-  = note: ("OK") identical in: zh
+warning: "Common.cancel"  untranslated
+  --> ./messages/en.json:1:0
+  = note: ("Cancel") identical in: zh
   = used: (no usages found)
 
-warning: "Common.no"  untranslated
-  --> ./messages/en.json:4:0
-  = note: ("No") identical in: zh
-  = used: (no usages found)
+warning: "Common.submit"  untranslated
+  --> ./messages/en.json:1:0
+  = note: ("Submit") identical in: zh
+  = used: ./src/app.tsx:6:21
 
 
 ✘ 2 problems (0 errors, 2 warnings)

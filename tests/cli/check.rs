@@ -1708,3 +1708,91 @@ fn test_subcommand_untranslated() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn test_untranslated_with_usages() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    test.write_file(
+        "messages/en.json",
+        r#"{"Common": {"submit": "Submit", "cancel": "Cancel"}}"#,
+    )?;
+
+    // Untranslated - same value as English
+    test.write_file(
+        "messages/zh.json",
+        r#"{"Common": {"submit": "Submit", "cancel": "Cancel"}}"#,
+    )?;
+
+    // Use the keys in code
+    test.write_file(
+        "src/app.tsx",
+        r#"
+import {useTranslations} from 'next-intl';
+
+export default function App() {
+    const t = useTranslations('Common');
+    return <button>{t('submit')}</button>;
+}
+"#,
+    )?;
+
+    // Should show usage location
+    assert_cmd_snapshot!(test.check_command().arg("untranslated"));
+
+    Ok(())
+}
+
+#[test]
+fn test_replica_lag_with_usages() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    test.write_file(
+        "messages/en.json",
+        r#"{"Common": {"submit": "Submit", "cancel": "Cancel"}}"#,
+    )?;
+
+    // Missing cancel in Chinese
+    test.write_file("messages/zh.json", r#"{"Common": {"submit": "提交"}}"#)?;
+
+    // Use both keys in code
+    test.write_file(
+        "src/app.tsx",
+        r#"
+import {useTranslations} from 'next-intl';
+
+export default function App() {
+    const t = useTranslations('Common');
+    return (
+        <div>
+            <button>{t('submit')}</button>
+            <button>{t('cancel')}</button>
+        </div>
+    );
+}
+"#,
+    )?;
+
+    // Should show usage location for replica-lag
+    assert_cmd_snapshot!(test.check_command().arg("missing"));
+
+    Ok(())
+}

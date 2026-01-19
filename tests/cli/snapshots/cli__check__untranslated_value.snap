@@ -12,14 +12,14 @@ success: true
 exit_code: 0
 ----- stdout -----
 warning: "Common.submit"  untranslated
-  --> ./messages/zh.json:3:0
-  = note: "Submit"
-  = hint: Value is identical to primary locale (en), possibly not translated
+  --> ./messages/en.json:3:0
+  = note: ("Submit") identical in: zh
+  = used: (no usages found)
 
 warning: "Common.cancel"  untranslated
-  --> ./messages/zh.json:4:0
-  = note: "Cancel"
-  = hint: Value is identical to primary locale (en), possibly not translated
+  --> ./messages/en.json:4:0
+  = note: ("Cancel") identical in: zh
+  = used: (no usages found)
 
 
 ✘ 2 problems (0 errors, 2 warnings)

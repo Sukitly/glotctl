@@ -12,9 +12,9 @@ success: true
 exit_code: 0
 ----- stdout -----
 warning: "Common.submit"  untranslated
-  --> ./messages/zh.json:1:0
-  = note: "Submit button"
-  = hint: Value is identical to primary locale (en), possibly not translated
+  --> ./messages/en.json:1:0
+  = note: ("Submit button") identical in: zh
+  = used: (no usages found)
 
 
 ✘ 1 problems (0 errors, 1 warning)

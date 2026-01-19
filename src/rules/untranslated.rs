@@ -2,12 +2,26 @@
 //!
 //! Detects translation values that are identical to the primary locale,
 //! which may indicate that the text was not translated.
+//!
+//! Output format is consistent with replica-lag:
+//! - Points to primary locale file (source of truth)
+//! - Shows which locales have identical values
+//! - Shows where the key is used in code
 
 use anyhow::Result;
 
 use crate::{
-    commands::context::CheckContext, issue::Issue, rules::Checker, utils::contains_alphabetic,
+    commands::{
+        check::{build_key_usage_map, get_usages_for_key},
+        context::CheckContext,
+    },
+    issue::Issue,
+    rules::Checker,
+    utils::contains_alphabetic,
 };
+
+/// Maximum number of usage locations to include in issues
+const MAX_USAGES: usize = 3;
 
 pub struct UntranslatedRule;
 
@@ -16,14 +30,22 @@ impl Checker for UntranslatedRule {
         "untranslated"
     }
 
+    fn needs_registries(&self) -> bool {
+        // Need registries to build extractions for key usages
+        true
+    }
+
     fn needs_messages(&self) -> bool {
         true
     }
 
     fn check(&self, ctx: &CheckContext) -> Result<Vec<Issue>> {
         ctx.ensure_messages()?;
+        // Need extractions to get key usage locations
+        ctx.ensure_extractions()?;
 
         let messages = ctx.messages().expect("messages must be loaded");
+        let extractions = ctx.extractions().expect("extractions must be loaded");
         let primary_locale = &ctx.config.primary_locale;
 
         let Some(primary_messages) = &messages.primary_messages else {
@@ -31,36 +53,45 @@ impl Checker for UntranslatedRule {
             return Ok(Vec::new());
         };
 
+        // Build key usage map for showing where keys are used
+        let key_usages = build_key_usage_map(extractions);
+
         let mut issues = Vec::new();
 
-        // Check each non-primary locale
-        for (locale, locale_messages) in &messages.all_messages {
-            // Skip primary locale
-            if locale == primary_locale {
+        // Iterate over primary locale keys (like replica-lag)
+        for (key, primary_entry) in primary_messages {
+            // Skip if value has no alphabetic characters (pure numbers/symbols)
+            if !contains_alphabetic(&primary_entry.value) {
                 continue;
             }
 
-            for (key, entry) in locale_messages {
-                // Skip if value has no alphabetic characters (pure numbers/symbols)
-                if !contains_alphabetic(&entry.value) {
-                    continue;
-                }
+            // Collect locales with identical values
+            let mut identical_in: Vec<String> = messages
+                .all_messages
+                .iter()
+                .filter(|(locale, msgs)| {
+                    *locale != primary_locale
+                        && msgs.get(key).map(|e| &e.value) == Some(&primary_entry.value)
+                })
+                .map(|(locale, _)| locale.clone())
+                .collect();
+            identical_in.sort();
 
-                // Check if value is identical to primary locale
-                if let Some(primary_entry) = primary_messages.get(key)
-                    && entry.value == primary_entry.value
-                {
-                    issues.push(Issue::untranslated(
-                        &entry.file_path,
-                        entry.line,
-                        key,
-                        &entry.value,
-                        primary_locale,
-                    ));
-                }
+            if !identical_in.is_empty() {
+                let (usages, total_usages) = get_usages_for_key(&key_usages, key, MAX_USAGES);
+                issues.push(Issue::untranslated(
+                    key,
+                    &primary_entry.value,
+                    &primary_entry.file_path,
+                    primary_entry.line,
+                    &identical_in,
+                    usages,
+                    total_usages,
+                ));
             }
         }
 
+        issues.sort();
         Ok(issues)
     }
 }

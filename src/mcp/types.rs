@@ -349,6 +349,20 @@ pub struct PrimaryMissingItem {
 }
 
 // ============================================================
+// Common Types for Key Usages
+// ============================================================
+
+/// Location where a translation key is used in code.
+/// Used by replica-lag and untranslated scan results.
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct KeyUsageLocation {
+    pub file_path: String,
+    pub line: usize,
+    pub col: usize,
+}
+
+// ============================================================
 // Replica Lag Scan Types (scan_replica_lag)
 // ============================================================
 
@@ -367,8 +381,16 @@ pub struct ReplicaLagScanResult {
 pub struct ReplicaLagItem {
     pub key: String,
     pub value: String,
+    /// Primary locale file path where this key is defined
+    pub file_path: String,
+    /// Line number in primary locale file
+    pub line: usize,
     pub exists_in: String,
     pub missing_in: Vec<String>,
+    /// Locations where this key is used in code (max 3)
+    pub usages: Vec<KeyUsageLocation>,
+    /// Total number of usages (may be more than usages.len())
+    pub total_usages: usize,
 }
 
 // ============================================================
@@ -390,8 +412,17 @@ pub struct UntranslatedScanResult {
 pub struct UntranslatedItem {
     pub key: String,
     pub value: String,
-    pub locale: String,
+    /// Primary locale file path where this key is defined
+    pub file_path: String,
+    /// Line number in primary locale file
+    pub line: usize,
+    /// Locales where the value is identical to primary locale
+    pub identical_in: Vec<String>,
     pub primary_locale: String,
+    /// Locations where this key is used in code (max 3)
+    pub usages: Vec<KeyUsageLocation>,
+    /// Total number of usages (may be more than usages.len())
+    pub total_usages: usize,
 }
 
 // ============================================================

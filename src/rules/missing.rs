@@ -15,7 +15,7 @@ use crate::{
         extraction::DynamicKeyReason, schema::expand_schema_keys, value_source::ValueSource,
     },
     commands::{
-        check::{find_missing_keys, find_replica_lag},
+        check::{build_key_usage_map, find_missing_keys, find_replica_lag},
         context::CheckContext,
     },
     issue::Issue,
@@ -171,10 +171,14 @@ impl Checker for MissingKeysRule {
             }
         }
 
+        // Build key usage map for replica lag usages
+        let key_usages = build_key_usage_map(extractions);
+
         // Replica lag (keys missing in non-primary locales)
         issues.extend(find_replica_lag(
             &ctx.config.primary_locale,
             &messages.all_messages,
+            &key_usages,
         ));
 
         Ok(issues)
