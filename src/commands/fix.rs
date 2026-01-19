@@ -36,6 +36,31 @@ struct FixableWarning {
     warning: DynamicKeyWarning,
 }
 
+/// Warnings grouped by line, with merged patterns
+#[derive(Debug, Clone)]
+struct LineGroup {
+    /// 1-based line number
+    line: usize,
+    /// All patterns for this line (deduplicated)
+    patterns: Vec<String>,
+    /// Source line content
+    source_line: String,
+    /// First column for display
+    col: usize,
+}
+
+/// Determine if we should use JSX comment syntax based on the target line content.
+///
+/// This checks where the comment will be inserted (the line above), not where
+/// the `t()` call is. The logic is:
+/// - If the target line starts with `<` (JSX element) -> use `{/* */}`
+/// - If the target line starts with `{/*` (existing JSX comment) -> use `{/* */}`
+/// - Otherwise -> use `//`
+fn should_use_jsx_comment(source_line: &str) -> bool {
+    let trimmed = source_line.trim_start();
+    trimmed.starts_with('<') || trimmed.starts_with("{/*")
+}
+
 /// Runner for the fix command.
 ///
 /// FixRunner identifies dynamic translation keys and optionally inserts
@@ -96,8 +121,8 @@ impl FixRunner {
             });
         }
 
-        // Step 4: Group by file and execute
-        let grouped = Self::group_by_file(&fixable);
+        // Step 4: Group by file and line, then execute
+        let grouped = Self::group_by_file_and_line(&fixable);
         self.execute(grouped, unfixable.len())
     }
 
@@ -128,7 +153,18 @@ impl FixRunner {
 
         // Sort for deterministic output
         fixable.sort_by(|a, b| {
-            (&a.warning.file_path, a.warning.line).cmp(&(&b.warning.file_path, b.warning.line))
+            (
+                &a.warning.file_path,
+                a.warning.line,
+                a.warning.col,
+                a.warning.pattern.as_ref(),
+            )
+                .cmp(&(
+                    &b.warning.file_path,
+                    b.warning.line,
+                    b.warning.col,
+                    b.warning.pattern.as_ref(),
+                ))
         });
         unfixable.sort_by(|a, b| (&a.file_path, a.line).cmp(&(&b.file_path, b.line)));
 
@@ -183,32 +219,46 @@ impl FixRunner {
         }
     }
 
-    fn group_by_file(fixable: &[FixableWarning]) -> HashMap<String, Vec<FixableWarning>> {
-        let mut grouped: HashMap<String, Vec<FixableWarning>> = HashMap::new();
+    /// Groups warnings by file and line, merging patterns for same-line warnings.
+    fn group_by_file_and_line(fixable: &[FixableWarning]) -> HashMap<String, Vec<LineGroup>> {
+        let mut by_file: HashMap<String, HashMap<usize, LineGroup>> = HashMap::new();
 
         for fw in fixable {
-            grouped
-                .entry(fw.warning.file_path.clone())
-                .or_default()
-                .push(fw.clone());
+            let warning = &fw.warning;
+            let pattern = warning.pattern.as_ref().unwrap().clone();
+
+            let file_entry = by_file.entry(warning.file_path.clone()).or_default();
+            let line_group = file_entry.entry(warning.line).or_insert_with(|| LineGroup {
+                line: warning.line,
+                patterns: Vec::new(),
+                source_line: warning.source_line.clone(),
+                col: warning.col,
+            });
+
+            // Add pattern if not already present (deduplicate same pattern on same line)
+            if !line_group.patterns.contains(&pattern) {
+                line_group.patterns.push(pattern);
+            }
         }
 
-        // Sort by line within each file and deduplicate by line
-        for warnings in grouped.values_mut() {
-            warnings.sort_by_key(|w| w.warning.line);
-            warnings.dedup_by_key(|w| w.warning.line);
+        // Convert to final structure, sorted by line
+        let mut result: HashMap<String, Vec<LineGroup>> = HashMap::new();
+        for (file_path, line_map) in by_file {
+            let mut groups: Vec<LineGroup> = line_map.into_values().collect();
+            groups.sort_by_key(|g| g.line);
+            result.insert(file_path, groups);
         }
 
-        grouped
+        result
     }
 
     fn execute(
         &self,
-        grouped: HashMap<String, Vec<FixableWarning>>,
+        grouped: HashMap<String, Vec<LineGroup>>,
         unfixable_count: usize,
     ) -> Result<RunResult> {
         let file_count = grouped.len();
-        let total_fixable: usize = grouped.values().map(|v| v.len()).sum();
+        let total_comments: usize = grouped.values().map(|v| v.len()).sum();
 
         // Sort file paths for deterministic output
         let mut sorted_paths: Vec<_> = grouped.keys().collect();
@@ -217,16 +267,16 @@ impl FixRunner {
         if self.apply {
             // Actually insert comments
             for file_path in &sorted_paths {
-                let warnings = grouped.get(*file_path).unwrap();
-                self.preview_changes(file_path, warnings);
-                self.insert_comments(file_path, warnings)?;
+                let line_groups = grouped.get(*file_path).unwrap();
+                self.preview_changes(file_path, line_groups);
+                self.insert_comments(file_path, line_groups)?;
             }
 
-            if total_fixable > 0 {
+            if total_comments > 0 {
                 println!(
                     "{} {} comment(s) in {} file(s).",
                     "Inserted".green().bold(),
-                    total_fixable,
+                    total_comments,
                     file_count
                 );
             }
@@ -251,15 +301,15 @@ impl FixRunner {
         } else {
             // Dry-run: preview changes
             for file_path in &sorted_paths {
-                let warnings = grouped.get(*file_path).unwrap();
-                self.preview_changes(file_path, warnings);
+                let line_groups = grouped.get(*file_path).unwrap();
+                self.preview_changes(file_path, line_groups);
             }
 
-            if total_fixable > 0 {
+            if total_comments > 0 {
                 println!(
                     "{} {} comment(s) in {} file(s).",
                     "Would insert".yellow().bold(),
-                    total_fixable,
+                    total_comments,
                     file_count
                 );
                 println!("Run with {} to insert these comments.", "--apply".cyan());
@@ -275,7 +325,7 @@ impl FixRunner {
 
             // Dry-run: report count but don't exit with error code
             Ok(RunResult {
-                error_count: total_fixable,
+                error_count: total_comments,
                 warning_count: unfixable_count,
                 exit_on_errors: false, // dry-run should not fail CI
                 issues: Vec::new(),
@@ -286,32 +336,31 @@ impl FixRunner {
         }
     }
 
-    fn preview_changes(&self, file_path: &str, warnings: &[FixableWarning]) {
-        for fw in warnings {
-            let warning = &fw.warning;
-            let pattern = warning.pattern.as_ref().unwrap();
-            let comment = self.build_comment(pattern, warning.in_jsx_context);
+    fn preview_changes(&self, file_path: &str, line_groups: &[LineGroup]) {
+        for group in line_groups {
+            let use_jsx = should_use_jsx_comment(&group.source_line);
+            let comment = build_comment(&group.patterns, use_jsx);
 
             // Clickable location
             println!(
                 "  {} {}:{}:{}",
                 "-->".blue(),
                 file_path,
-                warning.line,
-                warning.col
+                group.line,
+                group.col
             );
 
             // Source context
             println!("     {}", "|".blue());
             println!(
                 " {:>3} {} {}",
-                warning.line.to_string().blue(),
+                group.line.to_string().blue(),
                 "|".blue(),
-                warning.source_line
+                group.source_line
             );
 
             // Caret
-            let prefix: String = warning.source_line.chars().take(warning.col - 1).collect();
+            let prefix: String = group.source_line.chars().take(group.col - 1).collect();
             let caret_padding = UnicodeWidthStr::width(prefix.as_str());
             println!(
                 "     {} {:>padding$}{}",
@@ -322,7 +371,7 @@ impl FixRunner {
             );
 
             // Comment to be inserted
-            let indentation: String = warning
+            let indentation: String = group
                 .source_line
                 .chars()
                 .take_while(|c: &char| c.is_whitespace())
@@ -337,27 +386,16 @@ impl FixRunner {
         }
     }
 
-    /// Builds the comment string based on context (JSX or JS).
-    fn build_comment(&self, pattern: &str, in_jsx_context: bool) -> String {
-        if in_jsx_context {
-            format!(
-                "{}\"{}\"{}",
-                JSX_COMMENT_PREFIX, pattern, JSX_COMMENT_SUFFIX
-            )
-        } else {
-            format!("{}\"{}\"", JS_COMMENT_PREFIX, pattern)
-        }
-    }
-
     /// Inserts `glot-message-keys` comments above each dynamic key line.
     ///
     /// # Behavior
     /// - Comments are inserted from bottom to top to preserve line numbers
     /// - Each comment matches the indentation of the source line
-    /// - Uses `{/* */}` for JSX context, `//` for JS context
+    /// - Uses `{/* */}` for JSX context (line starts with <), `//` otherwise
     /// - Preserves original file newline style (CRLF or LF)
     /// - Preserves trailing newline if present
-    fn insert_comments(&self, file_path: &str, warnings: &[FixableWarning]) -> Result<()> {
+    /// - Multiple patterns on the same line are merged into one comment
+    fn insert_comments(&self, file_path: &str, line_groups: &[LineGroup]) -> Result<()> {
         let content = fs::read_to_string(file_path)?;
 
         // Detect original newline style (CRLF vs LF)
@@ -371,21 +409,20 @@ impl FixRunner {
         let mut lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
 
         // Build insertions, sorted by line descending (insert from bottom up)
-        let mut insertions: Vec<CommentInsertion> = warnings
+        let mut insertions: Vec<CommentInsertion> = line_groups
             .iter()
-            .map(|fw| {
-                let warning = &fw.warning;
-                let pattern = warning.pattern.as_ref().unwrap();
-                let comment = self.build_comment(pattern, warning.in_jsx_context);
+            .map(|group| {
+                let use_jsx = should_use_jsx_comment(&group.source_line);
+                let comment = build_comment(&group.patterns, use_jsx);
 
-                let indentation: String = warning
+                let indentation: String = group
                     .source_line
                     .chars()
                     .take_while(|c: &char| c.is_whitespace())
                     .collect();
 
                 CommentInsertion {
-                    line: warning.line,
+                    line: group.line,
                     comment,
                     indentation,
                 }
@@ -427,32 +464,79 @@ impl FixRunner {
     }
 }
 
+/// Builds the comment string with one or more patterns.
+///
+/// Uses the target line to determine JSX vs JS comment syntax.
+fn build_comment(patterns: &[String], use_jsx: bool) -> String {
+    let patterns_str = patterns
+        .iter()
+        .map(|p| format!("\"{}\"", p))
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    if use_jsx {
+        format!(
+            "{}{}{}",
+            JSX_COMMENT_PREFIX, patterns_str, JSX_COMMENT_SUFFIX
+        )
+    } else {
+        format!("{}{}", JS_COMMENT_PREFIX, patterns_str)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// Build comment string based on context (test helper version).
-    fn build_comment(pattern: &str, in_jsx_context: bool) -> String {
-        if in_jsx_context {
-            format!(
-                "{}\"{}\"{}",
-                JSX_COMMENT_PREFIX, pattern, JSX_COMMENT_SUFFIX
-            )
-        } else {
-            format!("{}\"{}\"", JS_COMMENT_PREFIX, pattern)
-        }
-    }
-
     #[test]
-    fn test_build_comment_jsx_context() {
-        let comment = build_comment("Common.status.*", true);
+    fn test_build_comment_single_pattern_jsx() {
+        let comment = build_comment(&["Common.status.*".to_string()], true);
         assert_eq!(comment, "{/* glot-message-keys \"Common.status.*\" */}");
     }
 
     #[test]
-    fn test_build_comment_js_context() {
-        let comment = build_comment("Common.error.*", false);
+    fn test_build_comment_single_pattern_js() {
+        let comment = build_comment(&["Common.error.*".to_string()], false);
         assert_eq!(comment, "// glot-message-keys \"Common.error.*\"");
+    }
+
+    #[test]
+    fn test_build_comment_multiple_patterns_jsx() {
+        let patterns = vec!["Pattern.*.x".to_string(), "Pattern.*.y".to_string()];
+        let comment = build_comment(&patterns, true);
+        assert_eq!(
+            comment,
+            "{/* glot-message-keys \"Pattern.*.x\", \"Pattern.*.y\" */}"
+        );
+    }
+
+    #[test]
+    fn test_build_comment_multiple_patterns_js() {
+        let patterns = vec!["Pattern.*.x".to_string(), "Pattern.*.y".to_string()];
+        let comment = build_comment(&patterns, false);
+        assert_eq!(
+            comment,
+            "// glot-message-keys \"Pattern.*.x\", \"Pattern.*.y\""
+        );
+    }
+
+    #[test]
+    fn test_should_use_jsx_comment_element() {
+        assert!(should_use_jsx_comment("<span>{t(`key`)}</span>"));
+        assert!(should_use_jsx_comment("    <div>content</div>"));
+    }
+
+    #[test]
+    fn test_should_use_jsx_comment_existing_comment() {
+        assert!(should_use_jsx_comment("{/* existing comment */}"));
+        assert!(should_use_jsx_comment("  {/* comment */}"));
+    }
+
+    #[test]
+    fn test_should_use_jsx_comment_js_context() {
+        assert!(!should_use_jsx_comment("return <span>{t(`key`)}</span>;"));
+        assert!(!should_use_jsx_comment("const x = t(`key`);"));
+        assert!(!should_use_jsx_comment("    console.log(t(`key`));"));
     }
 
     #[test]

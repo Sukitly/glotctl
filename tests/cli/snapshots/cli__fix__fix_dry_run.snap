@@ -10,11 +10,11 @@ info:
 success: true
 exit_code: 0
 ----- stdout -----
-  --> ./src/app.tsx:6:21
+  --> ./src/app.tsx:7:18
      |
-   6 |     return <button>{t(`${prefix}.submit`)}</button>;
-     |                     ^
-   +     {/* glot-message-keys "Common.*.submit" */}
+   7 |         <button>{t(`${prefix}.submit`)}</button>
+     |                  ^
+   +         {/* glot-message-keys "Common.*.submit" */}
 
 Would insert 1 comment(s) in 1 file(s).
 Run with --apply to insert these comments.

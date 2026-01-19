@@ -19,6 +19,7 @@ fn test_fix_dry_run() -> Result<()> {
     let test = CliTest::new()?;
     setup_config(&test)?;
 
+    // Line starts with "<" so should use {/* */} comment
     test.write_file(
         "src/app.tsx",
         r#"import { useTranslations } from "next-intl";
@@ -26,7 +27,9 @@ fn test_fix_dry_run() -> Result<()> {
 const t = useTranslations("Common");
 
 export function Button({ prefix }: { prefix: string }) {
-    return <button>{t(`${prefix}.submit`)}</button>;
+    return (
+        <button>{t(`${prefix}.submit`)}</button>
+    );
 }
 "#,
     )?;
@@ -45,6 +48,7 @@ fn test_fix_apply_jsx_context() -> Result<()> {
     let test = CliTest::new()?;
     setup_config(&test)?;
 
+    // Line starts with "<" so should use {/* */} comment
     test.write_file(
         "src/app.tsx",
         r#"import { useTranslations } from "next-intl";
@@ -52,7 +56,9 @@ fn test_fix_apply_jsx_context() -> Result<()> {
 const t = useTranslations("Common");
 
 export function Button({ prefix }: { prefix: string }) {
-    return <button>{t(`${prefix}.submit`)}</button>;
+    return (
+        <button>{t(`${prefix}.submit`)}</button>
+    );
 }
 "#,
     )?;
@@ -66,7 +72,7 @@ export function Button({ prefix }: { prefix: string }) {
     cmd.arg("--apply");
     assert_cmd_snapshot!(cmd);
 
-    // Verify JSX comment was inserted
+    // Verify JSX comment was inserted (line starts with <)
     let content = test.read_file("src/app.tsx")?;
     assert!(
         content.contains("{/* glot-message-keys \"Common.*.submit\" */}"),
@@ -327,9 +333,101 @@ export function App({ prefix }: { prefix: string }) {
 
     let content = test.read_file("src/app.tsx")?;
     // Comment should have matching indentation (16 spaces for the t() call line)
+    // Line starts with "{" not "<", so uses // comment
     assert!(
-        content.contains("                {/* glot-message-keys"),
+        content.contains("                // glot-message-keys"),
         "Expected comment with matching indentation, got:\n{}",
+        content
+    );
+    Ok(())
+}
+
+#[test]
+fn test_fix_multiple_same_line() -> Result<()> {
+    let test = CliTest::new()?;
+    setup_config(&test)?;
+
+    // Two dynamic keys on the same line
+    test.write_file(
+        "src/app.tsx",
+        r#"import { useTranslations } from "next-intl";
+
+const t = useTranslations("Common");
+
+export function Multi({ a, b }: { a: string; b: string }) {
+    return (
+        <div>
+            <span>{t(`${a}.x`)} {t(`${b}.y`)}</span>
+        </div>
+    );
+}
+"#,
+    )?;
+
+    test.write_file(
+        "messages/en.json",
+        r#"{"Common": {"test": {"x": "X", "y": "Y"}}}"#,
+    )?;
+
+    let mut cmd = test.fix_command();
+    cmd.arg("--apply");
+    assert_cmd_snapshot!(cmd);
+
+    // Verify single comment with both patterns was inserted
+    let content = test.read_file("src/app.tsx")?;
+    let comment_count = content.matches("glot-message-keys").count();
+    assert_eq!(
+        comment_count, 1,
+        "Expected 1 merged comment, got {}:\n{}",
+        comment_count, content
+    );
+    // Should contain both patterns
+    assert!(
+        content.contains("\"Common.*.x\"") && content.contains("\"Common.*.y\""),
+        "Expected both patterns in comment:\n{}",
+        content
+    );
+    Ok(())
+}
+
+#[test]
+fn test_fix_single_line_jsx_return() -> Result<()> {
+    let test = CliTest::new()?;
+    setup_config(&test)?;
+
+    // Single line return with JSX - line starts with "return", not "<"
+    // So should use // comment, not {/* */}
+    test.write_file(
+        "src/app.tsx",
+        r#"import { useTranslations } from "next-intl";
+
+const t = useTranslations("Common");
+
+export function Button({ prefix }: { prefix: string }) {
+    return <button>{t(`${prefix}.label`)}</button>;
+}
+"#,
+    )?;
+
+    test.write_file(
+        "messages/en.json",
+        r#"{"Common": {"test": {"label": "Label"}}}"#,
+    )?;
+
+    let mut cmd = test.fix_command();
+    cmd.arg("--apply");
+    assert_cmd_snapshot!(cmd);
+
+    // Verify JS comment was used (not JSX comment)
+    let content = test.read_file("src/app.tsx")?;
+    assert!(
+        content.contains("// glot-message-keys"),
+        "Expected JS comment for single-line return, got:\n{}",
+        content
+    );
+    assert!(
+        !content.contains("{/* glot-message-keys"),
+        "Should NOT have JSX comment for single-line return, got:\n{}",
         content
     );
     Ok(())

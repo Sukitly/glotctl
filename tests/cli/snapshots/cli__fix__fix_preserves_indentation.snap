@@ -15,7 +15,7 @@ exit_code: 0
      |
    9 |                 {t(`${prefix}.deeply.nested`)}
      |                  ^
-   +                 {/* glot-message-keys "Common.*.deeply.nested" */}
+   +                 // glot-message-keys "Common.*.deeply.nested"
 
 Inserted 1 comment(s) in 1 file(s).
 
