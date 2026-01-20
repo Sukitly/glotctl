@@ -64,6 +64,19 @@ pub struct ScanUntranslatedParams {
     pub offset: Option<u64>,
 }
 
+/// Parameters for scan_type_mismatch tool
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ScanTypeMismatchParams {
+    /// Path to the project root directory
+    pub project_root_path: String,
+    /// Maximum number of items to return (default: 50, max: 100)
+    #[serde(default)]
+    pub limit: Option<u64>,
+    /// Number of items to skip (default: 0)
+    #[serde(default)]
+    pub offset: Option<u64>,
+}
+
 /// Parameters for get_locales tool
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct GetLocalesParams {
@@ -293,6 +306,7 @@ pub struct ScanOverviewResult {
     pub primary_missing: PrimaryMissingStats,
     pub replica_lag: ReplicaLagStats,
     pub untranslated: UntranslatedStats,
+    pub type_mismatch: TypeMismatchStats,
 }
 
 /// Statistics for hardcoded text issues
@@ -322,6 +336,14 @@ pub struct ReplicaLagStats {
 #[derive(Debug, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct UntranslatedStats {
+    pub total_count: usize,
+    pub affected_locales: Vec<String>,
+}
+
+/// Statistics for type mismatch issues
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TypeMismatchStats {
     pub total_count: usize,
     pub affected_locales: Vec<String>,
 }
@@ -429,6 +451,51 @@ pub struct UntranslatedItem {
 }
 
 // ============================================================
+// Type Mismatch Scan Types (scan_type_mismatch)
+// ============================================================
+
+/// Result of scan_type_mismatch operation
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TypeMismatchScanResult {
+    pub total_count: usize,
+    pub items: Vec<TypeMismatchItem>,
+    pub pagination: Pagination,
+}
+
+/// A value with type mismatch between primary and replica locales
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TypeMismatchItem {
+    /// Full expanded key path
+    pub key: String,
+    /// Expected type in primary locale (e.g., "array", "string")
+    pub expected_type: String,
+    /// Primary locale file path
+    pub primary_file_path: String,
+    /// Line number in primary locale file
+    pub primary_line: usize,
+    /// Primary locale code
+    pub primary_locale: String,
+    /// Locales with mismatched types
+    pub mismatched_in: Vec<TypeMismatchLocale>,
+    /// Locations where this key is used in code (max 3)
+    pub usages: Vec<KeyUsageLocation>,
+    /// Total number of usages (may be more than usages.len())
+    pub total_usages: usize,
+}
+
+/// Information about a locale with mismatched type
+#[derive(Debug, Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TypeMismatchLocale {
+    pub locale: String,
+    pub actual_type: String,
+    pub file_path: String,
+    pub line: usize,
+}
+
+// ============================================================
 // Common Types
 // ============================================================
 
@@ -523,6 +590,18 @@ mod tests {
             "limit": 30
         });
         let params: ScanUntranslatedParams = serde_json::from_value(json).unwrap();
+        assert_eq!(params.project_root_path, "/path");
+        assert_eq!(params.limit, Some(30));
+        assert_eq!(params.offset, None);
+    }
+
+    #[test]
+    fn test_scan_type_mismatch_params() {
+        let json = json!({
+            "project_root_path": "/path",
+            "limit": 30
+        });
+        let params: ScanTypeMismatchParams = serde_json::from_value(json).unwrap();
         assert_eq!(params.project_root_path, "/path");
         assert_eq!(params.limit, Some(30));
         assert_eq!(params.offset, None);

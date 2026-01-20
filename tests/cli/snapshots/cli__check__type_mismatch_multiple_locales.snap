@@ -1,0 +1,22 @@
+---
+source: tests/cli/check.rs
+info:
+  program: glot
+  args:
+    - check
+    - type-mismatch
+  env:
+    NO_COLOR: "1"
+---
+success: false
+exit_code: 1
+----- stdout -----
+error: "Common.tags"  type-mismatch
+  --> ./messages/en.json:3:0
+  = note: (array) mismatched in: ja (string) at ./messages/ja.json:3, zh (string) at ./messages/zh.json:3
+  = used: (no usages found)
+
+
+✘ 1 problems (1 error, 0 warnings)
+
+----- stderr -----
