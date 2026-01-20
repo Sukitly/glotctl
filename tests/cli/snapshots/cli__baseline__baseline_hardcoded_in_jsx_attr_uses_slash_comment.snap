@@ -1,0 +1,23 @@
+---
+source: tests/cli/baseline.rs
+info:
+  program: glot
+  args:
+    - baseline
+    - "--apply"
+  env:
+    NO_COLOR: "1"
+---
+success: true
+exit_code: 0
+----- stdout -----
+  --> ./src/app.jsx:2:31
+     |
+   2 |     return <input placeholder="Enter name" />;
+     |                               ^
+  +     // glot-disable-next-line hardcoded
+
+Inserted 1 comment(s) in 1 file(s):
+  - hardcoded: 1 comment(s)
+
+----- stderr -----

@@ -1,0 +1,23 @@
+---
+source: tests/cli/baseline.rs
+info:
+  program: glot
+  args:
+    - baseline
+    - "--apply"
+  env:
+    NO_COLOR: "1"
+---
+success: true
+exit_code: 0
+----- stdout -----
+  --> ./src/app.tsx:6:14
+     |
+   6 |             {t("greeting")}
+     |              ^
+  +             {/* glot-disable-next-line untranslated */}
+
+Inserted 1 comment(s) in 1 file(s):
+  - untranslated: 1 comment(s), 1 key(s)
+
+----- stderr -----
