@@ -961,14 +961,8 @@ export function App({ items }) {
 "#,
     )?;
 
-    test.write_file(
-        "messages/en.json",
-        r#"{"Common": {"item_label": "Item"}}"#,
-    )?;
-    test.write_file(
-        "messages/zh.json",
-        r#"{"Common": {"item_label": "Item"}}"#,
-    )?;
+    test.write_file("messages/en.json", r#"{"Common": {"item_label": "Item"}}"#)?;
+    test.write_file("messages/zh.json", r#"{"Common": {"item_label": "Item"}}"#)?;
 
     let mut cmd = test.baseline_command();
     cmd.arg("--apply");
