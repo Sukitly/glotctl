@@ -94,6 +94,11 @@ impl<'a> HardcodedChecker<'a> {
     /// - Text on its own line: `{/* */}` inside parent's children
     fn should_use_jsx_comment(&self, source_line: &str) -> bool {
         let trimmed_line = source_line.trim_start();
+        if self.jsx_state.in_expr
+            && (trimmed_line.starts_with(':') || trimmed_line.starts_with('?'))
+        {
+            return false;
+        }
         let line_starts_with_element = trimmed_line.starts_with('<');
         let state = &self.jsx_state;
 
