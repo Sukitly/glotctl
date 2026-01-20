@@ -11,11 +11,11 @@ info:
 success: true
 exit_code: 0
 ----- stdout -----
-  --> ./src/app.tsx:4:29
+  --> ./src/app.tsx:5:17
      |
-   4 |             <nav aria-label="Tabs">content</nav>
-     |                             ^
-  +             {/* glot-disable-next-line hardcoded */}
+   5 |                 This is standalone text
+     |                 ^
+  +                 {/* glot-disable-next-line hardcoded */}
 
 Inserted 1 comment(s) in 1 file(s):
   - hardcoded: 1 comment(s)

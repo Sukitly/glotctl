@@ -7,8 +7,8 @@ use std::collections::HashSet;
 
 use swc_common::{Loc, SourceMap, comments::SingleThreadedComments};
 use swc_ecma_ast::{
-    CallExpr, Callee, CondExpr, Expr, FnDecl, JSXElement, JSXFragment, Lit, MemberProp, Module,
-    ObjectPatProp, Pat, VarDecl, VarDeclarator,
+    CallExpr, Callee, CondExpr, Expr, FnDecl, JSXElement, JSXExprContainer, JSXFragment, Lit,
+    MemberProp, Module, ObjectPatProp, Pat, VarDecl, VarDeclarator,
 };
 use swc_ecma_visit::{Visit, VisitWith};
 
@@ -61,6 +61,7 @@ pub struct TranslationKeyVisitor<'a> {
 
     // State
     in_jsx_context: bool,
+    in_jsx_expr: bool,
 }
 
 impl<'a> TranslationKeyVisitor<'a> {
@@ -98,7 +99,21 @@ impl<'a> TranslationKeyVisitor<'a> {
             schema_calls: Vec::new(),
             resolved_keys: Vec::new(),
             in_jsx_context: false,
+            in_jsx_expr: false,
         }
+    }
+
+    fn should_use_jsx_comment(&self, source_line: &str) -> bool {
+        if !self.in_jsx_context {
+            return false;
+        }
+        if self.in_jsx_expr {
+            let trimmed = source_line.trim_start();
+            if trimmed.starts_with(':') || trimmed.starts_with('?') {
+                return false;
+            }
+        }
+        true
     }
 
     fn add_used_key(&mut self, loc: Loc, full_key: String) {
@@ -110,13 +125,14 @@ impl<'a> TranslationKeyVisitor<'a> {
         let untranslated_disabled = self
             .disable_context
             .should_ignore(loc.line, DisableRule::Untranslated);
+        let in_jsx_context = self.should_use_jsx_comment(&source_line);
         self.used_keys.push(UsedKey {
             full_key,
             file_path: self.file_path.to_string(),
             line: loc.line,
             col: loc.col_display + 1,
             source_line,
-            in_jsx_context: self.in_jsx_context,
+            in_jsx_context,
             untranslated_disabled,
         });
     }
@@ -147,6 +163,7 @@ impl<'a> TranslationKeyVisitor<'a> {
             .get_line(loc.line - 1)
             .map(|cow| cow.to_string())
             .unwrap_or_default();
+        let in_jsx_context = self.should_use_jsx_comment(&source_line);
         self.warnings.push(DynamicKeyWarning {
             file_path: self.file_path.to_string(),
             line: loc.line,
@@ -155,7 +172,7 @@ impl<'a> TranslationKeyVisitor<'a> {
             source_line,
             hint,
             pattern,
-            in_jsx_context: self.in_jsx_context,
+            in_jsx_context,
         });
     }
 
@@ -424,6 +441,13 @@ impl<'a> TranslationKeyVisitor<'a> {
 }
 
 impl<'a> Visit for TranslationKeyVisitor<'a> {
+    fn visit_jsx_expr_container(&mut self, node: &JSXExprContainer) {
+        let prev = self.in_jsx_expr;
+        self.in_jsx_expr = true;
+        node.visit_children_with(self);
+        self.in_jsx_expr = prev;
+    }
+
     fn visit_jsx_element(&mut self, node: &JSXElement) {
         node.opening.visit_with(self);
 

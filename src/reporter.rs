@@ -11,7 +11,7 @@ pub const SUCCESS_MARK: &str = "\u{2713}"; // ✓
 pub const FAILURE_MARK: &str = "\u{2718}"; // ✘
 use unicode_width::UnicodeWidthStr;
 
-use crate::issue::{Issue, IssueReport, Severity};
+use crate::issue::{Issue, IssueReport, MAX_KEY_USAGES, Severity};
 
 /// Print issues in a cargo-style format.
 ///
@@ -127,9 +127,11 @@ pub fn print_report(issues: &[Issue]) {
                     width = max_line_width
                 );
             } else {
-                for (i, usage) in usages.iter().enumerate() {
-                    let is_last = i == usages.len() - 1;
-                    let remaining = total.saturating_sub(usages.len());
+                // Limit displayed usages to MAX_KEY_USAGES for readability
+                let display_count = usages.len().min(MAX_KEY_USAGES);
+                for (i, usage) in usages.iter().take(display_count).enumerate() {
+                    let is_last = i == display_count - 1;
+                    let remaining = total.saturating_sub(display_count);
                     let suffix = if is_last && remaining > 0 {
                         format!(" (and {} more)", remaining)
                     } else {

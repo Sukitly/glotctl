@@ -12,7 +12,7 @@ use std::collections::{HashMap, HashSet};
 use swc_common::{SourceMap, comments::SingleThreadedComments};
 
 /// Rules that can be disabled via glot comments.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, clap::ValueEnum)]
 pub enum DisableRule {
     Hardcoded,
     Untranslated,
@@ -34,13 +34,24 @@ impl DisableRule {
     }
 
     /// Get the suffix string for this rule (used in baseline comments).
-    /// Reserved for future use when baseline supports multiple rules.
-    #[allow(dead_code)]
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Hardcoded => "hardcoded",
             Self::Untranslated => "untranslated",
         }
+    }
+
+    /// Format rules as a sorted, space-separated string for comment suffix.
+    ///
+    /// Example: `{Hardcoded, Untranslated}` -> `"hardcoded untranslated"`
+    pub fn format_rules(rules: &HashSet<Self>) -> String {
+        let mut sorted: Vec<_> = rules.iter().collect();
+        sorted.sort_by_key(|r| r.as_str());
+        sorted
+            .iter()
+            .map(|r| r.as_str())
+            .collect::<Vec<_>>()
+            .join(" ")
     }
 }
 
@@ -265,6 +276,30 @@ mod tests {
     fn test_disable_rule_as_str() {
         assert_eq!(DisableRule::Hardcoded.as_str(), "hardcoded");
         assert_eq!(DisableRule::Untranslated.as_str(), "untranslated");
+    }
+
+    #[test]
+    fn test_format_rules_single() {
+        let rules: HashSet<DisableRule> = [DisableRule::Hardcoded].into_iter().collect();
+        assert_eq!(DisableRule::format_rules(&rules), "hardcoded");
+
+        let rules: HashSet<DisableRule> = [DisableRule::Untranslated].into_iter().collect();
+        assert_eq!(DisableRule::format_rules(&rules), "untranslated");
+    }
+
+    #[test]
+    fn test_format_rules_multiple_sorted() {
+        // Should be sorted alphabetically: hardcoded < untranslated
+        let rules: HashSet<DisableRule> = [DisableRule::Untranslated, DisableRule::Hardcoded]
+            .into_iter()
+            .collect();
+        assert_eq!(DisableRule::format_rules(&rules), "hardcoded untranslated");
+    }
+
+    #[test]
+    fn test_format_rules_empty() {
+        let rules: HashSet<DisableRule> = HashSet::new();
+        assert_eq!(DisableRule::format_rules(&rules), "");
     }
 
     // ============================================================

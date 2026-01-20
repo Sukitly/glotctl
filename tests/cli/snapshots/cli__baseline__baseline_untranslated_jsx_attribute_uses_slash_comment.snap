@@ -11,13 +11,13 @@ info:
 success: true
 exit_code: 0
 ----- stdout -----
-  --> ./src/app.tsx:4:29
+  --> ./src/app.tsx:4:32
      |
-   4 |             <nav aria-label="Tabs">content</nav>
-     |                             ^
-  +             {/* glot-disable-next-line hardcoded */}
+   4 |     return <input placeholder={t("placeholder")} />;
+     |                                ^
+  +     // glot-disable-next-line untranslated
 
 Inserted 1 comment(s) in 1 file(s):
-  - hardcoded: 1 comment(s)
+  - untranslated: 1 comment(s), 1 key(s)
 
 ----- stderr -----

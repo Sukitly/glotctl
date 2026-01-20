@@ -5,16 +5,18 @@ info:
   args:
     - baseline
     - "--apply"
+    - "--rule"
+    - hardcoded
   env:
     NO_COLOR: "1"
 ---
 success: true
 exit_code: 0
 ----- stdout -----
-  --> ./src/app.tsx:4:29
+  --> ./src/app.tsx:6:19
      |
-   4 |             <nav aria-label="Tabs">content</nav>
-     |                             ^
+   6 |             <span>Hardcoded text</span>
+     |                   ^
   +             {/* glot-disable-next-line hardcoded */}
 
 Inserted 1 comment(s) in 1 file(s):

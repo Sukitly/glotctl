@@ -1,0 +1,36 @@
+---
+source: tests/cli/baseline.rs
+info:
+  program: glot
+  args:
+    - baseline
+  env:
+    NO_COLOR: "1"
+---
+success: true
+exit_code: 0
+----- stdout -----
+  --> ./src/app.tsx:6:19
+     |
+   6 |             <span>Hardcoded one</span>
+     |                   ^
+  +             {/* glot-disable-next-line hardcoded */}
+
+  --> ./src/app.tsx:7:19
+     |
+   7 |             <span>Hardcoded two</span>
+     |                   ^
+  +             {/* glot-disable-next-line hardcoded */}
+
+  --> ./src/app.tsx:8:20
+     |
+   8 |             <span>{t("greeting")}</span>
+     |                    ^
+  +             {/* glot-disable-next-line untranslated */}
+
+Would insert 3 comment(s) in 1 file(s):
+  - hardcoded: 2 comment(s)
+  - untranslated: 1 comment(s), 1 key(s)
+Run with --apply to insert these comments.
+
+----- stderr -----
