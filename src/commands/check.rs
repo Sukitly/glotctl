@@ -614,7 +614,7 @@ const e = <div>Detected 3</div>"#;
     }
 
     fn create_message_map(entries: &[(&str, &str)]) -> MessageMap {
-        use crate::parsers::json::MessageEntry;
+        use crate::parsers::json::{MessageEntry, ValueType};
         entries
             .iter()
             .map(|(k, v)| {
@@ -622,6 +622,7 @@ const e = <div>Detected 3</div>"#;
                     k.to_string(),
                     MessageEntry {
                         value: v.to_string(),
+                        value_type: ValueType::String,
                         file_path: "test.json".to_string(),
                         line: 1,
                     },

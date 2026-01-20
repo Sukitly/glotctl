@@ -6,6 +6,7 @@
 pub mod hardcoded;
 pub mod missing;
 pub mod orphan;
+pub mod type_mismatch;
 pub mod untranslated;
 
 use anyhow::Result;

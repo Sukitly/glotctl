@@ -2081,3 +2081,219 @@ export default function App() {
 
     Ok(())
 }
+
+// ============================================================
+// Type Mismatch Tests
+// ============================================================
+
+#[test]
+fn test_type_mismatch_array_vs_string() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    // English (primary locale) has an array
+    test.write_file(
+        "messages/en.json",
+        r#"{
+            "Page": {
+                "benefits": ["Fast", "Easy", "Reliable"]
+            }
+        }"#,
+    )?;
+
+    // Chinese locale has string instead of array (TYPE MISMATCH!)
+    test.write_file(
+        "messages/zh.json",
+        r#"{
+            "Page": {
+                "benefits": "快速、简单、可靠"
+            }
+        }"#,
+    )?;
+
+    test.write_file("src/app.tsx", r#"const x = 1;"#)?;
+
+    // Should detect type mismatch
+    assert_cmd_snapshot!(test.check_command().arg("type-mismatch"));
+
+    Ok(())
+}
+
+#[test]
+fn test_type_mismatch_no_issue_when_types_match() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    // English (primary locale) has an array
+    test.write_file(
+        "messages/en.json",
+        r#"{
+            "Page": {
+                "benefits": ["Fast", "Easy", "Reliable"]
+            }
+        }"#,
+    )?;
+
+    // Chinese locale also has array (correct!)
+    test.write_file(
+        "messages/zh.json",
+        r#"{
+            "Page": {
+                "benefits": ["快速", "简单", "可靠"]
+            }
+        }"#,
+    )?;
+
+    test.write_file("src/app.tsx", r#"const x = 1;"#)?;
+
+    // Should have no issues
+    assert_cmd_snapshot!(test.check_command().arg("type-mismatch"));
+
+    Ok(())
+}
+
+#[test]
+fn test_type_mismatch_multiple_locales() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    // English (primary locale) has an array
+    test.write_file(
+        "messages/en.json",
+        r#"{
+            "Common": {
+                "tags": ["tag1", "tag2"]
+            }
+        }"#,
+    )?;
+
+    // Chinese locale has string (TYPE MISMATCH!)
+    test.write_file(
+        "messages/zh.json",
+        r#"{
+            "Common": {
+                "tags": "标签1, 标签2"
+            }
+        }"#,
+    )?;
+
+    // Japanese locale also has string (TYPE MISMATCH!)
+    test.write_file(
+        "messages/ja.json",
+        r#"{
+            "Common": {
+                "tags": "タグ1、タグ2"
+            }
+        }"#,
+    )?;
+
+    test.write_file("src/app.tsx", r#"const x = 1;"#)?;
+
+    // Should detect type mismatch in both locales
+    assert_cmd_snapshot!(test.check_command().arg("type-mismatch"));
+
+    Ok(())
+}
+
+#[test]
+fn test_type_mismatch_with_usages() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    // English (primary locale) has an array
+    test.write_file(
+        "messages/en.json",
+        r#"{
+            "Page": {
+                "features": ["Feature 1", "Feature 2"]
+            }
+        }"#,
+    )?;
+
+    // Chinese locale has string (TYPE MISMATCH!)
+    test.write_file(
+        "messages/zh.json",
+        r#"{
+            "Page": {
+                "features": "功能1, 功能2"
+            }
+        }"#,
+    )?;
+
+    // Source file that uses the key
+    test.write_file(
+        "src/app.tsx",
+        r#"
+import {useTranslations} from 'next-intl';
+
+export default function App() {
+    const t = useTranslations('Page');
+    const features = t.raw('features');
+    return <ul>{features.map(f => <li key={f}>{f}</li>)}</ul>;
+}
+"#,
+    )?;
+
+    // Should detect type mismatch with usage location
+    assert_cmd_snapshot!(test.check_command().arg("type-mismatch"));
+
+    Ok(())
+}
+
+#[test]
+fn test_subcommand_type_mismatch() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    test.write_file("messages/en.json", r#"{"Page": {"items": ["a", "b"]}}"#)?;
+
+    // Type mismatch
+    test.write_file("messages/zh.json", r#"{"Page": {"items": "a, b"}}"#)?;
+
+    test.write_file("src/app.tsx", r#"const x = 1;"#)?;
+
+    // Run only type-mismatch check
+    assert_cmd_snapshot!(test.check_command().arg("type-mismatch"));
+
+    Ok(())
+}

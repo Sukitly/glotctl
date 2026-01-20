@@ -17,7 +17,10 @@ use std::fmt;
 
 use enum_dispatch::enum_dispatch;
 
-use crate::mcp::types::{HardcodedItem, KeyUsageLocation, ReplicaLagItem, UntranslatedItem};
+use crate::mcp::types::{
+    HardcodedItem, KeyUsageLocation, ReplicaLagItem, TypeMismatchItem, TypeMismatchLocale,
+    UntranslatedItem,
+};
 
 // ============================================================
 // Constants
@@ -190,6 +193,7 @@ pub enum Rule {
     UntrackedNamespace,
     ParseError,
     Untranslated,
+    TypeMismatch,
 }
 
 impl fmt::Display for Rule {
@@ -204,6 +208,7 @@ impl fmt::Display for Rule {
             Rule::UntrackedNamespace => write!(f, "untracked-namespace"),
             Rule::ParseError => write!(f, "parse-error"),
             Rule::Untranslated => write!(f, "untranslated"),
+            Rule::TypeMismatch => write!(f, "type-mismatch"),
         }
     }
 }
@@ -368,6 +373,56 @@ impl UntranslatedIssue {
     }
 }
 
+/// Information about a locale with mismatched value type.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct LocaleTypeMismatch {
+    pub locale: String,
+    pub actual_type: crate::parsers::json::ValueType,
+    pub file_path: String,
+    pub line: usize,
+}
+
+/// Value type mismatch between primary and replica locales.
+///
+/// This occurs when a key has different JSON types across locales.
+/// For example, primary locale has an array but replica has a string.
+/// This causes runtime crashes when the app expects one type but gets another.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TypeMismatchIssue {
+    pub location: MessageLocation,
+    pub key: String,
+    pub expected_type: crate::parsers::json::ValueType,
+    pub primary_locale: String,
+    pub mismatched_in: Vec<LocaleTypeMismatch>,
+    pub usages: Vec<KeyUsage>,
+    pub total_usages: usize,
+}
+
+impl TypeMismatchIssue {
+    /// Convert to MCP response type.
+    pub fn to_mcp_item(&self) -> TypeMismatchItem {
+        TypeMismatchItem {
+            key: self.key.clone(),
+            expected_type: self.expected_type.to_string(),
+            primary_file_path: self.location.file_path.clone(),
+            primary_line: self.location.line,
+            primary_locale: self.primary_locale.clone(),
+            mismatched_in: self
+                .mismatched_in
+                .iter()
+                .map(|m| TypeMismatchLocale {
+                    locale: m.locale.clone(),
+                    actual_type: m.actual_type.to_string(),
+                    file_path: m.file_path.clone(),
+                    line: m.line,
+                })
+                .collect(),
+            usages: self.usages.iter().map(KeyUsage::to_mcp_location).collect(),
+            total_usages: self.total_usages,
+        }
+    }
+}
+
 // ============================================================
 // Special Issue Types
 // ============================================================
@@ -432,6 +487,7 @@ pub enum Issue {
     UnusedKey(UnusedKeyIssue),
     OrphanKey(OrphanKeyIssue),
     Untranslated(UntranslatedIssue),
+    TypeMismatch(TypeMismatchIssue),
     UntrackedNamespace(UntrackedNamespaceIssue),
     MissingDynamicKeyCandidates(MissingDynamicKeyCandidatesIssue),
     ParseError(ParseErrorIssue),
@@ -682,6 +738,54 @@ impl IssueReport for UntranslatedIssue {
     }
 }
 
+impl IssueReport for TypeMismatchIssue {
+    fn file_path(&self) -> Option<&str> {
+        Some(&self.location.file_path)
+    }
+    fn line(&self) -> Option<usize> {
+        Some(self.location.line)
+    }
+    fn col(&self) -> Option<usize> {
+        self.location.col
+    }
+    fn message(&self) -> &str {
+        &self.key
+    }
+    fn severity(&self) -> Severity {
+        Severity::Error
+    }
+    fn rule(&self) -> Rule {
+        Rule::TypeMismatch
+    }
+    fn source_line(&self) -> Option<&str> {
+        None
+    }
+    fn hint(&self) -> Option<&str> {
+        None
+    }
+    fn format_details(&self) -> Option<String> {
+        // Format: "(array) mismatched in: zh (string) at ./messages/zh.json:8, ja (string) at ./messages/ja.json:8"
+        let mismatches: Vec<String> = self
+            .mismatched_in
+            .iter()
+            .map(|m| {
+                format!(
+                    "{} ({}) at {}:{}",
+                    m.locale, m.actual_type, m.file_path, m.line
+                )
+            })
+            .collect();
+        Some(format!(
+            "({}) mismatched in: {}",
+            self.expected_type,
+            mismatches.join(", ")
+        ))
+    }
+    fn usages(&self) -> Option<(&Vec<KeyUsage>, usize)> {
+        Some((&self.usages, self.total_usages))
+    }
+}
+
 impl IssueReport for UntrackedNamespaceIssue {
     fn file_path(&self) -> Option<&str> {
         Some(&self.location.file_path)
@@ -825,6 +929,7 @@ impl PartialOrd for Issue {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::parsers::json::ValueType;
 
     // ============================================================
     // SourceLocation Tests
@@ -1279,6 +1384,117 @@ mod tests {
             Some("missing: features.alpha, features.beta".to_string())
         );
         assert!(issue.usages().is_none());
+    }
+
+    // ============================================================
+    // TypeMismatchIssue Tests
+    // ============================================================
+
+    #[test]
+    fn test_type_mismatch_issue_report() {
+        let issue = TypeMismatchIssue {
+            location: MessageLocation::new("./messages/en.json", 5),
+            key: "Page.benefits".to_string(),
+            expected_type: ValueType::StringArray,
+            primary_locale: "en".to_string(),
+            mismatched_in: vec![LocaleTypeMismatch {
+                locale: "zh".to_string(),
+                actual_type: ValueType::String,
+                file_path: "./messages/zh.json".to_string(),
+                line: 8,
+            }],
+            usages: vec![KeyUsage::new(
+                SourceLocation::new("./src/app.tsx", 25)
+                    .with_col(10)
+                    .with_jsx_context(true),
+            )],
+            total_usages: 3,
+        };
+
+        assert_eq!(issue.file_path(), Some("./messages/en.json"));
+        assert_eq!(issue.line(), Some(5));
+        assert_eq!(issue.col(), None);
+        assert_eq!(issue.message(), "Page.benefits");
+        assert_eq!(issue.severity(), Severity::Error);
+        assert_eq!(issue.rule(), Rule::TypeMismatch);
+        assert!(issue.source_line().is_none());
+        assert!(issue.hint().is_none());
+        assert_eq!(
+            issue.format_details(),
+            Some("(array) mismatched in: zh (string) at ./messages/zh.json:8".to_string())
+        );
+
+        let (usages, total) = issue.usages().unwrap();
+        assert_eq!(usages.len(), 1);
+        assert_eq!(total, 3);
+        assert!(usages[0].in_jsx_context());
+    }
+
+    #[test]
+    fn test_type_mismatch_to_mcp_item() {
+        let issue = TypeMismatchIssue {
+            location: MessageLocation::new("./messages/en.json", 5),
+            key: "Page.benefits".to_string(),
+            expected_type: ValueType::StringArray,
+            primary_locale: "en".to_string(),
+            mismatched_in: vec![LocaleTypeMismatch {
+                locale: "zh".to_string(),
+                actual_type: ValueType::String,
+                file_path: "./messages/zh.json".to_string(),
+                line: 8,
+            }],
+            usages: vec![KeyUsage::new(
+                SourceLocation::new("./src/app.tsx", 25)
+                    .with_col(10)
+                    .with_jsx_context(true),
+            )],
+            total_usages: 1,
+        };
+
+        let item = issue.to_mcp_item();
+        assert_eq!(item.key, "Page.benefits");
+        assert_eq!(item.expected_type, "array");
+        assert_eq!(item.primary_file_path, "./messages/en.json");
+        assert_eq!(item.primary_line, 5);
+        assert_eq!(item.primary_locale, "en");
+        assert_eq!(item.mismatched_in.len(), 1);
+        assert_eq!(item.mismatched_in[0].locale, "zh");
+        assert_eq!(item.mismatched_in[0].actual_type, "string");
+        assert_eq!(item.mismatched_in[0].file_path, "./messages/zh.json");
+        assert_eq!(item.mismatched_in[0].line, 8);
+        assert_eq!(item.usages.len(), 1);
+        assert_eq!(item.total_usages, 1);
+    }
+
+    #[test]
+    fn test_type_mismatch_multiple_mismatched_locales() {
+        let issue = TypeMismatchIssue {
+            location: MessageLocation::new("./messages/en.json", 5),
+            key: "Page.benefits".to_string(),
+            expected_type: ValueType::StringArray,
+            primary_locale: "en".to_string(),
+            mismatched_in: vec![
+                LocaleTypeMismatch {
+                    locale: "zh".to_string(),
+                    actual_type: ValueType::String,
+                    file_path: "./messages/zh.json".to_string(),
+                    line: 8,
+                },
+                LocaleTypeMismatch {
+                    locale: "ja".to_string(),
+                    actual_type: ValueType::String,
+                    file_path: "./messages/ja.json".to_string(),
+                    line: 10,
+                },
+            ],
+            usages: vec![],
+            total_usages: 0,
+        };
+
+        assert_eq!(
+            issue.format_details(),
+            Some("(array) mismatched in: zh (string) at ./messages/zh.json:8, ja (string) at ./messages/ja.json:10".to_string())
+        );
     }
 
     // ============================================================

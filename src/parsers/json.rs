@@ -1,11 +1,34 @@
-use std::{collections::HashMap, fs, path::Path};
+use std::{collections::HashMap, fmt, fs, path::Path};
 
 use anyhow::{Context, Result, bail};
 use serde_json::Value;
 
+/// Type of JSON value at a key path.
+///
+/// Used to detect type mismatches between primary and replica locales.
+/// For example, if primary has an array but replica has a string, this
+/// causes runtime crashes when the app tries to iterate over the value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ValueType {
+    /// A simple string value
+    String,
+    /// A string array (accessed via t.raw() as a whole)
+    StringArray,
+}
+
+impl fmt::Display for ValueType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ValueType::String => write!(f, "string"),
+            ValueType::StringArray => write!(f, "array"),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct MessageEntry {
     pub value: String,
+    pub value_type: ValueType,
     pub file_path: String,
     pub line: usize,
 }
@@ -141,6 +164,7 @@ fn flatten_json(
                 prefix,
                 MessageEntry {
                     value: s.clone(),
+                    value_type: ValueType::String,
                     file_path: file_path.to_string(),
                     line,
                 },
@@ -165,6 +189,7 @@ fn flatten_json(
                     prefix,
                     MessageEntry {
                         value: values.join(", "),
+                        value_type: ValueType::StringArray,
                         file_path: file_path.to_string(),
                         line,
                     },

@@ -8,7 +8,7 @@ use crate::{
     issue::{Issue, IssueReport, Rule, Severity},
     rules::{
         Checker, hardcoded::HardcodedRule, missing::MissingKeysRule, orphan::OrphanKeysRule,
-        untranslated::UntranslatedRule,
+        type_mismatch::TypeMismatchRule, untranslated::UntranslatedRule,
     },
 };
 
@@ -18,6 +18,7 @@ pub enum CheckType {
     Missing,
     Orphan,
     Untranslated,
+    TypeMismatch,
 }
 
 /// The main orchestrator for check operations.
@@ -47,6 +48,7 @@ impl CheckRunner {
             CheckType::Missing => "missing_keys",
             CheckType::Orphan => "orphan_keys",
             CheckType::Untranslated => "untranslated",
+            CheckType::TypeMismatch => "type_mismatch",
         };
 
         // Deduplicate: skip if already added
@@ -59,6 +61,7 @@ impl CheckRunner {
             CheckType::Missing => self.checkers.push(Box::new(MissingKeysRule)),
             CheckType::Orphan => self.checkers.push(Box::new(OrphanKeysRule)),
             CheckType::Untranslated => self.checkers.push(Box::new(UntranslatedRule)),
+            CheckType::TypeMismatch => self.checkers.push(Box::new(TypeMismatchRule)),
         }
         self
     }
@@ -79,8 +82,16 @@ impl CheckRunner {
         self.add(CheckType::Untranslated)
     }
 
+    pub fn type_mismatch(self) -> Self {
+        self.add(CheckType::TypeMismatch)
+    }
+
     pub fn all(self) -> Self {
-        self.hardcoded().missing().orphan().untranslated()
+        self.hardcoded()
+            .missing()
+            .orphan()
+            .untranslated()
+            .type_mismatch()
     }
 
     pub fn run(self) -> Result<RunResult> {

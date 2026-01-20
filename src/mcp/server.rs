@@ -27,7 +27,8 @@ use super::types::{
     LocaleInfo, LocalesResult, Pagination, PrimaryMissingItem, PrimaryMissingScanResult,
     PrimaryMissingStats, ReplicaLagItem, ReplicaLagScanResult, ReplicaLagStats,
     ScanHardcodedParams, ScanOverviewParams, ScanOverviewResult, ScanPrimaryMissingParams,
-    ScanReplicaLagParams, ScanUntranslatedParams, UntranslatedItem, UntranslatedScanResult,
+    ScanReplicaLagParams, ScanTypeMismatchParams, ScanUntranslatedParams, TypeMismatchItem,
+    TypeMismatchScanResult, TypeMismatchStats, UntranslatedItem, UntranslatedScanResult,
     UntranslatedStats,
 };
 
@@ -135,7 +136,8 @@ impl GlotMcpServer {
             .map_err(|e| McpError::internal_error(format!("Failed to initialize: {}", e), None))?
             .add(CheckType::Hardcoded)
             .add(CheckType::Missing)
-            .add(CheckType::Untranslated);
+            .add(CheckType::Untranslated)
+            .add(CheckType::TypeMismatch);
 
         let result = runner
             .run()
@@ -208,6 +210,29 @@ impl GlotMcpServer {
         let mut untranslated_locales_vec: Vec<String> = untranslated_locales.into_iter().collect();
         untranslated_locales_vec.sort();
 
+        // Count type mismatch and collect affected locales
+        let mut type_mismatch_locales: HashSet<String> = HashSet::new();
+        let type_mismatch_count = result
+            .issues
+            .iter()
+            .filter_map(|i| {
+                if let Issue::TypeMismatch(mismatch) = i {
+                    Some(mismatch)
+                } else {
+                    None
+                }
+            })
+            .map(|mismatch| {
+                for locale_mismatch in &mismatch.mismatched_in {
+                    type_mismatch_locales.insert(locale_mismatch.locale.clone());
+                }
+            })
+            .count();
+
+        let mut type_mismatch_locales_vec: Vec<String> =
+            type_mismatch_locales.into_iter().collect();
+        type_mismatch_locales_vec.sort();
+
         let overview = ScanOverviewResult {
             hardcoded: HardcodedStats {
                 total_count: hardcoded_count,
@@ -223,6 +248,10 @@ impl GlotMcpServer {
             untranslated: UntranslatedStats {
                 total_count: untranslated_count,
                 affected_locales: untranslated_locales_vec,
+            },
+            type_mismatch: TypeMismatchStats {
+                total_count: type_mismatch_count,
+                affected_locales: type_mismatch_locales_vec,
             },
         };
 
@@ -440,6 +469,71 @@ impl GlotMcpServer {
         Ok(CallToolResult::success(vec![Content::text(json_str)]))
     }
 
+    /// Scan for type mismatches between primary and replica locales
+    #[tool(
+        description = "Scan for type mismatches between locales. For example: primary has array but replica has string. This causes runtime crashes. Returns paginated list with code usage locations."
+    )]
+    async fn scan_type_mismatch(
+        &self,
+        params: Parameters<ScanTypeMismatchParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let path = &params.0.project_root_path;
+        let limit = params.0.limit.map(|v| v as usize).unwrap_or(50).min(100);
+        let offset = params.0.offset.map(|v| v as usize).unwrap_or(0);
+
+        let check_args = CheckArgs {
+            common: CommonArgs {
+                path: std::path::PathBuf::from(path),
+                verbose: false,
+            },
+        };
+
+        let runner = CheckRunner::new(check_args)
+            .map_err(|e| McpError::internal_error(format!("Failed to initialize: {}", e), None))?
+            .add(CheckType::TypeMismatch);
+
+        let result = runner
+            .run()
+            .map_err(|e| McpError::internal_error(format!("Scan failed: {}", e), None))?;
+
+        // Collect type mismatch items
+        let all_items: Vec<TypeMismatchItem> = result
+            .issues
+            .iter()
+            .filter_map(|i| {
+                if let Issue::TypeMismatch(mismatch) = i {
+                    Some(mismatch.to_mcp_item())
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        let total_count = all_items.len();
+
+        // Apply pagination
+        let paginated: Vec<TypeMismatchItem> =
+            all_items.into_iter().skip(offset).take(limit).collect();
+
+        let has_more = offset + paginated.len() < total_count;
+
+        let scan_result = TypeMismatchScanResult {
+            total_count,
+            items: paginated,
+            pagination: Pagination {
+                offset,
+                limit,
+                has_more,
+            },
+        };
+
+        let json_str = serde_json::to_string_pretty(&scan_result).map_err(|e| {
+            McpError::internal_error(format!("JSON serialization failed: {}", e), None)
+        })?;
+
+        Ok(CallToolResult::success(vec![Content::text(json_str)]))
+    }
+
     /// Add translation keys to multiple locale files
     #[tool(
         description = "Add translation keys to multiple locale files. Supports nested keys (e.g., 'common.title') and string arrays."
@@ -612,20 +706,22 @@ impl ServerHandler for GlotMcpServer {
                  Available tools:\n\
                  1. get_config - Get project configuration\n\
                  2. get_locales - Get available locale files and their key counts\n\
-                 3. scan_overview - Get statistics of all i18n issues (hardcoded, primary missing, replica lag, untranslated)\n\
+                 3. scan_overview - Get statistics of all i18n issues (hardcoded, primary missing, replica lag, untranslated, type mismatch)\n\
                  4. scan_hardcoded - Get detailed hardcoded text list (paginated)\n\
                  5. scan_primary_missing - Get keys missing from primary locale (paginated)\n\
                  6. scan_replica_lag - Get keys missing from non-primary locales (paginated)\n\
                  7. scan_untranslated - Get values identical to primary locale (paginated)\n\
-                 8. add_translations - Add keys to locale files\n\n\
+                 8. scan_type_mismatch - Get type mismatches between locales (paginated)\n\
+                 9. add_translations - Add keys to locale files\n\n\
                  Recommended Workflow:\n\
                  1. Use scan_overview to understand the overall state\n\
-                 2. Fix hardcoded issues first (replace text with t() calls, add keys to primary locale)\n\
-                 3. Then fix primary_missing issues (add missing keys to primary locale)\n\
-                 4. Fix replica_lag issues (sync keys to other locales)\n\
-                 5. Finally fix untranslated issues (translate values that are identical to primary locale)\n\n\
-                 IMPORTANT: Follow this order! Fixing hardcoded may create new primary_missing,\n\
-                 and fixing primary_missing may create new replica_lag. This order minimizes rework."
+                 2. Fix type_mismatch issues FIRST (these cause runtime crashes!)\n\
+                 3. Fix hardcoded issues (replace text with t() calls, add keys to primary locale)\n\
+                 4. Then fix primary_missing issues (add missing keys to primary locale)\n\
+                 5. Fix replica_lag issues (sync keys to other locales)\n\
+                 6. Finally fix untranslated issues (translate values that are identical to primary locale)\n\n\
+                 IMPORTANT: Follow this order! Type mismatches are critical errors that cause crashes.\n\
+                 Fixing hardcoded may create new primary_missing, and fixing primary_missing may create new replica_lag."
                     .into(),
             ),
             capabilities: ServerCapabilities::builder().enable_tools().build(),
