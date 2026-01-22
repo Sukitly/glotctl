@@ -1,15 +1,15 @@
 //! Tests for translation key extraction.
 
 use std::collections::{HashMap, HashSet};
-use swc_common::{comments::SingleThreadedComments, FileName};
+use swc_common::{FileName, comments::SingleThreadedComments};
 use swc_ecma_parser::{Parser, StringInput, Syntax, TsSyntax};
 use swc_ecma_visit::Visit;
 
 use super::*;
 use crate::checkers::key_objects::{
-    make_registry_key, make_translation_fn_call_key, make_translation_prop_key, FileImports,
-    KeyArrayRegistry, KeyObject, KeyObjectRegistry, StringArrayRegistry, TranslationFnCall,
-    TranslationFnCallRegistry, TranslationProp, TranslationPropRegistry,
+    FileImports, KeyArrayRegistry, KeyObject, KeyObjectRegistry, StringArrayRegistry,
+    TranslationFnCall, TranslationFnCallRegistry, TranslationProp, TranslationPropRegistry,
+    make_registry_key, make_translation_fn_call_key, make_translation_prop_key,
 };
 use crate::checkers::schema::SchemaRegistry;
 use crate::commands::context::Registries;
@@ -662,14 +662,18 @@ fn test_nested_function_binding_shadowing() {
     let visitor = parse_and_extract(code);
 
     assert_eq!(visitor.used_keys.len(), 2);
-    assert!(visitor
-        .used_keys
-        .iter()
-        .any(|k| k.full_key == "Outer.outerKey"));
-    assert!(visitor
-        .used_keys
-        .iter()
-        .any(|k| k.full_key == "Inner.innerKey"));
+    assert!(
+        visitor
+            .used_keys
+            .iter()
+            .any(|k| k.full_key == "Outer.outerKey")
+    );
+    assert!(
+        visitor
+            .used_keys
+            .iter()
+            .any(|k| k.full_key == "Inner.innerKey")
+    );
 }
 
 #[test]

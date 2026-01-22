@@ -11,8 +11,8 @@ use swc_ecma_visit::VisitWith;
 use crate::{
     checkers::{
         key_objects::{
-            make_registry_key, make_translation_fn_call_key, make_translation_prop_key,
-            resolve_import_path, FileImports, TranslationProp,
+            FileImports, TranslationProp, make_registry_key, make_translation_fn_call_key,
+            make_translation_prop_key, resolve_import_path,
         },
         registry_collector::RegistryCollector,
         schema::expand_schema_keys,

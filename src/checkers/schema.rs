@@ -338,12 +338,16 @@ mod tests {
         assert_eq!(result.keys.len(), 1);
         assert_eq!(result.keys[0].full_key, "Form.key1");
         assert_eq!(result.unresolved_nested.len(), 2);
-        assert!(result
-            .unresolved_nested
-            .contains(&"unknownHelper".to_string()));
-        assert!(result
-            .unresolved_nested
-            .contains(&"anotherMissing".to_string()));
+        assert!(
+            result
+                .unresolved_nested
+                .contains(&"unknownHelper".to_string())
+        );
+        assert!(
+            result
+                .unresolved_nested
+                .contains(&"anotherMissing".to_string())
+        );
     }
 
     #[test]

@@ -15,8 +15,8 @@ use swc_ecma_visit::{Visit, VisitWith};
 use super::{
     extract_namespace_from_call, is_translation_hook,
     key_objects::{
-        extract_binding_names, FileImports, ImportInfo, KeyArray, KeyObject, StringArray,
-        TranslationFnCall, TranslationProp, TranslationBindingValue,
+        FileImports, ImportInfo, KeyArray, KeyObject, StringArray, TranslationBindingValue,
+        TranslationFnCall, TranslationProp, extract_binding_names,
     },
     schema::{SchemaFunction, SchemaFunctionContext},
 };
