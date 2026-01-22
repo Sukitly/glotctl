@@ -4,6 +4,7 @@
 //! to avoid code duplication.
 
 use std::collections::{HashMap, HashSet};
+use std::path::Path;
 
 use swc_ecma_visit::VisitWith;
 
@@ -20,17 +21,17 @@ use crate::{
         check::extract_translation_keys,
         context::{AllExtractions, AllFileImports, CheckContext, Registries},
     },
-    issue::{Issue, ParseErrorIssue},
-    parsers::jsx::parse_jsx_file,
 };
 
-use std::path::Path;
-
-/// Build registries by parsing all source files.
+/// Build registries from cached parsed files.
 ///
-/// Returns (Registries, AllFileImports, parse_errors).
-/// Parse errors are logged if verbose is true.
-pub fn build_registries(ctx: &CheckContext) -> (Registries, AllFileImports, Vec<Issue>) {
+/// Returns (Registries, AllFileImports).
+/// Requires `ctx.ensure_parsed_files()` to be called first.
+pub fn build_registries(ctx: &CheckContext) -> (Registries, AllFileImports) {
+    let parsed_files = ctx
+        .parsed_files()
+        .expect("parsed_files must be loaded before build_registries");
+
     let mut schema = HashMap::new();
     let mut key_object = HashMap::new();
     let mut key_array = HashMap::new();
@@ -39,22 +40,12 @@ pub fn build_registries(ctx: &CheckContext) -> (Registries, AllFileImports, Vec<
     let mut translation_fn_call = HashMap::new();
     let mut default_exports = HashMap::new();
     let mut file_imports: AllFileImports = HashMap::new();
-    let mut errors = Vec::new();
     let mut translation_props_by_file: Vec<(String, Vec<TranslationProp>)> = Vec::new();
 
     for file_path in &ctx.files {
-        let parsed = match parse_jsx_file(Path::new(file_path)) {
-            Ok(p) => p,
-            Err(e) => {
-                if ctx.verbose {
-                    eprintln!("Warning: {} - {}", file_path, e);
-                }
-                errors.push(Issue::ParseError(ParseErrorIssue {
-                    file_path: file_path.clone(),
-                    error: e.to_string(),
-                }));
-                continue;
-            }
+        let Some(parsed) = parsed_files.get(file_path) else {
+            // File failed to parse - already recorded as error in ensure_parsed_files
+            continue;
         };
 
         // Schema registry
@@ -155,7 +146,7 @@ pub fn build_registries(ctx: &CheckContext) -> (Registries, AllFileImports, Vec<
         default_exports,
     };
 
-    (registries, file_imports, errors)
+    (registries, file_imports)
 }
 
 fn resolve_component_name_for_prop(
@@ -181,14 +172,14 @@ fn resolve_component_name_for_prop(
         .unwrap_or_else(|| component_name.to_string())
 }
 
-/// Build extractions by parsing all source files once.
+/// Build extractions from cached parsed files.
 ///
-/// Returns (extractions, parse_errors).
-/// Requires registries, file_imports, and messages to be loaded in ctx.
-pub fn build_extractions(ctx: &CheckContext) -> (AllExtractions, Vec<Issue>) {
-    let mut extractions = HashMap::new();
-    let mut errors = Vec::new();
-
+/// Returns extractions map.
+/// Requires parsed_files, registries, file_imports, and messages to be loaded in ctx.
+pub fn build_extractions(ctx: &CheckContext) -> AllExtractions {
+    let parsed_files = ctx
+        .parsed_files()
+        .expect("parsed_files must be loaded before build_extractions");
     let registries = ctx
         .registries()
         .expect("registries must be loaded before build_extractions");
@@ -205,23 +196,21 @@ pub fn build_extractions(ctx: &CheckContext) -> (AllExtractions, Vec<Issue>) {
         .map(|m| m.keys().cloned().collect())
         .unwrap_or_default();
 
-    for file_path in &ctx.files {
-        let imports = file_imports.get(file_path).cloned().unwrap_or_default();
+    let mut extractions = HashMap::new();
 
-        match extract_translation_keys(file_path, registries, &imports, &available_keys) {
-            Ok(result) => {
-                extractions.insert(file_path.clone(), result);
-            }
-            Err(e) => {
-                errors.push(Issue::ParseError(ParseErrorIssue {
-                    file_path: file_path.clone(),
-                    error: e.to_string(),
-                }));
-            }
-        }
+    for file_path in &ctx.files {
+        let Some(parsed) = parsed_files.get(file_path) else {
+            // File failed to parse - already recorded as error in ensure_parsed_files
+            continue;
+        };
+
+        let imports = file_imports.get(file_path).cloned().unwrap_or_default();
+        let result =
+            extract_translation_keys(file_path, parsed, registries, &imports, &available_keys);
+        extractions.insert(file_path.clone(), result);
     }
 
-    (extractions, errors)
+    extractions
 }
 
 /// Collect all used translation keys from cached extractions.

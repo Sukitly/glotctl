@@ -1,9 +1,4 @@
-use std::{
-    collections::{HashMap, HashSet},
-    path::Path,
-};
-
-use anyhow::Result;
+use std::collections::{HashMap, HashSet};
 
 use crate::{
     checkers::{
@@ -16,47 +11,47 @@ use crate::{
         HardcodedIssue, Issue, KeyUsage, MAX_KEY_USAGES, MessageLocation, OrphanKeyIssue,
         ReplicaLagIssue, SourceLocation, UnusedKeyIssue,
     },
-    parsers::{json::MessageMap, jsx::parse_jsx_file},
+    parsers::json::MessageMap,
+    parsers::jsx::ParsedJSX,
 };
 
 pub use crate::checkers::extraction::KeyExtractionResult;
 
+/// Check for hardcoded text in a parsed JSX file.
 pub fn check_hardcoded(
     file_path: &str,
+    parsed: &ParsedJSX,
     checked_attributes: &[String],
     ignore_texts: &HashSet<String>,
-) -> Result<Vec<HardcodedIssue>> {
-    let parsed_jsx = parse_jsx_file(Path::new(file_path))?;
+) -> Vec<HardcodedIssue> {
     let checker = HardcodedChecker::new(
         file_path,
         checked_attributes,
         ignore_texts,
-        &parsed_jsx.source_map,
-        &parsed_jsx.comments,
+        &parsed.source_map,
+        &parsed.comments,
     );
-    Ok(checker.check(&parsed_jsx.module))
+    checker.check(&parsed.module)
 }
 
-/// Extract translation keys from a source file.
-///
-/// This function parses the file and extracts all translation key usages.
+/// Extract translation keys from a parsed JSX file.
 pub fn extract_translation_keys(
     file_path: &str,
+    parsed: &ParsedJSX,
     registries: &Registries,
     file_imports: &FileImports,
     available_keys: &HashSet<String>,
-) -> Result<KeyExtractionResult> {
-    let parsed_jsx = parse_jsx_file(Path::new(file_path))?;
+) -> KeyExtractionResult {
     let visitor = TranslationKeyVisitor::new(
         file_path,
-        &parsed_jsx.source_map,
-        &parsed_jsx.comments,
+        &parsed.source_map,
+        &parsed.comments,
         registries,
         file_imports,
-        &parsed_jsx.source,
+        &parsed.source,
         available_keys,
     );
-    Ok(visitor.extract(&parsed_jsx.module))
+    visitor.extract(&parsed.module)
 }
 
 pub fn find_missing_keys(used_keys: &[UsedKey], messages: &MessageMap) -> Vec<UsedKey> {
@@ -257,11 +252,10 @@ pub fn find_orphan_keys(
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
-
     use pretty_assertions::assert_eq;
 
     use super::*;
+    use crate::parsers::jsx::parse_jsx_source;
 
     fn default_checked_attrs() -> Vec<String> {
         vec![
@@ -276,31 +270,27 @@ mod tests {
         HashSet::new()
     }
 
-    /// Creates a temporary file with the given code and returns its path as a string.
-    /// The file will be automatically deleted when the returned TempDir is dropped.
-    fn create_temp_file(code: &str) -> Result<(tempfile::TempDir, String)> {
-        let temp_dir = tempfile::tempdir()?;
-        let file_path = temp_dir.path().join("test.tsx");
-        fs::write(&file_path, code)?;
-        let path = file_path.to_str().unwrap().to_string();
-        Ok((temp_dir, path))
+    /// Parse code and check for hardcoded text.
+    fn check_code(
+        code: &str,
+        attrs: &[String],
+        ignore_texts: &HashSet<String>,
+    ) -> Vec<HardcodedIssue> {
+        let parsed = parse_jsx_source(code.to_string(), "test.tsx").unwrap();
+        check_hardcoded("test.tsx", &parsed, attrs, ignore_texts)
     }
 
     #[test]
     fn it_should_parse_code() {
         let code = r#"<div>Hello World</div>"#;
-        let (_temp_dir, file_path) = create_temp_file(code).unwrap();
-        let issues =
-            check_hardcoded(&file_path, &default_checked_attrs(), &empty_ignore_texts()).unwrap();
+        let issues = check_code(code, &default_checked_attrs(), &empty_ignore_texts());
         assert!(!issues.is_empty());
     }
 
     #[test]
     fn test_expr_string() {
         let code = r#"<div>{"Submit"}</div>"#;
-        let (_temp_dir, file_path) = create_temp_file(code).unwrap();
-        let issues =
-            check_hardcoded(&file_path, &default_checked_attrs(), &empty_ignore_texts()).unwrap();
+        let issues = check_code(code, &default_checked_attrs(), &empty_ignore_texts());
         assert_eq!(issues.len(), 1);
         assert_eq!(issues.first().unwrap().text, "Submit");
     }
@@ -308,9 +298,7 @@ mod tests {
     #[test]
     fn test_logical_and() {
         let code = r#"<div>{error && "Something wrong"}</div>"#;
-        let (_temp_dir, file_path) = create_temp_file(code).unwrap();
-        let issues =
-            check_hardcoded(&file_path, &default_checked_attrs(), &empty_ignore_texts()).unwrap();
+        let issues = check_code(code, &default_checked_attrs(), &empty_ignore_texts());
         assert_eq!(issues.len(), 1);
         assert_eq!(issues[0].text, "Something wrong");
     }
@@ -318,18 +306,14 @@ mod tests {
     #[test]
     fn test_ternary() {
         let code = r#"<div>{loading ? "Loading..." : "Done"}</div>"#;
-        let (_temp_dir, file_path) = create_temp_file(code).unwrap();
-        let issues =
-            check_hardcoded(&file_path, &default_checked_attrs(), &empty_ignore_texts()).unwrap();
+        let issues = check_code(code, &default_checked_attrs(), &empty_ignore_texts());
         assert_eq!(issues.len(), 2);
     }
 
     #[test]
     fn test_placeholder_attr() {
         let code = r#"<input placeholder="Enter your name" />"#;
-        let (_temp_dir, file_path) = create_temp_file(code).unwrap();
-        let issues =
-            check_hardcoded(&file_path, &default_checked_attrs(), &empty_ignore_texts()).unwrap();
+        let issues = check_code(code, &default_checked_attrs(), &empty_ignore_texts());
         assert_eq!(issues.len(), 1);
         assert_eq!(issues[0].text, "Enter your name");
     }
@@ -337,9 +321,7 @@ mod tests {
     #[test]
     fn test_non_checked_attr() {
         let code = r#"<div className="container">Hello</div>"#;
-        let (_temp_dir, file_path) = create_temp_file(code).unwrap();
-        let issues =
-            check_hardcoded(&file_path, &default_checked_attrs(), &empty_ignore_texts()).unwrap();
+        let issues = check_code(code, &default_checked_attrs(), &empty_ignore_texts());
         assert_eq!(issues.len(), 1);
         assert_eq!(issues[0].text, "Hello");
     }
@@ -347,36 +329,28 @@ mod tests {
     #[test]
     fn test_ignore_pure_numbers() {
         let code = r#"<div>123</div>"#;
-        let (_temp_dir, file_path) = create_temp_file(code).unwrap();
-        let issues =
-            check_hardcoded(&file_path, &default_checked_attrs(), &empty_ignore_texts()).unwrap();
+        let issues = check_code(code, &default_checked_attrs(), &empty_ignore_texts());
         assert!(issues.is_empty());
     }
 
     #[test]
     fn test_ignore_pure_symbols() {
         let code = r#"<div>---</div>"#;
-        let (_temp_dir, file_path) = create_temp_file(code).unwrap();
-        let issues =
-            check_hardcoded(&file_path, &default_checked_attrs(), &empty_ignore_texts()).unwrap();
+        let issues = check_code(code, &default_checked_attrs(), &empty_ignore_texts());
         assert!(issues.is_empty());
     }
 
     #[test]
     fn test_detect_chinese() {
         let code = r#"<div>你好</div>"#;
-        let (_temp_dir, file_path) = create_temp_file(code).unwrap();
-        let issues =
-            check_hardcoded(&file_path, &default_checked_attrs(), &empty_ignore_texts()).unwrap();
+        let issues = check_code(code, &default_checked_attrs(), &empty_ignore_texts());
         assert_eq!(issues.len(), 1);
     }
 
     #[test]
     fn test_template_literal() {
         let code = r#"<div>{`Hello ${name}`}</div>"#;
-        let (_temp_dir, file_path) = create_temp_file(code).unwrap();
-        let issues =
-            check_hardcoded(&file_path, &default_checked_attrs(), &empty_ignore_texts()).unwrap();
+        let issues = check_code(code, &default_checked_attrs(), &empty_ignore_texts());
         assert_eq!(issues.len(), 1);
         assert_eq!(issues[0].text, "Hello ");
     }
@@ -387,29 +361,23 @@ mod tests {
   Hello
   World
 </div>"#;
-        let (_temp_dir, file_path) = create_temp_file(code).unwrap();
-        let issues =
-            check_hardcoded(&file_path, &default_checked_attrs(), &empty_ignore_texts()).unwrap();
+        let issues = check_code(code, &default_checked_attrs(), &empty_ignore_texts());
         assert_eq!(issues.len(), 1);
     }
 
     #[test]
     fn test_jsx_fragment() {
         let code = r#"<>text node</>"#;
-        let (_temp_dir, file_path) = create_temp_file(code).unwrap();
-        let issues =
-            check_hardcoded(&file_path, &default_checked_attrs(), &empty_ignore_texts()).unwrap();
+        let issues = check_code(code, &default_checked_attrs(), &empty_ignore_texts());
         assert_eq!(issues.len(), 1);
         assert_eq!(issues[0].text, "text node");
     }
+
     #[test]
     fn test_custom_checked_attributes() {
         let code = r#"<input placeholder="Name" title="Input" />"#;
-        let (_temp_dir, file_path) = create_temp_file(code).unwrap();
-
         let attrs = vec!["placeholder".to_string()];
-        let issues = check_hardcoded(&file_path, &attrs, &empty_ignore_texts()).unwrap();
-
+        let issues = check_code(code, &attrs, &empty_ignore_texts());
         assert_eq!(issues.len(), 1);
         assert_eq!(issues[0].text, "Name");
     }
@@ -417,10 +385,7 @@ mod tests {
     #[test]
     fn test_empty_checked_attributes() {
         let code = r#"<input placeholder="Name" />"#;
-        let (_temp_dir, file_path) = create_temp_file(code).unwrap();
-
-        let issues = check_hardcoded(&file_path, &[], &empty_ignore_texts()).unwrap();
-
+        let issues = check_code(code, &[], &empty_ignore_texts());
         assert!(issues.is_empty());
     }
 
@@ -428,8 +393,7 @@ mod tests {
     fn test_glot_disable_file() {
         let code = r#"// glot-disable
 const x = <div>Ignored</div>"#;
-        let (_temp_dir, file_path) = create_temp_file(code).unwrap();
-        let issues = check_hardcoded(&file_path, &[], &empty_ignore_texts()).unwrap();
+        let issues = check_code(code, &[], &empty_ignore_texts());
         assert!(issues.is_empty());
     }
 
@@ -437,8 +401,7 @@ const x = <div>Ignored</div>"#;
     fn test_glot_disable_file_jsx_comment() {
         let code = r#"// glot-disable
 const x = <>{/* comment */}<div>Ignored</div></>"#;
-        let (_temp_dir, file_path) = create_temp_file(code).unwrap();
-        let issues = check_hardcoded(&file_path, &[], &empty_ignore_texts()).unwrap();
+        let issues = check_code(code, &[], &empty_ignore_texts());
         assert!(issues.is_empty());
     }
 
@@ -447,8 +410,7 @@ const x = <>{/* comment */}<div>Ignored</div></>"#;
         let code = r#"// glot-disable-next-line
 const a = <div>Ignored</div>
 const b = <div>Detected</div>"#;
-        let (_temp_dir, file_path) = create_temp_file(code).unwrap();
-        let issues = check_hardcoded(&file_path, &[], &empty_ignore_texts()).unwrap();
+        let issues = check_code(code, &[], &empty_ignore_texts());
         assert_eq!(issues.len(), 1);
         assert_eq!(issues[0].text, "Detected");
     }
@@ -460,8 +422,7 @@ const b = <div>Detected</div>"#;
 <div>Ignored</div>
 <div>Detected</div>
 </>"#;
-        let (_temp_dir, file_path) = create_temp_file(code).unwrap();
-        let issues = check_hardcoded(&file_path, &[], &empty_ignore_texts()).unwrap();
+        let issues = check_code(code, &[], &empty_ignore_texts());
         assert_eq!(issues.len(), 1);
         assert_eq!(issues[0].text, "Detected");
     }
@@ -473,9 +434,7 @@ const b = <div>Detected</div>"#;
 <input placeholder="Ignored" />
 <input placeholder="Detected" />
 </>"#;
-        let (_temp_dir, file_path) = create_temp_file(code).unwrap();
-        let issues =
-            check_hardcoded(&file_path, &default_checked_attrs(), &empty_ignore_texts()).unwrap();
+        let issues = check_code(code, &default_checked_attrs(), &empty_ignore_texts());
         assert_eq!(issues.len(), 1);
         assert_eq!(issues[0].text, "Detected");
     }
@@ -490,8 +449,7 @@ const b = <div>Detected</div>"#;
 <div>Ignored 2</div>
 <div>Detected 2</div>
 </>"#;
-        let (_temp_dir, file_path) = create_temp_file(code).unwrap();
-        let issues = check_hardcoded(&file_path, &[], &empty_ignore_texts()).unwrap();
+        let issues = check_code(code, &[], &empty_ignore_texts());
         assert_eq!(issues.len(), 2);
         assert_eq!(issues[0].text, "Detected 1");
         assert_eq!(issues[1].text, "Detected 2");
@@ -504,8 +462,7 @@ const b = <div>Detected</div>"#;
 const b = <div>Ignored</div>
 // glot-enable
 const c = <div>Detected 2</div>"#;
-        let (_temp_dir, file_path) = create_temp_file(code).unwrap();
-        let issues = check_hardcoded(&file_path, &[], &empty_ignore_texts()).unwrap();
+        let issues = check_code(code, &[], &empty_ignore_texts());
         assert_eq!(issues.len(), 2);
         assert_eq!(issues[0].text, "Detected 1");
         assert_eq!(issues[1].text, "Detected 2");
@@ -516,8 +473,7 @@ const c = <div>Detected 2</div>"#;
         let code = r#"// eslint-disable
 // glot-disable
 const a = <div>Ignored</div>"#;
-        let (_temp_dir, file_path) = create_temp_file(code).unwrap();
-        let issues = check_hardcoded(&file_path, &[], &empty_ignore_texts()).unwrap();
+        let issues = check_code(code, &[], &empty_ignore_texts());
         assert!(issues.is_empty());
     }
 
@@ -528,8 +484,7 @@ const a = <div>Ignored</div>"#;
 const b = <div>Ignored 1</div>
 const c = <div>Ignored 2</div>
 const d = <div>Ignored 3</div>"#;
-        let (_temp_dir, file_path) = create_temp_file(code).unwrap();
-        let issues = check_hardcoded(&file_path, &[], &empty_ignore_texts()).unwrap();
+        let issues = check_code(code, &[], &empty_ignore_texts());
         assert_eq!(issues.len(), 1);
         assert_eq!(issues[0].text, "Detected");
     }
@@ -539,8 +494,7 @@ const d = <div>Ignored 3</div>"#;
         let code = r#"const a = <div>Detected 1</div>
 // glot-enable
 const b = <div>Detected 2</div>"#;
-        let (_temp_dir, file_path) = create_temp_file(code).unwrap();
-        let issues = check_hardcoded(&file_path, &[], &empty_ignore_texts()).unwrap();
+        let issues = check_code(code, &[], &empty_ignore_texts());
         assert_eq!(issues.len(), 2);
     }
 
@@ -555,8 +509,7 @@ const c = <div>Detected 2</div>
 const d = <div>Ignored 2</div>
 // glot-enable
 const e = <div>Detected 3</div>"#;
-        let (_temp_dir, file_path) = create_temp_file(code).unwrap();
-        let issues = check_hardcoded(&file_path, &[], &empty_ignore_texts()).unwrap();
+        let issues = check_code(code, &[], &empty_ignore_texts());
         assert_eq!(issues.len(), 3);
         assert_eq!(issues[0].text, "Detected 1");
         assert_eq!(issues[1].text, "Detected 2");
@@ -572,8 +525,7 @@ const e = <div>Detected 3</div>"#;
 {/* glot-enable */}
 <div>Detected 2</div>
 </>"#;
-        let (_temp_dir, file_path) = create_temp_file(code).unwrap();
-        let issues = check_hardcoded(&file_path, &[], &empty_ignore_texts()).unwrap();
+        let issues = check_code(code, &[], &empty_ignore_texts());
         assert_eq!(issues.len(), 2);
         assert_eq!(issues[0].text, "Detected 1");
         assert_eq!(issues[1].text, "Detected 2");
@@ -587,8 +539,7 @@ const e = <div>Detected 3</div>"#;
 <div>Ignored</div>
 <div>Detected</div>{/* glot-enable */}
 </>"#;
-        let (_temp_dir, file_path) = create_temp_file(code).unwrap();
-        let issues = check_hardcoded(&file_path, &[], &empty_ignore_texts()).unwrap();
+        let issues = check_code(code, &[], &empty_ignore_texts());
         assert_eq!(issues.len(), 1);
         assert_eq!(issues[0].text, "Detected");
     }
@@ -596,9 +547,8 @@ const e = <div>Detected 3</div>"#;
     #[test]
     fn test_ignore_texts() {
         let code = r#"<><div>Github</div><div>Hello</div></>"#;
-        let (_temp_dir, file_path) = create_temp_file(code).unwrap();
         let ignore_texts: HashSet<String> = ["Github".to_string()].iter().cloned().collect();
-        let issues = check_hardcoded(&file_path, &[], &ignore_texts).unwrap();
+        let issues = check_code(code, &[], &ignore_texts);
         assert_eq!(issues.len(), 1);
         assert_eq!(issues[0].text, "Hello");
     }
@@ -606,9 +556,8 @@ const e = <div>Detected 3</div>"#;
     #[test]
     fn test_ignore_texts_case_sensitive() {
         let code = r#"<div>github</div>"#;
-        let (_temp_dir, file_path) = create_temp_file(code).unwrap();
         let ignore_texts: HashSet<String> = ["Github".to_string()].iter().cloned().collect();
-        let issues = check_hardcoded(&file_path, &[], &ignore_texts).unwrap();
+        let issues = check_code(code, &[], &ignore_texts);
         assert_eq!(issues.len(), 1);
         assert_eq!(issues[0].text, "github");
     }
@@ -902,8 +851,7 @@ const e = <div>Detected 3</div>"#;
         let code = r#"// glot-disable-next-line hardcoded
 const a = <div>Ignored</div>
 const b = <div>Detected</div>"#;
-        let (_temp_dir, file_path) = create_temp_file(code).unwrap();
-        let issues = check_hardcoded(&file_path, &[], &empty_ignore_texts()).unwrap();
+        let issues = check_code(code, &[], &empty_ignore_texts());
         assert_eq!(issues.len(), 1);
         assert_eq!(issues[0].text, "Detected");
     }
@@ -914,8 +862,7 @@ const b = <div>Detected</div>"#;
         let code = r#"// glot-disable-next-line untranslated
 const a = <div>Detected 1</div>
 const b = <div>Detected 2</div>"#;
-        let (_temp_dir, file_path) = create_temp_file(code).unwrap();
-        let issues = check_hardcoded(&file_path, &[], &empty_ignore_texts()).unwrap();
+        let issues = check_code(code, &[], &empty_ignore_texts());
         // Both should be detected since untranslated doesn't affect hardcoded
         assert_eq!(issues.len(), 2);
         assert_eq!(issues[0].text, "Detected 1");
@@ -930,8 +877,7 @@ const b = <div>Detected 2</div>"#;
 const b = <div>Ignored</div>
 // glot-enable hardcoded
 const c = <div>Detected 2</div>"#;
-        let (_temp_dir, file_path) = create_temp_file(code).unwrap();
-        let issues = check_hardcoded(&file_path, &[], &empty_ignore_texts()).unwrap();
+        let issues = check_code(code, &[], &empty_ignore_texts());
         assert_eq!(issues.len(), 2);
         assert_eq!(issues[0].text, "Detected 1");
         assert_eq!(issues[1].text, "Detected 2");
@@ -945,8 +891,7 @@ const c = <div>Detected 2</div>"#;
 const b = <div>Detected 2</div>
 // glot-enable untranslated
 const c = <div>Detected 3</div>"#;
-        let (_temp_dir, file_path) = create_temp_file(code).unwrap();
-        let issues = check_hardcoded(&file_path, &[], &empty_ignore_texts()).unwrap();
+        let issues = check_code(code, &[], &empty_ignore_texts());
         // All should be detected since untranslated doesn't affect hardcoded
         assert_eq!(issues.len(), 3);
         assert_eq!(issues[0].text, "Detected 1");
@@ -960,8 +905,7 @@ const c = <div>Detected 3</div>"#;
         let code = r#"// glot-disable-next-line hardcoded untranslated
 const a = <div>Ignored</div>
 const b = <div>Detected</div>"#;
-        let (_temp_dir, file_path) = create_temp_file(code).unwrap();
-        let issues = check_hardcoded(&file_path, &[], &empty_ignore_texts()).unwrap();
+        let issues = check_code(code, &[], &empty_ignore_texts());
         assert_eq!(issues.len(), 1);
         assert_eq!(issues[0].text, "Detected");
     }
@@ -974,8 +918,7 @@ const b = <div>Detected</div>"#;
 <div>Ignored</div>
 <div>Detected</div>
 </>"#;
-        let (_temp_dir, file_path) = create_temp_file(code).unwrap();
-        let issues = check_hardcoded(&file_path, &[], &empty_ignore_texts()).unwrap();
+        let issues = check_code(code, &[], &empty_ignore_texts());
         assert_eq!(issues.len(), 1);
         assert_eq!(issues[0].text, "Detected");
     }

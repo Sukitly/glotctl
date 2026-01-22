@@ -86,12 +86,13 @@ impl CleanRunner {
 
     /// Collect all issues by running the full check pipeline.
     fn collect_all_issues(&self) -> Result<Vec<Issue>> {
+        // Parse all source files first
+        let mut issues: Vec<Issue> = self.ctx.ensure_parsed_files();
+
         // Load registries
-        let (registries, file_imports, registry_parse_errors) = shared::build_registries(&self.ctx);
+        let (registries, file_imports) = shared::build_registries(&self.ctx);
         self.ctx.set_registries(registries);
         self.ctx.set_file_imports(file_imports);
-
-        let mut issues: Vec<Issue> = registry_parse_errors;
 
         // Load messages
         let (messages, message_warnings) = self.load_messages()?;
@@ -123,16 +124,13 @@ impl CleanRunner {
             })
         }));
 
-        // Build extractions and collect parse errors
-        let (extractions, parse_errors) = shared::build_extractions(&self.ctx);
+        // Build extractions (uses cached parsed files)
+        let extractions = shared::build_extractions(&self.ctx);
         self.ctx.set_extractions(extractions);
 
         // Collect used keys
         let used_keys = shared::collect_used_keys(&self.ctx);
         self.ctx.set_used_keys(used_keys);
-
-        // Add parse errors from source file extraction
-        issues.extend(parse_errors);
 
         // Collect dynamic key warnings
         let extractions = self.ctx.extractions().unwrap();

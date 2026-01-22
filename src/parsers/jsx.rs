@@ -1,6 +1,4 @@
-use std::{fs, path::Path};
-
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Result, anyhow};
 use swc_common::{FileName, SourceMap, comments::SingleThreadedComments};
 use swc_ecma_ast::Module;
 use swc_ecma_parser::{Parser, StringInput, Syntax, TsSyntax};
@@ -12,7 +10,11 @@ pub struct ParsedJSX {
     pub source: String,
 }
 
-fn parse_jsx(code: String, file_path: &str) -> Result<ParsedJSX> {
+/// Parse JSX/TSX source code string into an AST.
+///
+/// This is the core parsing function. For file-based parsing with caching,
+/// use `CheckContext::ensure_parsed_files()` instead.
+pub fn parse_jsx_source(code: String, file_path: &str) -> Result<ParsedJSX> {
     let source_map = SourceMap::default();
     let source_file =
         source_map.new_source_file(FileName::Real(file_path.into()).into(), code.clone());
@@ -32,15 +34,4 @@ fn parse_jsx(code: String, file_path: &str) -> Result<ParsedJSX> {
         comments,
         source: code,
     })
-}
-
-pub fn parse_jsx_file(file_path: impl AsRef<Path>) -> Result<ParsedJSX> {
-    let file_path: &Path = file_path.as_ref();
-    let code = fs::read_to_string(file_path)
-        .with_context(|| format!("Failed to read file: {:?}", file_path))?;
-    let file_path = file_path
-        .as_os_str()
-        .to_str()
-        .with_context(|| format!("Invalid file path: {:?}", file_path))?;
-    parse_jsx(code, file_path)
 }

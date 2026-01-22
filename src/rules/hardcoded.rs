@@ -6,7 +6,7 @@ use anyhow::Result;
 
 use crate::{
     commands::{check::check_hardcoded, context::CheckContext},
-    issue::{Issue, ParseErrorIssue},
+    issue::Issue,
     rules::Checker,
 };
 
@@ -21,21 +21,19 @@ impl Checker for HardcodedRule {
         let mut issues = Vec::new();
 
         for file_path in &ctx.files {
-            match check_hardcoded(file_path, &ctx.config.checked_attributes, &ctx.ignore_texts) {
-                Ok(hardcoded_issues) => {
-                    for issue in hardcoded_issues {
-                        issues.push(Issue::Hardcoded(issue));
-                    }
-                }
-                Err(e) => {
-                    if ctx.verbose {
-                        eprintln!("Warning: {} - {}", file_path, e);
-                    }
-                    issues.push(Issue::ParseError(ParseErrorIssue {
-                        file_path: file_path.to_string(),
-                        error: format!("Failed to parse: {}", e),
-                    }));
-                }
+            // Skip files that failed to parse (already recorded in ensure_parsed_files)
+            let Some(parsed) = ctx.get_parsed(file_path) else {
+                continue;
+            };
+
+            let hardcoded_issues = check_hardcoded(
+                file_path,
+                parsed,
+                &ctx.config.checked_attributes,
+                &ctx.ignore_texts,
+            );
+            for issue in hardcoded_issues {
+                issues.push(Issue::Hardcoded(issue));
             }
         }
 

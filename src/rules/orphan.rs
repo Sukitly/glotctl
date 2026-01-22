@@ -32,8 +32,8 @@ impl Checker for OrphanKeysRule {
 
     fn check(&self, ctx: &CheckContext) -> Result<Vec<Issue>> {
         // Ensure used_keys are collected
-        let parse_errors = ctx.ensure_used_keys()?;
-        let mut issues = parse_errors;
+        ctx.ensure_used_keys()?;
+        let mut issues = Vec::new();
 
         let messages = ctx.messages().expect("messages must be loaded");
         let used_keys = ctx.used_keys().expect("used_keys must be loaded");

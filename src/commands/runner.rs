@@ -102,9 +102,12 @@ impl CheckRunner {
         let mut all_issues = Vec::new();
 
         // 2. Pre-load shared data
+        // Always parse files first - all checkers need parsed ASTs
+        let mut parse_errors = self.ctx.ensure_parsed_files();
+        all_issues.append(&mut parse_errors);
+
         if needs_registries {
-            let mut parse_errors = self.ctx.ensure_registries()?;
-            all_issues.append(&mut parse_errors);
+            self.ctx.ensure_registries()?;
         }
 
         if needs_messages {
