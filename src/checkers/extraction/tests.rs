@@ -1,15 +1,15 @@
 //! Tests for translation key extraction.
 
 use std::collections::{HashMap, HashSet};
-use swc_common::{FileName, comments::SingleThreadedComments};
+use swc_common::{comments::SingleThreadedComments, FileName};
 use swc_ecma_parser::{Parser, StringInput, Syntax, TsSyntax};
 use swc_ecma_visit::Visit;
 
 use super::*;
 use crate::checkers::key_objects::{
-    FileImports, KeyArrayRegistry, KeyObject, KeyObjectRegistry, StringArrayRegistry,
-    TranslationFnCall, TranslationFnCallRegistry, TranslationProp, TranslationPropRegistry,
-    make_registry_key, make_translation_fn_call_key, make_translation_prop_key,
+    make_registry_key, make_translation_fn_call_key, make_translation_prop_key, FileImports,
+    KeyArrayRegistry, KeyObject, KeyObjectRegistry, StringArrayRegistry, TranslationFnCall,
+    TranslationFnCallRegistry, TranslationProp, TranslationPropRegistry,
 };
 use crate::checkers::schema::SchemaRegistry;
 use crate::commands::context::Registries;
@@ -662,18 +662,14 @@ fn test_nested_function_binding_shadowing() {
     let visitor = parse_and_extract(code);
 
     assert_eq!(visitor.used_keys.len(), 2);
-    assert!(
-        visitor
-            .used_keys
-            .iter()
-            .any(|k| k.full_key == "Outer.outerKey")
-    );
-    assert!(
-        visitor
-            .used_keys
-            .iter()
-            .any(|k| k.full_key == "Inner.innerKey")
-    );
+    assert!(visitor
+        .used_keys
+        .iter()
+        .any(|k| k.full_key == "Outer.outerKey"));
+    assert!(visitor
+        .used_keys
+        .iter()
+        .any(|k| k.full_key == "Inner.innerKey"));
 }
 
 #[test]
@@ -990,7 +986,7 @@ fn test_used_key_jsx_disable_comment_style() {
 
 mod value_source_tests {
     use super::*;
-    use crate::checkers::key_objects::KeyObjectCollector;
+    use crate::checkers::registry_collector::RegistryCollector;
     use swc_ecma_visit::VisitWith;
 
     fn parse_and_extract_with_collected_registries(code: &str) -> TranslationKeyVisitor<'static> {
@@ -1007,7 +1003,7 @@ mod value_source_tests {
         let module = parser.parse_module().unwrap();
 
         let file_path_str = "test.tsx";
-        let mut collector = KeyObjectCollector::new(file_path_str);
+        let mut collector = RegistryCollector::new(file_path_str);
         module.visit_with(&mut collector);
 
         let mut key_object = KeyObjectRegistry::new();

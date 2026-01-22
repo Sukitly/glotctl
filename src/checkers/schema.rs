@@ -1,10 +1,5 @@
 use std::collections::{HashMap, HashSet};
 
-use swc_ecma_ast::{
-    ArrowExpr, CallExpr, Callee, Decl, Expr, Lit, Pat, TsEntityName, TsType, VarDeclarator,
-};
-use swc_ecma_visit::{Visit, VisitWith};
-
 #[derive(Debug, Clone)]
 pub struct SchemaFunction {
     pub name: String,
@@ -31,205 +26,13 @@ pub struct ExpandedKey {
     pub has_namespace: bool,
 }
 
-struct SchemaFunctionContext {
-    name: String,
-    t_param_name: String,
-    keys: Vec<String>,
-    nested_calls: Vec<String>,
-}
-
-/// Collects schema factory functions from TypeScript/TSX files.
-///
-/// # Limitations
-/// - Only detects **arrow function** exports: `export const createSchema = (t) => ...`
-/// - Does not support function declarations: `export function createSchema(t) { ... }`
-/// - Does not support function expressions: `export const createSchema = function(t) { ... }`
-pub struct SchemaFunctionCollector {
-    pub file_path: String,
-    pub functions: Vec<SchemaFunction>,
-    current_function: Option<SchemaFunctionContext>,
-    /// Depth of nested functions that shadow the t_param_name.
-    /// When > 0, t() calls should be ignored because the parameter is shadowed.
-    shadow_depth: usize,
-}
-
-impl SchemaFunctionCollector {
-    pub fn new(file_path: &str) -> Self {
-        Self {
-            file_path: file_path.to_string(),
-            functions: Vec::new(),
-            current_function: None,
-            shadow_depth: 0,
-        }
-    }
-
-    fn check_schema_function(&mut self, decl: &VarDeclarator) {
-        let func_name = match &decl.name {
-            Pat::Ident(ident) => ident.id.sym.to_string(),
-            _ => return,
-        };
-
-        let arrow = match &decl.init {
-            Some(expr) => match &**expr {
-                Expr::Arrow(arrow) => arrow,
-                _ => return,
-            },
-            _ => return,
-        };
-
-        let t_param = self.extract_t_param(arrow);
-
-        let t_param_name = match t_param {
-            Some(name) => name,
-            None => return,
-        };
-
-        self.current_function = Some(SchemaFunctionContext {
-            name: func_name.clone(),
-            t_param_name: t_param_name.clone(),
-            keys: Vec::new(),
-            nested_calls: Vec::new(),
-        });
-
-        arrow.body.visit_with(self);
-
-        if let Some(ctx) = self.current_function.take()
-            && (!ctx.keys.is_empty() || !ctx.nested_calls.is_empty())
-        {
-            self.functions.push(SchemaFunction {
-                name: ctx.name,
-                file_path: self.file_path.clone(),
-                keys: ctx.keys,
-                nested_calls: ctx.nested_calls,
-            });
-        }
-    }
-
-    fn extract_t_param(&self, arrow: &ArrowExpr) -> Option<String> {
-        arrow.params.first().and_then(|param| {
-            if let Pat::Ident(ident) = param {
-                let name = ident.id.sym.to_string();
-                let has_tfunction_type = ident
-                    .type_ann
-                    .as_ref()
-                    .map(|ann| is_tfunction_type(&ann.type_ann))
-                    .unwrap_or(false);
-                if name.starts_with('t') || has_tfunction_type {
-                    Some(name)
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
-        })
-    }
-}
-
-fn is_tfunction_type(ts_type: &TsType) -> bool {
-    match ts_type {
-        TsType::TsTypeRef(type_ref) => {
-            if let TsEntityName::Ident(ident) = &type_ref.type_name {
-                ident.sym.as_str() == "TFunction"
-            } else {
-                false
-            }
-        }
-        _ => false,
-    }
-}
-
-impl Visit for SchemaFunctionCollector {
-    fn visit_export_decl(&mut self, node: &swc_ecma_ast::ExportDecl) {
-        if let Decl::Var(var_decl) = &node.decl {
-            for decl in &var_decl.decls {
-                self.check_schema_function(decl);
-            }
-        }
-    }
-
-    fn visit_call_expr(&mut self, node: &swc_ecma_ast::CallExpr) {
-        // Only collect keys if not inside a shadowed scope
-        if self.shadow_depth == 0
-            && let Some(ctx) = &mut self.current_function
-            && let Callee::Expr(expr) = &node.callee
-            && let Expr::Ident(ident) = &**expr
-        {
-            let fn_name = ident.sym.as_str();
-            if fn_name == ctx.t_param_name {
-                if let Some(key) = extract_string_arg(node) {
-                    ctx.keys.push(key);
-                }
-            } else if is_schema_call_with_t(node, &ctx.t_param_name) {
-                ctx.nested_calls.push(fn_name.to_string());
-            }
-        }
-        node.visit_children_with(self);
-    }
-
-    /// Track nested arrow functions that shadow the t parameter.
-    fn visit_arrow_expr(&mut self, node: &swc_ecma_ast::ArrowExpr) {
-        let shadows_t = self.current_function.as_ref().is_some_and(|ctx| {
-            node.params.iter().any(|param| {
-                if let Pat::Ident(ident) = param {
-                    ident.id.sym.as_str() == ctx.t_param_name
-                } else {
-                    false
-                }
-            })
-        });
-
-        if shadows_t {
-            self.shadow_depth += 1;
-        }
-        node.visit_children_with(self);
-        if shadows_t {
-            self.shadow_depth -= 1;
-        }
-    }
-
-    /// Track nested functions that shadow the t parameter.
-    fn visit_function(&mut self, node: &swc_ecma_ast::Function) {
-        let shadows_t = self.current_function.as_ref().is_some_and(|ctx| {
-            node.params.iter().any(|param| {
-                if let Pat::Ident(ident) = &param.pat {
-                    ident.id.sym.as_str() == ctx.t_param_name
-                } else {
-                    false
-                }
-            })
-        });
-
-        if shadows_t {
-            self.shadow_depth += 1;
-        }
-        node.visit_children_with(self);
-        if shadows_t {
-            self.shadow_depth -= 1;
-        }
-    }
-}
-
-fn extract_string_arg(call: &CallExpr) -> Option<String> {
-    call.args.first().and_then(|arg| match &*arg.expr {
-        Expr::Lit(Lit::Str(s)) => s.value.as_str().map(|s| s.to_string()),
-        Expr::Tpl(tpl) if tpl.exprs.is_empty() => tpl
-            .quasis
-            .first()
-            .and_then(|q| q.cooked.as_ref())
-            .and_then(|s| s.as_str().map(|s| s.to_string())),
-        _ => None,
-    })
-}
-
-fn is_schema_call_with_t(call: &CallExpr, t_param_name: &str) -> bool {
-    call.args.first().is_some_and(|arg| {
-        if let Expr::Ident(ident) = &*arg.expr {
-            ident.sym.as_str() == t_param_name
-        } else {
-            false
-        }
-    })
+/// Internal context used during schema function collection.
+/// Moved to registry_collector module.
+pub struct SchemaFunctionContext {
+    pub name: String,
+    pub t_param_name: String,
+    pub keys: Vec<String>,
+    pub nested_calls: Vec<String>,
 }
 
 /// Result of expanding schema keys
@@ -289,6 +92,7 @@ pub fn expand_schema_keys(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::checkers::registry_collector::RegistryCollector;
     use swc_common::FileName;
     use swc_ecma_parser::{Parser, StringInput, Syntax, TsSyntax};
     use swc_ecma_visit::VisitWith;
@@ -305,9 +109,9 @@ mod tests {
         let mut parser = Parser::new(syntax, StringInput::from(&*source_file), None);
         let module = parser.parse_module().unwrap();
 
-        let mut collector = SchemaFunctionCollector::new("test.ts");
+        let mut collector = RegistryCollector::new("test.ts");
         module.visit_with(&mut collector);
-        collector.functions
+        collector.schema_functions
     }
 
     #[test]
@@ -534,16 +338,12 @@ mod tests {
         assert_eq!(result.keys.len(), 1);
         assert_eq!(result.keys[0].full_key, "Form.key1");
         assert_eq!(result.unresolved_nested.len(), 2);
-        assert!(
-            result
-                .unresolved_nested
-                .contains(&"unknownHelper".to_string())
-        );
-        assert!(
-            result
-                .unresolved_nested
-                .contains(&"anotherMissing".to_string())
-        );
+        assert!(result
+            .unresolved_nested
+            .contains(&"unknownHelper".to_string()));
+        assert!(result
+            .unresolved_nested
+            .contains(&"anotherMissing".to_string()));
     }
 
     #[test]
