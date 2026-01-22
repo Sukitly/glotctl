@@ -1,5 +1,5 @@
-use anyhow::{anyhow, Result};
-use swc_common::{comments::SingleThreadedComments, FileName, SourceMap};
+use anyhow::{Result, anyhow};
+use swc_common::{FileName, SourceMap, comments::SingleThreadedComments};
 use swc_ecma_ast::Module;
 use swc_ecma_parser::{Parser, StringInput, Syntax, TsSyntax};
 

@@ -1,15 +1,15 @@
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use clap::ValueEnum;
 
 use crate::{
+    RunResult,
     args::CheckArgs,
     commands::context::CheckContext,
     issue::{Issue, IssueReport, Rule, Severity},
     rules::{
-        hardcoded::HardcodedRule, missing::MissingKeysRule, orphan::OrphanKeysRule,
-        type_mismatch::TypeMismatchRule, untranslated::UntranslatedRule, Checker,
+        Checker, hardcoded::HardcodedRule, missing::MissingKeysRule, orphan::OrphanKeysRule,
+        type_mismatch::TypeMismatchRule, untranslated::UntranslatedRule,
     },
-    RunResult,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, ValueEnum)]

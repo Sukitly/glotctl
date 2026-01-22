@@ -11,10 +11,10 @@ use swc_ecma_visit::VisitWith;
 use crate::{
     checkers::{
         key_objects::{
-            make_registry_key, make_translation_fn_call_key, make_translation_prop_key,
-            resolve_import_path, FileImports, KeyObjectCollector, TranslationProp,
+            FileImports, KeyObjectCollector, TranslationProp, make_registry_key,
+            make_translation_fn_call_key, make_translation_prop_key, resolve_import_path,
         },
-        schema::{expand_schema_keys, SchemaFunctionCollector},
+        schema::{SchemaFunctionCollector, expand_schema_keys},
         value_source::ValueSource,
     },
     commands::{

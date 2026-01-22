@@ -8,8 +8,8 @@ use crate::{
     },
     commands::context::Registries,
     issue::{
-        HardcodedIssue, Issue, KeyUsage, MessageLocation, OrphanKeyIssue, ReplicaLagIssue,
-        SourceLocation, UnusedKeyIssue, MAX_KEY_USAGES,
+        HardcodedIssue, Issue, KeyUsage, MAX_KEY_USAGES, MessageLocation, OrphanKeyIssue,
+        ReplicaLagIssue, SourceLocation, UnusedKeyIssue,
     },
     parsers::json::MessageMap,
     parsers::jsx::ParsedJSX,
