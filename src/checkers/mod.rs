@@ -2,6 +2,7 @@ pub mod extraction;
 pub mod glob_matcher;
 pub mod hardcoded;
 pub mod key_objects;
+pub mod registry_collector;
 pub mod schema;
 pub mod translation_calls;
 pub mod value_analyzer;

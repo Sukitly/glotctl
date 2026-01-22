@@ -990,7 +990,7 @@ fn test_used_key_jsx_disable_comment_style() {
 
 mod value_source_tests {
     use super::*;
-    use crate::checkers::key_objects::KeyObjectCollector;
+    use crate::checkers::registry_collector::RegistryCollector;
     use swc_ecma_visit::VisitWith;
 
     fn parse_and_extract_with_collected_registries(code: &str) -> TranslationKeyVisitor<'static> {
@@ -1007,7 +1007,7 @@ mod value_source_tests {
         let module = parser.parse_module().unwrap();
 
         let file_path_str = "test.tsx";
-        let mut collector = KeyObjectCollector::new(file_path_str);
+        let mut collector = RegistryCollector::new(file_path_str);
         module.visit_with(&mut collector);
 
         let mut key_object = KeyObjectRegistry::new();

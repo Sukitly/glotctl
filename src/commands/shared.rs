@@ -11,10 +11,11 @@ use swc_ecma_visit::VisitWith;
 use crate::{
     checkers::{
         key_objects::{
-            FileImports, KeyObjectCollector, TranslationProp, make_registry_key,
-            make_translation_fn_call_key, make_translation_prop_key, resolve_import_path,
+            FileImports, TranslationProp, make_registry_key, make_translation_fn_call_key,
+            make_translation_prop_key, resolve_import_path,
         },
-        schema::{SchemaFunctionCollector, expand_schema_keys},
+        registry_collector::RegistryCollector,
+        schema::expand_schema_keys,
         value_source::ValueSource,
     },
     commands::{
@@ -48,39 +49,40 @@ pub fn build_registries(ctx: &CheckContext) -> (Registries, AllFileImports) {
             continue;
         };
 
-        // Schema registry
-        let mut schema_collector = SchemaFunctionCollector::new(file_path);
-        parsed.module.visit_with(&mut schema_collector);
-        for func in schema_collector.functions {
+        // Single traversal: collect both schema functions and key objects
+        let mut collector = RegistryCollector::new(file_path);
+        parsed.module.visit_with(&mut collector);
+
+        // Process schema functions
+        for func in collector.schema_functions {
             if !schema.contains_key(&func.name) {
                 schema.insert(func.name.clone(), func);
             }
         }
 
-        // Key registry
-        let mut key_collector = KeyObjectCollector::new(file_path);
-        parsed.module.visit_with(&mut key_collector);
-        file_imports.insert(file_path.clone(), key_collector.imports);
+        // Process imports
+        file_imports.insert(file_path.clone(), collector.imports);
 
-        for obj in key_collector.objects {
+        // Process key objects
+        for obj in collector.objects {
             let key = make_registry_key(&obj.file_path, &obj.name);
             key_object.insert(key, obj);
         }
 
-        for arr in key_collector.arrays {
+        for arr in collector.arrays {
             let key = make_registry_key(&arr.file_path, &arr.name);
             key_array.insert(key, arr);
         }
 
-        for str_arr in key_collector.string_arrays {
+        for str_arr in collector.string_arrays {
             let key = make_registry_key(&str_arr.file_path, &str_arr.name);
             string_array.insert(key, str_arr);
         }
 
-        translation_props_by_file.push((file_path.clone(), key_collector.translation_props));
+        translation_props_by_file.push((file_path.clone(), collector.translation_props));
 
         // Translation function call registry: merge namespaces for same fn.arg_index
-        for fn_call in key_collector.translation_fn_calls {
+        for fn_call in collector.translation_fn_calls {
             let key = make_translation_fn_call_key(
                 &fn_call.fn_file_path,
                 &fn_call.fn_name,
@@ -102,7 +104,7 @@ pub fn build_registries(ctx: &CheckContext) -> (Registries, AllFileImports) {
         }
 
         // Default export registry: track which function is the default export
-        if let Some(name) = key_collector.default_export_name {
+        if let Some(name) = collector.default_export_name {
             default_exports.insert(file_path.clone(), name);
         }
     }
