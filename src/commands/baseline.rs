@@ -1,22 +1,20 @@
 use std::collections::{HashMap, HashSet};
 use std::fs;
-use std::path::Path;
 
 use anyhow::Result;
 use colored::Colorize;
 use unicode_width::UnicodeWidthStr;
 
 use crate::{
-    RunResult,
     args::BaselineArgs,
     checkers::hardcoded::HardcodedChecker,
     checkers::translation_calls::TranslationCallFinder,
     commands::context::CheckContext,
     directives::DisableRule,
     issue::{HardcodedIssue, Issue},
-    parsers::jsx::parse_jsx_file,
     reporter::SUCCESS_MARK,
-    rules::{Checker, untranslated::UntranslatedRule},
+    rules::{untranslated::UntranslatedRule, Checker},
+    RunResult,
 };
 
 /// Represents a location where a disable comment should be inserted.
@@ -120,19 +118,17 @@ impl BaselineRunner {
         // Track unique untranslated keys for statistics
         let mut untranslated_keys: HashSet<String> = HashSet::new();
 
+        // Ensure all files are parsed (caches AST for reuse)
+        self.ctx.ensure_parsed_files();
+
         // Collect hardcoded issues (if enabled)
         if self.rules.contains(&DisableRule::Hardcoded) {
             let mut translation_lines: HashMap<String, HashSet<usize>> = HashMap::new();
 
             for file_path in &self.ctx.files {
-                let parsed = match parse_jsx_file(Path::new(file_path)) {
-                    Ok(p) => p,
-                    Err(e) => {
-                        if self.ctx.verbose {
-                            eprintln!("Warning: {} - {}", file_path, e);
-                        }
-                        continue;
-                    }
+                let Some(parsed) = self.ctx.get_parsed(file_path) else {
+                    // File failed to parse - already logged in ensure_parsed_files
+                    continue;
                 };
 
                 // Find hardcoded issues

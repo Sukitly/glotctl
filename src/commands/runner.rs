@@ -1,15 +1,15 @@
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 use clap::ValueEnum;
 
 use crate::{
-    RunResult,
     args::CheckArgs,
     commands::context::CheckContext,
     issue::{Issue, IssueReport, Rule, Severity},
     rules::{
-        Checker, hardcoded::HardcodedRule, missing::MissingKeysRule, orphan::OrphanKeysRule,
-        type_mismatch::TypeMismatchRule, untranslated::UntranslatedRule,
+        hardcoded::HardcodedRule, missing::MissingKeysRule, orphan::OrphanKeysRule,
+        type_mismatch::TypeMismatchRule, untranslated::UntranslatedRule, Checker,
     },
+    RunResult,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, ValueEnum)]
@@ -102,9 +102,12 @@ impl CheckRunner {
         let mut all_issues = Vec::new();
 
         // 2. Pre-load shared data
+        // Always parse files first - all checkers need parsed ASTs
+        let mut parse_errors = self.ctx.ensure_parsed_files();
+        all_issues.append(&mut parse_errors);
+
         if needs_registries {
-            let mut parse_errors = self.ctx.ensure_registries()?;
-            all_issues.append(&mut parse_errors);
+            self.ctx.ensure_registries()?;
         }
 
         if needs_messages {

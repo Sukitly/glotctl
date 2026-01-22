@@ -42,8 +42,8 @@ impl Checker for MissingKeysRule {
 
     fn check(&self, ctx: &CheckContext) -> Result<Vec<Issue>> {
         // Ensure extractions are loaded (this will load registries and messages first)
-        let parse_errors = ctx.ensure_extractions()?;
-        let mut issues = parse_errors;
+        ctx.ensure_extractions()?;
+        let mut issues = Vec::new();
 
         let extractions = ctx.extractions().expect("extractions must be loaded");
         let registries = ctx.registries().expect("registries must be loaded");

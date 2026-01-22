@@ -4,7 +4,7 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
-use anyhow::{Context as _, Result, anyhow};
+use anyhow::{anyhow, Context as _, Result};
 
 use crate::{
     args::CommonArgs,
@@ -15,12 +15,13 @@ use crate::{
     },
     checkers::schema::SchemaRegistry,
     commands::shared,
-    config::Config,
     config::load_config,
+    config::Config,
     file_scanner::scan_files,
-    issue::Issue,
-    parsers::json::MessageMap,
+    issue::{Issue, ParseErrorIssue},
     parsers::json::scan_message_files,
+    parsers::json::MessageMap,
+    parsers::jsx::{parse_jsx_source, ParsedJSX},
 };
 
 use std::collections::HashMap;
@@ -79,6 +80,7 @@ pub struct CheckContext {
     pub verbose: bool,
 
     // Lazy-loaded data (set by CheckRunner when needed)
+    parsed_files: OnceCell<HashMap<String, ParsedJSX>>,
     registries: OnceCell<Registries>,
     file_imports: OnceCell<AllFileImports>,
     messages: OnceCell<MessageData>,
@@ -131,6 +133,7 @@ impl CheckContext {
             files: scan_result.files,
             ignore_texts,
             verbose: args.verbose,
+            parsed_files: OnceCell::new(),
             registries: OnceCell::new(),
             file_imports: OnceCell::new(),
             messages: OnceCell::new(),
@@ -142,6 +145,15 @@ impl CheckContext {
     // ============================================================
     // Getters - return Option to indicate whether data is loaded
     // ============================================================
+
+    pub fn parsed_files(&self) -> Option<&HashMap<String, ParsedJSX>> {
+        self.parsed_files.get()
+    }
+
+    /// Get a single parsed file by path.
+    pub fn get_parsed(&self, file_path: &str) -> Option<&ParsedJSX> {
+        self.parsed_files.get()?.get(file_path)
+    }
 
     pub fn registries(&self) -> Option<&Registries> {
         self.registries.get()
@@ -166,6 +178,11 @@ impl CheckContext {
     // ============================================================
     // Setters - called by CheckRunner to populate data
     // ============================================================
+
+    pub fn set_parsed_files(&self, data: HashMap<String, ParsedJSX>) {
+        let result = self.parsed_files.set(data);
+        debug_assert!(result.is_ok(), "parsed_files already initialized");
+    }
 
     pub fn set_registries(&self, data: Registries) {
         let result = self.registries.set(data);
@@ -196,6 +213,52 @@ impl CheckContext {
     // Data Loading Logic (Self-Populating)
     // ============================================================
 
+    /// Ensure all source files are parsed and cached.
+    ///
+    /// This is the primary entry point for parsing. All other operations
+    /// that need AST access should call this first, then use `get_parsed()`.
+    ///
+    /// Returns parse errors as Issues (if any files failed to parse).
+    pub fn ensure_parsed_files(&self) -> Vec<Issue> {
+        if self.parsed_files.get().is_some() {
+            return Vec::new();
+        }
+
+        let mut parsed = HashMap::new();
+        let mut errors = Vec::new();
+
+        for file_path in &self.files {
+            match std::fs::read_to_string(file_path) {
+                Ok(code) => match parse_jsx_source(code, file_path) {
+                    Ok(p) => {
+                        parsed.insert(file_path.clone(), p);
+                    }
+                    Err(e) => {
+                        if self.verbose {
+                            eprintln!("Warning: {} - {}", file_path, e);
+                        }
+                        errors.push(Issue::ParseError(ParseErrorIssue {
+                            file_path: file_path.clone(),
+                            error: e.to_string(),
+                        }));
+                    }
+                },
+                Err(e) => {
+                    if self.verbose {
+                        eprintln!("Warning: {} - {}", file_path, e);
+                    }
+                    errors.push(Issue::ParseError(ParseErrorIssue {
+                        file_path: file_path.clone(),
+                        error: format!("Failed to read file: {}", e),
+                    }));
+                }
+            }
+        }
+
+        self.set_parsed_files(parsed);
+        errors
+    }
+
     /// Ensure registries and file_imports are loaded.
     ///
     /// Returns parse errors as Issues (if any files failed to parse).
@@ -205,7 +268,10 @@ impl CheckContext {
             return Ok(Vec::new());
         }
 
-        let (registries, file_imports, errors) = shared::build_registries(self);
+        // Ensure files are parsed first
+        let errors = self.ensure_parsed_files();
+
+        let (registries, file_imports) = shared::build_registries(self);
         self.set_registries(registries);
         self.set_file_imports(file_imports);
         Ok(errors)
@@ -235,34 +301,32 @@ impl CheckContext {
     }
 
     /// Ensure extractions are loaded for all files.
-    /// Returns parse errors as Issues (if any files failed to parse).
-    pub fn ensure_extractions(&self) -> Result<Vec<Issue>> {
+    pub fn ensure_extractions(&self) -> Result<()> {
         if self.extractions.get().is_some() {
-            return Ok(Vec::new());
+            return Ok(());
         }
 
         // extractions depends on registries and messages
         self.ensure_registries()?;
         self.ensure_messages()?;
 
-        let (extractions, errors) = shared::build_extractions(self);
+        let extractions = shared::build_extractions(self);
         self.set_extractions(extractions);
-        Ok(errors)
+        Ok(())
     }
 
     /// Ensure used_keys are collected.
-    /// Returns parse errors from ensure_extractions (if any files failed to parse).
-    pub fn ensure_used_keys(&self) -> Result<Vec<Issue>> {
+    pub fn ensure_used_keys(&self) -> Result<()> {
         if self.used_keys.get().is_some() {
-            return Ok(Vec::new());
+            return Ok(());
         }
 
         // used_keys depends on extractions
-        let parse_errors = self.ensure_extractions()?;
+        self.ensure_extractions()?;
 
         let used_keys = shared::collect_used_keys(self);
         self.set_used_keys(used_keys);
-        Ok(parse_errors)
+        Ok(())
     }
 
     // ============================================================
@@ -308,6 +372,7 @@ mod tests {
             files: HashSet::new(),
             ignore_texts: HashSet::new(),
             verbose: false,
+            parsed_files: OnceCell::new(),
             registries: OnceCell::new(),
             file_imports: OnceCell::new(),
             messages: OnceCell::new(),
