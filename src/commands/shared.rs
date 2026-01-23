@@ -9,18 +9,17 @@ use std::path::Path;
 use swc_ecma_visit::VisitWith;
 
 use crate::{
-    checkers::{
-        file_analyzer::FileAnalyzer,
-        key_objects::{
-            FileImports, TranslationProp, make_registry_key, make_translation_fn_call_key,
-            make_translation_prop_key, resolve_import_path,
-        },
-        registry_collector::RegistryCollector,
-        schema::expand_schema_keys,
-        value_source::ValueSource,
-    },
     commands::context::{
         AllExtractions, AllFileImports, AllHardcodedIssues, CheckContext, Registries,
+    },
+    extraction::{
+        analyzer::FileAnalyzer,
+        registry::{
+            FileImports, RegistryCollector, TranslationProp, make_registry_key,
+            make_translation_fn_call_key, make_translation_prop_key, resolve_import_path,
+        },
+        resolver::ValueSource,
+        schema::expand_schema_keys,
     },
 };
 
@@ -91,7 +90,7 @@ pub fn build_registries(ctx: &CheckContext) -> (Registries, AllFileImports) {
             translation_fn_call
                 .entry(key)
                 .and_modify(
-                    |existing: &mut crate::checkers::key_objects::TranslationFnCall| {
+                    |existing: &mut crate::extraction::registry::TranslationFnCall| {
                         // Merge namespaces from different call sites
                         for ns in &fn_call.namespaces {
                             if !existing.namespaces.contains(ns) {
@@ -125,7 +124,7 @@ pub fn build_registries(ctx: &CheckContext) -> (Registries, AllFileImports) {
             translation_prop
                 .entry(key)
                 .and_modify(
-                    |existing: &mut crate::checkers::key_objects::TranslationProp| {
+                    |existing: &mut crate::extraction::registry::TranslationProp| {
                         // Merge namespaces from different call sites
                         for ns in &prop.namespaces {
                             if !existing.namespaces.contains(ns) {

@@ -8,12 +8,12 @@ use std::{collections::HashMap, path::Path};
 
 use swc_ecma_ast::{BinExpr, BinaryOp, CondExpr, Expr, Ident, Lit, MemberExpr, MemberProp, Tpl};
 
-use crate::checkers::{
-    key_objects::{
+use crate::extraction::{
+    registry::types::{
         FileImports, KeyArrayRegistry, KeyObjectRegistry, StringArrayRegistry, make_registry_key,
         resolve_import_path,
     },
-    value_source::{UnresolvableReason, ValueSource},
+    resolver::value_source::{UnresolvableReason, ValueSource},
 };
 
 /// Get the type name of an expression for error messages.
@@ -154,7 +154,7 @@ impl<'a> ValueAnalyzer<'a> {
 
     /// Main entry point: analyze an expression and return its ValueSource.
     pub fn analyze_expr(&self, expr: &Expr) -> ValueSource {
-        match crate::checkers::unwrap_paren(expr) {
+        match crate::extraction::utils::unwrap_paren(expr) {
             // Static string: "key"
             Expr::Lit(Lit::Str(s)) => match s.value.as_str() {
                 Some(v) => ValueSource::Literal(v.to_string()),
@@ -508,7 +508,7 @@ impl<'a> ValueAnalyzer<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::checkers::key_objects::{ImportInfo, KeyArray, KeyObject, StringArray};
+    use crate::extraction::registry::types::{ImportInfo, KeyArray, KeyObject, StringArray};
 
     fn create_empty_analyzer<'a>(
         file_path: &'a str,

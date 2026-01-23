@@ -31,10 +31,10 @@ pub struct RunResult {
 }
 
 pub mod args;
-pub(crate) mod checkers;
 pub(crate) mod commands;
 pub(crate) mod config;
 pub(crate) mod directives;
+pub(crate) mod extraction;
 pub(crate) mod file_scanner;
 pub mod issue;
 pub(crate) mod json_editor;

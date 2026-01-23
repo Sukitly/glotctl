@@ -11,13 +11,11 @@ use std::collections::HashSet;
 use anyhow::Result;
 
 use crate::{
-    checkers::{
-        extraction::DynamicKeyReason, schema::expand_schema_keys, value_source::ValueSource,
-    },
     commands::{
         check::{build_key_usage_map, find_missing_keys, find_replica_lag},
         context::CheckContext,
     },
+    extraction::{DynamicKeyReason, resolver::ValueSource, schema::expand_schema_keys},
     issue::{
         DynamicKeyIssue, Issue, MissingDynamicKeyCandidatesIssue, MissingKeyIssue, SourceLocation,
         UntrackedNamespaceIssue,

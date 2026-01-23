@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::{
-    checkers::extraction::{KeyExtractionResult as ExtractionResult, UsedKey},
+    extraction::{KeyExtractionResult as ExtractionResult, UsedKey},
     issue::{
         Issue, KeyUsage, MAX_KEY_USAGES, MessageLocation, OrphanKeyIssue, ReplicaLagIssue,
         SourceLocation, UnusedKeyIssue,
@@ -231,9 +231,9 @@ mod tests {
         attrs: &[String],
         ignore_texts: &HashSet<String>,
     ) -> Vec<crate::issue::HardcodedIssue> {
-        use crate::checkers::file_analyzer::FileAnalyzer;
-        use crate::checkers::key_objects::FileImports;
         use crate::commands::context::Registries;
+        use crate::extraction::analyzer::FileAnalyzer;
+        use crate::extraction::registry::FileImports;
 
         let parsed = parse_jsx_source(code.to_string(), "test.tsx").unwrap();
         let registries = Registries {
@@ -979,7 +979,7 @@ const b = <div>Detected</div>"#;
 
     #[test]
     fn test_build_key_disable_map_basic() {
-        use crate::checkers::extraction::UsedKey;
+        use crate::extraction::UsedKey;
 
         let mut extractions: HashMap<String, ExtractionResult> = HashMap::new();
         extractions.insert(
@@ -1021,7 +1021,7 @@ const b = <div>Detected</div>"#;
 
     #[test]
     fn test_build_key_disable_map_all_disabled() {
-        use crate::checkers::extraction::UsedKey;
+        use crate::extraction::UsedKey;
 
         let mut extractions: HashMap<String, ExtractionResult> = HashMap::new();
         extractions.insert(

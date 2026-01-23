@@ -8,15 +8,15 @@ use anyhow::{Context as _, Result, anyhow};
 
 use crate::{
     args::CommonArgs,
-    checkers::extraction::KeyExtractionResult,
-    checkers::key_objects::{
-        KeyArrayRegistry, KeyObjectRegistry, StringArrayRegistry, TranslationFnCallRegistry,
-        TranslationPropRegistry,
-    },
-    checkers::schema::SchemaRegistry,
     commands::shared,
     config::Config,
     config::load_config,
+    extraction::KeyExtractionResult,
+    extraction::registry::{
+        KeyArrayRegistry, KeyObjectRegistry, StringArrayRegistry, TranslationFnCallRegistry,
+        TranslationPropRegistry,
+    },
+    extraction::schema::SchemaRegistry,
     file_scanner::scan_files,
     issue::{Issue, ParseErrorIssue},
     parsers::json::MessageMap,
@@ -29,7 +29,7 @@ use std::collections::HashMap;
 use crate::issue::HardcodedIssue;
 
 /// Type alias for all file imports across the codebase.
-pub type AllFileImports = HashMap<String, crate::checkers::key_objects::FileImports>;
+pub type AllFileImports = HashMap<String, crate::extraction::registry::FileImports>;
 
 /// Type alias for all extraction results (one per file).
 pub type AllExtractions = HashMap<String, KeyExtractionResult>;
