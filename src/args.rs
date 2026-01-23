@@ -1,7 +1,7 @@
 use clap::{Args, CommandFactory, Parser, Subcommand};
 
 use crate::commands::runner::CheckType;
-use crate::directives::DisableRule;
+use crate::extraction::resolve::comments::DisableRule;
 
 #[derive(Debug, Parser)]
 #[command(author, version, about, long_about = None)]

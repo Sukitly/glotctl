@@ -9,11 +9,11 @@ use std::{collections::HashMap, path::Path};
 use swc_ecma_ast::{BinExpr, BinaryOp, CondExpr, Expr, Ident, Lit, MemberExpr, MemberProp, Tpl};
 
 use crate::extraction::{
-    registry::types::{
+    collect::types::{
         FileImports, KeyArrayRegistry, KeyObjectRegistry, StringArrayRegistry, make_registry_key,
         resolve_import_path,
     },
-    resolver::value_source::{UnresolvableReason, ValueSource},
+    extract::value_source::{UnresolvableReason, ValueSource},
 };
 
 /// Get the type name of an expression for error messages.
@@ -508,7 +508,7 @@ impl<'a> ValueAnalyzer<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::extraction::registry::types::{ImportInfo, KeyArray, KeyObject, StringArray};
+    use crate::extraction::collect::types::{ImportInfo, KeyArray, KeyObject, StringArray};
 
     fn create_empty_analyzer<'a>(
         file_path: &'a str,

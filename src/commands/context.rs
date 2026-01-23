@@ -12,7 +12,7 @@ use crate::{
     config::Config,
     config::load_config,
     extraction::KeyExtractionResult,
-    extraction::registry::{
+    extraction::collect::{
         KeyArrayRegistry, KeyObjectRegistry, StringArrayRegistry, TranslationFnCallRegistry,
         TranslationPropRegistry,
     },
@@ -29,7 +29,7 @@ use std::collections::HashMap;
 use crate::issue::HardcodedIssue;
 
 /// Type alias for all file imports across the codebase.
-pub type AllFileImports = HashMap<String, crate::extraction::registry::FileImports>;
+pub type AllFileImports = HashMap<String, crate::extraction::collect::FileImports>;
 
 /// Type alias for all extraction results (one per file).
 pub type AllExtractions = HashMap<String, KeyExtractionResult>;
@@ -161,6 +161,7 @@ impl CheckContext {
         self.registries.get()
     }
 
+    #[cfg(test)]
     pub fn file_imports(&self) -> Option<&AllFileImports> {
         self.file_imports.get()
     }

@@ -232,8 +232,8 @@ mod tests {
         ignore_texts: &HashSet<String>,
     ) -> Vec<crate::issue::HardcodedIssue> {
         use crate::commands::context::Registries;
-        use crate::extraction::analyzer::FileAnalyzer;
-        use crate::extraction::registry::FileImports;
+        use crate::extraction::collect::FileImports;
+        use crate::extraction::extract::FileAnalyzer;
 
         let parsed = parse_jsx_source(code.to_string(), "test.tsx").unwrap();
         let registries = Registries {

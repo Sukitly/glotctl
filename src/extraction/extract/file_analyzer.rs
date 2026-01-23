@@ -18,15 +18,15 @@ use swc_ecma_ast::{
 };
 use swc_ecma_visit::{Visit, VisitWith};
 
-use crate::directives::{DisableContext, DisableRule};
+use crate::extraction::resolve::comments::{DisableContext, DisableRule};
 use crate::issue::{HardcodedIssue, SourceLocation};
 use crate::utils::contains_alphabetic;
 
-use super::{BindingContext, TranslationSource};
+use super::{BindingContext, ResolvedKey, TranslationSource, ValueAnalyzer};
 use crate::commands::context::Registries;
 use crate::extraction::{
-    registry::types::{FileImports, extract_binding_names, make_translation_fn_call_key},
-    resolver::{AnnotationStore, ResolvedKey, ValueAnalyzer},
+    collect::types::{FileImports, extract_binding_names, make_translation_fn_call_key},
+    resolve::comments::AnnotationStore,
     results::{DynamicKeyReason, DynamicKeyWarning, KeyExtractionResult, UsedKey},
     schema::SchemaCallInfo,
     utils::{extract_namespace_from_call, is_translation_hook},
@@ -486,7 +486,7 @@ impl<'a> FileAnalyzer<'a> {
         prop_name: &str,
         binding_name: &str,
     ) {
-        use crate::extraction::registry::make_translation_prop_key;
+        use crate::extraction::collect::make_translation_prop_key;
 
         let key = make_translation_prop_key(component_name, prop_name);
 
