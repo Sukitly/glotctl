@@ -209,6 +209,7 @@ fn resolve_component_name_for_prop(
 }
 
 /// Phase 2: Extract translation keys and hardcoded issues from all files using collected comments.
+#[allow(clippy::too_many_arguments)]
 fn extract_from_files(
     files: &std::collections::HashSet<String>,
     parsed_files: &HashMap<String, ParsedJSX>,
