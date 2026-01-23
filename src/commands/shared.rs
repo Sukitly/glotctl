@@ -10,17 +10,17 @@ use swc_ecma_visit::VisitWith;
 
 use crate::{
     checkers::{
+        file_analyzer::FileAnalyzer,
         key_objects::{
-            FileImports, TranslationProp, make_registry_key, make_translation_fn_call_key,
-            make_translation_prop_key, resolve_import_path,
+            make_registry_key, make_translation_fn_call_key, make_translation_prop_key,
+            resolve_import_path, FileImports, TranslationProp,
         },
         registry_collector::RegistryCollector,
         schema::expand_schema_keys,
         value_source::ValueSource,
     },
-    commands::{
-        check::extract_translation_keys,
-        context::{AllExtractions, AllFileImports, CheckContext, Registries},
+    commands::context::{
+        AllExtractions, AllFileImports, AllHardcodedIssues, CheckContext, Registries,
     },
 };
 
@@ -174,31 +174,29 @@ fn resolve_component_name_for_prop(
         .unwrap_or_else(|| component_name.to_string())
 }
 
-/// Build extractions from cached parsed files.
+/// Build file analysis (extractions + hardcoded issues) from cached parsed files.
 ///
-/// Returns extractions map.
+/// Performs a single AST traversal per file to generate both results.
 /// Requires parsed_files, registries, file_imports, and messages to be loaded in ctx.
-pub fn build_extractions(ctx: &CheckContext) -> AllExtractions {
+pub fn build_file_analysis(ctx: &CheckContext) -> (AllExtractions, AllHardcodedIssues) {
     let parsed_files = ctx
         .parsed_files()
-        .expect("parsed_files must be loaded before build_extractions");
+        .expect("parsed_files must be loaded before build_file_analysis");
     let registries = ctx
         .registries()
-        .expect("registries must be loaded before build_extractions");
+        .expect("registries must be loaded before build_file_analysis");
     let file_imports = ctx
         .file_imports()
-        .expect("file_imports must be loaded before build_extractions");
-    let messages = ctx
+        .expect("file_imports must be loaded before build_file_analysis");
+    // Messages are optional - needed for extraction but not for hardcoded detection
+    let available_keys: HashSet<String> = ctx
         .messages()
-        .expect("messages must be loaded before build_extractions");
-
-    let available_keys: HashSet<String> = messages
-        .primary_messages
-        .as_ref()
+        .and_then(|messages| messages.primary_messages.as_ref())
         .map(|m| m.keys().cloned().collect())
         .unwrap_or_default();
 
     let mut extractions = HashMap::new();
+    let mut hardcoded_issues = HashMap::new();
 
     for file_path in &ctx.files {
         let Some(parsed) = parsed_files.get(file_path) else {
@@ -207,12 +205,26 @@ pub fn build_extractions(ctx: &CheckContext) -> AllExtractions {
         };
 
         let imports = file_imports.get(file_path).cloned().unwrap_or_default();
-        let result =
-            extract_translation_keys(file_path, parsed, registries, &imports, &available_keys);
-        extractions.insert(file_path.clone(), result);
+
+        // Single traversal produces both extraction and hardcoded issues
+        let analyzer = FileAnalyzer::new(
+            file_path,
+            &parsed.source_map,
+            &parsed.comments,
+            &ctx.config.checked_attributes,
+            &ctx.ignore_texts,
+            registries,
+            &imports,
+            &parsed.source,
+            &available_keys,
+        );
+        let result = analyzer.analyze(&parsed.module);
+
+        extractions.insert(file_path.clone(), result.extraction);
+        hardcoded_issues.insert(file_path.clone(), result.hardcoded_issues);
     }
 
-    extractions
+    (extractions, hardcoded_issues)
 }
 
 /// Collect all used translation keys from cached extractions.

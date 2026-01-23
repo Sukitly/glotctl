@@ -1,11 +1,10 @@
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 use colored::Colorize;
 
 use crate::{
-    RunResult,
     args::CleanArgs,
     checkers::extraction::DynamicKeyReason,
     commands::{
@@ -20,6 +19,7 @@ use crate::{
     json_editor::JsonEditor,
     parsers::json::scan_message_files,
     reporter::{FAILURE_MARK, SUCCESS_MARK},
+    RunResult,
 };
 
 /// Runner for the clean command.
@@ -124,9 +124,8 @@ impl CleanRunner {
             })
         }));
 
-        // Build extractions (uses cached parsed files)
-        let extractions = shared::build_extractions(&self.ctx);
-        self.ctx.set_extractions(extractions);
+        // Build extractions (uses cached parsed files via FileAnalyzer)
+        self.ctx.ensure_extractions()?;
 
         // Collect used keys
         let used_keys = shared::collect_used_keys(&self.ctx);

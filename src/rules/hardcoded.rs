@@ -4,11 +4,7 @@
 
 use anyhow::Result;
 
-use crate::{
-    commands::{check::check_hardcoded, context::CheckContext},
-    issue::Issue,
-    rules::Checker,
-};
+use crate::{commands::context::CheckContext, issue::Issue, rules::Checker};
 
 pub struct HardcodedRule;
 
@@ -18,22 +14,17 @@ impl Checker for HardcodedRule {
     }
 
     fn check(&self, ctx: &CheckContext) -> Result<Vec<Issue>> {
+        // Ensure hardcoded issues are analyzed (uses unified FileAnalyzer)
+        ctx.ensure_hardcoded_issues()?;
+
+        let all_issues = ctx
+            .hardcoded_issues()
+            .expect("hardcoded_issues must be loaded after ensure_hardcoded_issues");
+
         let mut issues = Vec::new();
-
-        for file_path in &ctx.files {
-            // Skip files that failed to parse (already recorded in ensure_parsed_files)
-            let Some(parsed) = ctx.get_parsed(file_path) else {
-                continue;
-            };
-
-            let hardcoded_issues = check_hardcoded(
-                file_path,
-                parsed,
-                &ctx.config.checked_attributes,
-                &ctx.ignore_texts,
-            );
-            for issue in hardcoded_issues {
-                issues.push(Issue::Hardcoded(issue));
+        for file_issues in all_issues.values() {
+            for issue in file_issues {
+                issues.push(Issue::Hardcoded(issue.clone()));
             }
         }
 

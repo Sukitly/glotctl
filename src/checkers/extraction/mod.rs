@@ -12,15 +12,16 @@
 //! The extractor uses the `ValueAnalyzer` to resolve dynamic expressions and
 //! track variable bindings across the codebase.
 
-mod annotation_store;
-mod binding_context;
+// Expose internal modules for FileAnalyzer
+pub(crate) mod annotation_store;
+pub(crate) mod binding_context;
+pub(crate) mod translation_source;
+
 mod result;
-mod translation_source;
-mod visitor;
 
 // Public API
 pub use result::{DynamicKeyReason, DynamicKeyWarning, KeyExtractionResult, UsedKey};
-pub use visitor::TranslationKeyVisitor;
+
 
 #[cfg(test)]
 mod tests;

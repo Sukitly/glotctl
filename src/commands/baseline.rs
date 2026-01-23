@@ -6,15 +6,13 @@ use colored::Colorize;
 use unicode_width::UnicodeWidthStr;
 
 use crate::{
-    RunResult,
     args::BaselineArgs,
-    checkers::hardcoded::HardcodedChecker,
-    checkers::translation_calls::TranslationCallFinder,
     commands::context::CheckContext,
     directives::DisableRule,
     issue::{HardcodedIssue, Issue},
     reporter::SUCCESS_MARK,
-    rules::{Checker, untranslated::UntranslatedRule},
+    rules::{untranslated::UntranslatedRule, Checker},
+    RunResult,
 };
 
 /// Represents a location where a disable comment should be inserted.
@@ -123,37 +121,33 @@ impl BaselineRunner {
 
         // Collect hardcoded issues (if enabled)
         if self.rules.contains(&DisableRule::Hardcoded) {
+            // Ensure file analysis (extractions + hardcoded) is loaded
+            self.ctx.ensure_extractions()?;
+            self.ctx.ensure_hardcoded_issues()?;
+            let extractions = self.ctx.extractions().expect("extractions must be loaded");
+            let all_hardcoded_issues = self
+                .ctx
+                .hardcoded_issues()
+                .expect("hardcoded_issues must be loaded");
+
+            // Build translation_lines map from extractions
             let mut translation_lines: HashMap<String, HashSet<usize>> = HashMap::new();
-
-            for file_path in &self.ctx.files {
-                let Some(parsed) = self.ctx.get_parsed(file_path) else {
-                    // File failed to parse - already logged in ensure_parsed_files
-                    continue;
-                };
-
-                // Find hardcoded issues
-                let checker = HardcodedChecker::new(
-                    file_path,
-                    &self.ctx.config.checked_attributes,
-                    &self.ctx.ignore_texts,
-                    &parsed.source_map,
-                    &parsed.comments,
-                );
-                let issues = checker.check(&parsed.module);
-
-                // Find lines with translation calls (for skip logic)
-                let lines = TranslationCallFinder::new(&parsed.source_map).find(&parsed.module);
+            for (file_path, extraction_result) in extractions {
+                let lines: HashSet<usize> =
+                    extraction_result.used_keys.iter().map(|k| k.line).collect();
                 if !lines.is_empty() {
                     translation_lines.insert(file_path.clone(), lines);
                 }
+            }
 
-                // Add hardcoded issues to targets (skip lines with translation calls)
+            // Process hardcoded issues from cached results
+            for (file_path, issues) in all_hardcoded_issues {
                 let file_translation_lines = translation_lines.get(file_path);
                 for issue in issues {
                     let has_translation = file_translation_lines
                         .is_some_and(|lines| lines.contains(&issue.location.line));
                     if has_translation {
-                        skipped_hardcoded.push(issue);
+                        skipped_hardcoded.push(issue.clone());
                     } else {
                         let key = (issue.location.file_path.clone(), issue.location.line);
                         targets_map

@@ -1,87 +1,130 @@
-//! Core AST visitor for translation key extraction.
+//! Combined file analyzer that extracts translation keys and detects hardcoded text in a single AST traversal.
 //!
-//! Contains the `TranslationKeyVisitor` struct and its `Visit` trait implementation
-//! for detecting translation keys used in code.
+//! This module merges the functionality of:
+//! - `HardcodedChecker`: detects hardcoded text in JSX/TSX
+//! - `TranslationKeyVisitor`: extracts translation keys from code
+//! - `TranslationCallFinder`: finds lines with translation calls (derived from used_keys)
+//!
+//! By combining these into a single visitor, we reduce the number of AST traversals per file
+//! from 3-4 to just 1, significantly improving performance.
 
 use std::collections::HashSet;
 
 use swc_common::{Loc, SourceMap, comments::SingleThreadedComments};
 use swc_ecma_ast::{
-    CallExpr, Callee, CondExpr, Expr, FnDecl, JSXElement, JSXExprContainer, JSXFragment, Lit,
-    MemberProp, Module, ObjectPatProp, Pat, VarDecl, VarDeclarator,
+    BinaryOp, CallExpr, Callee, CondExpr, DefaultDecl, Expr, FnDecl, JSXAttr, JSXAttrName,
+    JSXAttrValue, JSXElement, JSXElementName, JSXExpr, JSXExprContainer, JSXFragment, JSXText,
+    Lit, MemberProp, Module, ObjectPatProp, Pat, VarDecl, VarDeclarator,
 };
 use swc_ecma_visit::{Visit, VisitWith};
 
-use super::annotation_store::AnnotationStore;
-use super::binding_context::BindingContext;
-use super::result::{DynamicKeyReason, DynamicKeyWarning, KeyExtractionResult, UsedKey};
-use super::translation_source::TranslationSource;
-use crate::checkers::{
+use crate::directives::{DisableContext, DisableRule};
+use crate::issue::{HardcodedIssue, SourceLocation};
+use crate::utils::contains_alphabetic;
+
+use super::extraction::{
+    DynamicKeyReason, DynamicKeyWarning, KeyExtractionResult, UsedKey,
+    annotation_store::AnnotationStore,
+    binding_context::BindingContext,
+    translation_source::TranslationSource,
+};
+use super::{
     extract_namespace_from_call, is_translation_hook,
-    key_objects::{
-        FileImports, extract_binding_names, make_translation_fn_call_key, make_translation_prop_key,
-    },
+    key_objects::{FileImports, extract_binding_names, make_translation_fn_call_key},
     schema::SchemaCallInfo,
     value_analyzer::ValueAnalyzer,
     value_source::ResolvedKey,
 };
 use crate::commands::context::Registries;
-use crate::directives::{DisableContext, DisableRule};
 
-pub(crate) fn resolve_full_key(namespace: &Option<String>, key: &str) -> String {
-    match namespace {
-        Some(ns) => format!("{}.{}", ns, key),
-        _ => key.to_string(),
+/// Tracks JSX context state during AST traversal.
+///
+/// These flags are independent (not mutually exclusive):
+/// - `in_context`: Inside JSX element/fragment children
+/// - `in_attr`: Inside a JSX attribute
+/// - `in_checked_attr`: Inside a checked attribute (placeholder, title, etc.)
+/// - `in_expr`: Inside a JSX expression container {}
+/// - `in_element_expr`: Current JSX element is inside an expression (ternary, &&, etc.)
+#[derive(Debug, Clone, Copy, Default)]
+struct JsxState {
+    in_context: bool,
+    in_attr: bool,
+    in_checked_attr: bool,
+    in_expr: bool,
+    in_element_expr: bool,
+}
+
+impl JsxState {
+    /// Create a new state for entering JSX children.
+    /// Preserves `in_element_expr` based on whether we're currently in an expression.
+    fn for_children(self) -> Self {
+        Self {
+            in_context: true,
+            in_attr: false,
+            in_checked_attr: false,
+            in_expr: false,
+            in_element_expr: self.in_expr, // if entering from expr, element is in expr
+        }
     }
 }
 
-/// Extracts translation keys from TSX/JSX files.
-///
-/// Analyzes source code to find translation keys that are used,
-/// tracking namespace bindings and detecting dynamic keys.
-pub struct TranslationKeyVisitor<'a> {
+/// Result of analyzing a single file.
+#[derive(Debug)]
+pub struct FileAnalysisResult {
+    pub hardcoded_issues: Vec<HardcodedIssue>,
+    pub extraction: KeyExtractionResult,
+}
+
+/// Combined analyzer that extracts translation keys and detects hardcoded text.
+pub struct FileAnalyzer<'a> {
+    // === Shared fields ===
     file_path: &'a str,
     source_map: &'a SourceMap,
+    disable_context: DisableContext,
+    jsx_state: JsxState,
 
-    // Composed modules
+    // === HardcodedChecker specific ===
+    checked_attributes: &'a [String],
+    ignore_texts: &'a HashSet<String>,
+
+    // === TranslationKeyVisitor specific ===
     binding_context: BindingContext,
     annotation_store: AnnotationStore,
     value_analyzer: ValueAnalyzer<'a>,
-    disable_context: DisableContext,
-
-    // Dependencies
     registries: &'a Registries,
     available_keys: &'a HashSet<String>,
 
-    // Results
-    pub used_keys: Vec<UsedKey>,
-    pub warnings: Vec<DynamicKeyWarning>,
-    pub schema_calls: Vec<SchemaCallInfo>,
-    pub resolved_keys: Vec<ResolvedKey>,
-
-    // State
-    in_jsx_context: bool,
-    in_jsx_expr: bool,
+    // === Output ===
+    hardcoded_issues: Vec<HardcodedIssue>,
+    used_keys: Vec<UsedKey>,
+    warnings: Vec<DynamicKeyWarning>,
+    schema_calls: Vec<SchemaCallInfo>,
+    resolved_keys: Vec<ResolvedKey>,
 }
 
-impl<'a> TranslationKeyVisitor<'a> {
+impl<'a> FileAnalyzer<'a> {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         file_path: &'a str,
         source_map: &'a SourceMap,
         comments: &SingleThreadedComments,
+        checked_attributes: &'a [String],
+        ignore_texts: &'a HashSet<String>,
         registries: &'a Registries,
         file_imports: &'a FileImports,
         source: &str,
         available_keys: &'a HashSet<String>,
     ) -> Self {
-        // Parse glot-message-keys annotations
         let annotation_store = AnnotationStore::parse(source, file_path, available_keys);
-        // Parse glot-disable directives
         let disable_context = DisableContext::from_comments(comments, source_map);
 
         Self {
             file_path,
             source_map,
+            disable_context,
+            jsx_state: JsxState::default(),
+            checked_attributes,
+            ignore_texts,
             binding_context: BindingContext::new(),
             annotation_store,
             value_analyzer: ValueAnalyzer::new(
@@ -91,23 +134,136 @@ impl<'a> TranslationKeyVisitor<'a> {
                 &registries.string_array,
                 file_imports,
             ),
-            disable_context,
             registries,
             available_keys,
+            hardcoded_issues: Vec::new(),
             used_keys: Vec::new(),
             warnings: Vec::new(),
             schema_calls: Vec::new(),
             resolved_keys: Vec::new(),
-            in_jsx_context: false,
-            in_jsx_expr: false,
         }
     }
 
-    fn should_use_jsx_comment(&self, source_line: &str) -> bool {
-        if !self.in_jsx_context {
+    /// Main entry point: analyze a module and return results.
+    pub fn analyze(mut self, module: &Module) -> FileAnalysisResult {
+        self.visit_module(module);
+        FileAnalysisResult {
+            hardcoded_issues: self.hardcoded_issues,
+            extraction: KeyExtractionResult {
+                used_keys: self.used_keys,
+                warnings: self.warnings,
+                schema_calls: self.schema_calls,
+                resolved_keys: self.resolved_keys,
+                pattern_warnings: self.annotation_store.warnings,
+            },
+        }
+    }
+
+    // ============================================================
+    // HardcodedChecker methods
+    // ============================================================
+
+    fn should_report_hardcoded(&self, line: usize, text: &str) -> bool {
+        if self
+            .disable_context
+            .should_ignore(line, DisableRule::Hardcoded)
+        {
             return false;
         }
-        if self.in_jsx_expr {
+        let text = text.trim();
+        if self.ignore_texts.contains(text) {
+            return false;
+        }
+        contains_alphabetic(text)
+    }
+
+    /// Determines whether to use JSX comment style `{/* */}` or JS comment style `//`.
+    fn should_use_jsx_comment(&self, source_line: &str) -> bool {
+        let trimmed_line = source_line.trim_start();
+        if self.jsx_state.in_expr
+            && (trimmed_line.starts_with(':') || trimmed_line.starts_with('?'))
+        {
+            return false;
+        }
+        let line_starts_with_element = trimmed_line.starts_with('<');
+        let state = &self.jsx_state;
+
+        if state.in_attr {
+            line_starts_with_element && state.in_context && !state.in_expr
+        } else if line_starts_with_element {
+            if state.in_element_expr {
+                false
+            } else {
+                state.in_context && !state.in_expr
+            }
+        } else {
+            state.in_context
+        }
+    }
+
+    fn add_hardcoded_issue(&mut self, value: &str, loc: Loc) {
+        let source_line = loc
+            .file
+            .get_line(loc.line - 1)
+            .map(|cow| cow.to_string())
+            .unwrap_or_default();
+
+        let use_jsx_comment = self.should_use_jsx_comment(&source_line);
+
+        self.hardcoded_issues.push(HardcodedIssue {
+            location: SourceLocation::new(self.file_path, loc.line)
+                .with_col(loc.col_display + 1)
+                .with_jsx_context(use_jsx_comment),
+            text: value.to_owned(),
+            source_line: Some(source_line),
+        });
+    }
+
+    fn check_hardcoded_line(&mut self, value: &str, loc: Loc) {
+        if self.should_report_hardcoded(loc.line, value) {
+            self.add_hardcoded_issue(value, loc);
+        }
+    }
+
+    fn check_expr(&mut self, expr: &Expr) {
+        match expr {
+            Expr::Lit(Lit::Str(s)) => {
+                if let Some(value) = s.value.as_str() {
+                    let loc = self.source_map.lookup_char_pos(s.span.lo);
+                    self.check_hardcoded_line(value, loc);
+                };
+            }
+            Expr::Tpl(tpl) => {
+                for quasi in &tpl.quasis {
+                    if let Some(cooked) = &quasi.cooked
+                        && let Some(value) = cooked.as_str()
+                    {
+                        let loc = self.source_map.lookup_char_pos(quasi.span.lo);
+                        self.check_hardcoded_line(value, loc);
+                    }
+                }
+            }
+            Expr::Bin(bin) if bin.op == BinaryOp::LogicalAnd || bin.op == BinaryOp::LogicalOr => {
+                self.check_expr(&bin.right)
+            }
+            Expr::Cond(cond) => {
+                self.check_expr(&cond.cons);
+                self.check_expr(&cond.alt);
+            }
+            _ => {}
+        }
+    }
+
+    // ============================================================
+    // TranslationKeyVisitor methods
+    // ============================================================
+
+    fn should_use_jsx_comment_for_extraction(&self, source_line: &str) -> bool {
+        // Use JSX state for determining comment style
+        if !self.jsx_state.in_context {
+            return false;
+        }
+        if self.jsx_state.in_expr {
             let trimmed = source_line.trim_start();
             if trimmed.starts_with(':') || trimmed.starts_with('?') {
                 return false;
@@ -125,7 +281,7 @@ impl<'a> TranslationKeyVisitor<'a> {
         let untranslated_disabled = self
             .disable_context
             .should_ignore(loc.line, DisableRule::Untranslated);
-        let in_jsx_context = self.should_use_jsx_comment(&source_line);
+        let in_jsx_context = self.should_use_jsx_comment_for_extraction(&source_line);
         self.used_keys.push(UsedKey {
             full_key,
             file_path: self.file_path.to_string(),
@@ -137,7 +293,6 @@ impl<'a> TranslationKeyVisitor<'a> {
         });
     }
 
-    /// Add used keys for a relative key with all namespaces from the translation source.
     fn add_used_keys_with_namespaces(
         &mut self,
         loc: Loc,
@@ -146,7 +301,7 @@ impl<'a> TranslationKeyVisitor<'a> {
     ) {
         let namespaces = translation_source.namespaces();
         for namespace in namespaces {
-            let full_key = resolve_full_key(&namespace, key);
+            let full_key = self.resolve_full_key(&namespace, key);
             self.add_used_key(loc.clone(), full_key);
         }
     }
@@ -163,7 +318,7 @@ impl<'a> TranslationKeyVisitor<'a> {
             .get_line(loc.line - 1)
             .map(|cow| cow.to_string())
             .unwrap_or_default();
-        let in_jsx_context = self.should_use_jsx_comment(&source_line);
+        let in_jsx_context = self.should_use_jsx_comment_for_extraction(&source_line);
         self.warnings.push(DynamicKeyWarning {
             file_path: self.file_path.to_string(),
             line: loc.line,
@@ -176,7 +331,13 @@ impl<'a> TranslationKeyVisitor<'a> {
         });
     }
 
-    /// Process a ternary expression: t(cond ? "keyA" : "keyB")
+    fn resolve_full_key(&self, namespace: &Option<String>, key: &str) -> String {
+        match namespace {
+            Some(ns) => format!("{}.{}", ns, key),
+            _ => key.to_string(),
+        }
+    }
+
     fn process_ternary_arg(
         &mut self,
         cond: &CondExpr,
@@ -210,7 +371,6 @@ impl<'a> TranslationKeyVisitor<'a> {
         matches!(crate::checkers::unwrap_paren(expr), Expr::Tpl(tpl) if !tpl.exprs.is_empty())
     }
 
-    /// Infer a glob pattern from a template literal.
     fn infer_pattern_from_template(
         tpl: &swc_ecma_ast::Tpl,
         namespace: &Option<String>,
@@ -273,16 +433,6 @@ impl<'a> TranslationKeyVisitor<'a> {
         }
     }
 
-    fn extract_arrow_first_param(expr: &Expr) -> Option<String> {
-        if let Expr::Arrow(arrow) = expr
-            && let Some(first_param) = arrow.params.first()
-            && let Pat::Ident(ident) = first_param
-        {
-            return Some(ident.id.sym.to_string());
-        }
-        None
-    }
-
     fn register_translation_props_from_params(
         &mut self,
         component_name: &str,
@@ -341,6 +491,8 @@ impl<'a> TranslationKeyVisitor<'a> {
         prop_name: &str,
         binding_name: &str,
     ) {
+        use super::key_objects::make_translation_prop_key;
+
         let key = make_translation_prop_key(component_name, prop_name);
 
         if let Some(translation_prop) = self.registries.translation_prop.get(&key) {
@@ -363,7 +515,6 @@ impl<'a> TranslationKeyVisitor<'a> {
 
         let mut registered_names = HashSet::new();
 
-        // First pass: register FromFnCall bindings
         for (idx, param) in params.iter().enumerate() {
             if let Pat::Ident(ident) = param {
                 let param_name = ident.id.sym.to_string();
@@ -393,7 +544,6 @@ impl<'a> TranslationKeyVisitor<'a> {
             }
         }
 
-        // Second pass: shadow parameters that have outer bindings
         for param in params {
             for name in extract_binding_names(param) {
                 if registered_names.contains(&name) {
@@ -427,37 +577,48 @@ impl<'a> TranslationKeyVisitor<'a> {
         Some((component_name, arrow))
     }
 
-    /// Main entry point: extract translation keys from a module.
-    pub fn extract(mut self, module: &Module) -> KeyExtractionResult {
-        self.visit_module(module);
-        KeyExtractionResult {
-            used_keys: self.used_keys,
-            warnings: self.warnings,
-            schema_calls: self.schema_calls,
-            resolved_keys: self.resolved_keys,
-            pattern_warnings: self.annotation_store.warnings,
+    /// Extract the first parameter name from an arrow function.
+    /// Used for iterator detection: array.map(item => ...) -> Some("item")
+    fn extract_arrow_first_param(expr: &Expr) -> Option<String> {
+        if let Expr::Arrow(arrow) = expr
+            && let Some(first_param) = arrow.params.first()
+            && let Pat::Ident(ident) = first_param
+        {
+            return Some(ident.id.sym.to_string());
         }
+        None
     }
 }
 
-impl<'a> Visit for TranslationKeyVisitor<'a> {
-    fn visit_jsx_expr_container(&mut self, node: &JSXExprContainer) {
-        let prev = self.in_jsx_expr;
-        self.in_jsx_expr = true;
-        node.visit_children_with(self);
-        self.in_jsx_expr = prev;
-    }
-
+impl<'a> Visit for FileAnalyzer<'a> {
     fn visit_jsx_element(&mut self, node: &JSXElement) {
+        // Visit opening element (attributes)
         node.opening.visit_with(self);
 
-        let prev = self.in_jsx_context;
-        self.in_jsx_context = true;
+        // Check if this is a <style> tag (from HardcodedChecker)
+        let is_style = if let JSXElementName::Ident(ident) = &node.opening.name {
+            ident.sym == "style"
+        } else {
+            false
+        };
+
+        if is_style {
+            if let Some(closing) = &node.closing {
+                closing.visit_with(self);
+            }
+            return;
+        }
+
+        // Visit children with JSX context state
+        let prev_state = self.jsx_state;
+        self.jsx_state = prev_state.for_children();
+
         for child in &node.children {
             child.visit_with(self);
         }
-        self.in_jsx_context = prev;
+        self.jsx_state = prev_state;
 
+        // Visit closing element
         if let Some(closing) = &node.closing {
             closing.visit_with(self);
         }
@@ -466,14 +627,83 @@ impl<'a> Visit for TranslationKeyVisitor<'a> {
     fn visit_jsx_fragment(&mut self, node: &JSXFragment) {
         node.opening.visit_with(self);
 
-        let prev = self.in_jsx_context;
-        self.in_jsx_context = true;
+        let prev_state = self.jsx_state;
+        self.jsx_state = prev_state.for_children();
+
         for child in &node.children {
             child.visit_with(self);
         }
-        self.in_jsx_context = prev;
+        self.jsx_state = prev_state;
 
         node.closing.visit_with(self);
+    }
+
+    fn visit_jsx_text(&mut self, node: &JSXText) {
+        let raw_value = &node.value;
+        let trimmed = raw_value.trim();
+
+        if trimmed.is_empty() {
+            return;
+        }
+
+        let trim_start_offset = raw_value.len() - raw_value.trim_start().len();
+        let actual_pos = node.span.lo + swc_common::BytePos(trim_start_offset as u32);
+        let loc = self.source_map.lookup_char_pos(actual_pos);
+
+        self.check_hardcoded_line(trimmed, loc);
+    }
+
+    fn visit_jsx_expr_container(&mut self, node: &JSXExprContainer) {
+        let prev_state = self.jsx_state;
+        self.jsx_state.in_expr = true;
+
+        // HardcodedChecker logic: check expressions for string literals
+        // Only check if we're not in an attribute, or if we're in a checked attribute
+        // Use prev_state because we need to check the state BEFORE entering the expression
+        if (!prev_state.in_attr || prev_state.in_checked_attr)
+            && let JSXExpr::Expr(expr) = &node.expr
+        {
+            self.check_expr(expr);
+        }
+
+        // Continue visiting (will call visit_call_expr for t() calls)
+        node.visit_children_with(self);
+
+        self.jsx_state = prev_state;
+    }
+
+    fn visit_jsx_attr(&mut self, node: &JSXAttr) {
+        let attr_name = match &node.name {
+            JSXAttrName::Ident(ident) => ident.sym.to_string(),
+            JSXAttrName::JSXNamespacedName(ns) => {
+                format!("{}-{}", ns.ns.sym, ns.name.sym)
+            }
+        };
+
+        let prev_state = self.jsx_state;
+
+        // Always set in_attr when visiting any attribute
+        self.jsx_state.in_attr = true;
+
+        // Only set in_checked_attr for attributes we want to check for hardcoded text
+        if self.checked_attributes.contains(&attr_name) {
+            self.jsx_state.in_checked_attr = true;
+
+            // Hardcoded detection (only for string values)
+            if let Some(JSXAttrValue::Str(s)) = &node.value
+                && let Some(value) = s.value.as_str()
+            {
+                let loc = self.source_map.lookup_char_pos(s.span.lo);
+                self.check_hardcoded_line(value, loc);
+            }
+        }
+
+        // Always visit attribute value (for translation key extraction)
+        if let Some(value) = &node.value {
+            value.visit_children_with(self);
+        }
+
+        self.jsx_state = prev_state;
     }
 
     fn visit_fn_decl(&mut self, node: &FnDecl) {
@@ -490,7 +720,7 @@ impl<'a> Visit for TranslationKeyVisitor<'a> {
     }
 
     fn visit_export_default_decl(&mut self, node: &swc_ecma_ast::ExportDefaultDecl) {
-        if let swc_ecma_ast::DefaultDecl::Fn(fn_expr) = &node.decl {
+        if let DefaultDecl::Fn(fn_expr) = &node.decl {
             self.binding_context.enter_scope();
 
             let fn_name = fn_expr
@@ -603,6 +833,7 @@ impl<'a> Visit for TranslationKeyVisitor<'a> {
     }
 
     fn visit_call_expr(&mut self, node: &CallExpr) {
+
         if let Callee::Expr(expr) = &node.callee
             && let Expr::Ident(ident) = &**expr
         {
@@ -679,7 +910,7 @@ impl<'a> Visit for TranslationKeyVisitor<'a> {
                                         Self::infer_pattern_from_template(tpl, &namespace)
                                     };
                                     let hint = pattern.as_ref().map(|p| {
-                                        if self.in_jsx_context {
+                                        if self.should_use_jsx_comment(&source_line) {
                                             format!(
                                                 "add `{{/* glot-message-keys \"{}\" */}}` to declare expected keys",
                                                 p
@@ -783,7 +1014,8 @@ impl<'a> Visit for TranslationKeyVisitor<'a> {
             }
         }
 
-        // Detect iterator patterns
+        // Detect iterator patterns (array.map, forEach, etc.)
+        // This enables resolving keys in patterns like: KEYS.map(k => t(`prefix.${k}`))
         let entered_scope = if let Callee::Expr(callee_expr) = &node.callee
             && let Expr::Member(member) = &**callee_expr
             && let MemberProp::Ident(method) = &member.prop

@@ -1,15 +1,14 @@
 //! Tests for translation key extraction.
 
 use std::collections::{HashMap, HashSet};
-use swc_common::{FileName, comments::SingleThreadedComments};
+use swc_common::{comments::SingleThreadedComments, FileName};
 use swc_ecma_parser::{Parser, StringInput, Syntax, TsSyntax};
-use swc_ecma_visit::Visit;
 
 use super::*;
 use crate::checkers::key_objects::{
-    FileImports, KeyArrayRegistry, KeyObject, KeyObjectRegistry, StringArrayRegistry,
-    TranslationFnCall, TranslationFnCallRegistry, TranslationProp, TranslationPropRegistry,
-    make_registry_key, make_translation_fn_call_key, make_translation_prop_key,
+    make_registry_key, make_translation_fn_call_key, make_translation_prop_key, FileImports,
+    KeyArrayRegistry, KeyObject, KeyObjectRegistry, StringArrayRegistry, TranslationFnCall,
+    TranslationFnCallRegistry, TranslationProp, TranslationPropRegistry,
 };
 use crate::checkers::schema::SchemaRegistry;
 use crate::commands::context::Registries;
@@ -38,7 +37,9 @@ fn create_registries_with_key_objects(key_object: KeyObjectRegistry) -> Registri
     }
 }
 
-fn parse_and_extract(code: &str) -> TranslationKeyVisitor<'static> {
+fn parse_and_extract(code: &str) -> KeyExtractionResult {
+    use crate::checkers::file_analyzer::FileAnalyzer;
+
     let source_map = Box::leak(Box::new(swc_common::SourceMap::default()));
     let source_file =
         source_map.new_source_file(FileName::Real("test.tsx".into()).into(), code.to_string());
@@ -55,17 +56,22 @@ fn parse_and_extract(code: &str) -> TranslationKeyVisitor<'static> {
     let registries = Box::leak(Box::new(create_empty_registries()));
     let file_imports = Box::leak(Box::new(FileImports::new()));
     let available_keys = Box::leak(Box::new(HashSet::new()));
-    let mut visitor = TranslationKeyVisitor::new(
+    let checked_attrs = vec![];
+    let ignore_texts = HashSet::new();
+
+    let mut analyzer = FileAnalyzer::new(
         file_path,
         source_map,
         comments,
+        &checked_attrs,
+        &ignore_texts,
         registries,
         file_imports,
         code,
         available_keys,
     );
-    visitor.visit_module(&module);
-    visitor
+    let result = analyzer.analyze(&module);
+    result.extraction
 }
 
 #[test]
@@ -350,7 +356,9 @@ fn test_ternary_template_with_expr_reason() {
 fn parse_and_extract_with_registries(
     code: &str,
     registries: &'static Registries,
-) -> TranslationKeyVisitor<'static> {
+) -> KeyExtractionResult {
+    use crate::checkers::file_analyzer::FileAnalyzer;
+
     let source_map = Box::leak(Box::new(swc_common::SourceMap::default()));
     let source_file =
         source_map.new_source_file(FileName::Real("test.tsx".into()).into(), code.to_string());
@@ -366,17 +374,22 @@ fn parse_and_extract_with_registries(
     let file_path = Box::leak(Box::new("test.tsx".to_string()));
     let file_imports = Box::leak(Box::new(FileImports::new()));
     let available_keys = Box::leak(Box::new(HashSet::new()));
-    let mut visitor = TranslationKeyVisitor::new(
+    let checked_attrs = vec![];
+    let ignore_texts = HashSet::new();
+
+    let mut analyzer = FileAnalyzer::new(
         file_path,
         source_map,
         comments,
+        &checked_attrs,
+        &ignore_texts,
         registries,
         file_imports,
         code,
         available_keys,
     );
-    visitor.visit_module(&module);
-    visitor
+    let result = analyzer.analyze(&module);
+    result.extraction
 }
 
 #[test]
@@ -662,18 +675,14 @@ fn test_nested_function_binding_shadowing() {
     let visitor = parse_and_extract(code);
 
     assert_eq!(visitor.used_keys.len(), 2);
-    assert!(
-        visitor
-            .used_keys
-            .iter()
-            .any(|k| k.full_key == "Outer.outerKey")
-    );
-    assert!(
-        visitor
-            .used_keys
-            .iter()
-            .any(|k| k.full_key == "Inner.innerKey")
-    );
+    assert!(visitor
+        .used_keys
+        .iter()
+        .any(|k| k.full_key == "Outer.outerKey"));
+    assert!(visitor
+        .used_keys
+        .iter()
+        .any(|k| k.full_key == "Inner.innerKey"));
 }
 
 #[test]
@@ -993,7 +1002,9 @@ mod value_source_tests {
     use crate::checkers::registry_collector::RegistryCollector;
     use swc_ecma_visit::VisitWith;
 
-    fn parse_and_extract_with_collected_registries(code: &str) -> TranslationKeyVisitor<'static> {
+    fn parse_and_extract_with_collected_registries(code: &str) -> KeyExtractionResult {
+        use crate::checkers::file_analyzer::FileAnalyzer;
+
         let source_map = Box::leak(Box::new(swc_common::SourceMap::default()));
         let source_file =
             source_map.new_source_file(FileName::Real("test.tsx".into()).into(), code.to_string());
@@ -1038,19 +1049,23 @@ mod value_source_tests {
             default_exports: HashMap::new(),
         }));
         let file_imports = Box::leak(Box::new(collector.imports));
-
         let available_keys = Box::leak(Box::new(HashSet::new()));
-        let mut visitor = TranslationKeyVisitor::new(
+        let checked_attrs = vec![];
+        let ignore_texts = HashSet::new();
+
+        let mut analyzer = FileAnalyzer::new(
             file_path,
             source_map,
             comments,
+            &checked_attrs,
+            &ignore_texts,
             registries,
             file_imports,
             code,
             available_keys,
         );
-        visitor.visit_module(&module);
-        visitor
+        let result = analyzer.analyze(&module);
+        result.extraction
     }
 
     #[test]
