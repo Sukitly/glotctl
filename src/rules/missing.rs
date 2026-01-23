@@ -80,16 +80,6 @@ impl Checker for MissingKeysRule {
                 }));
             }
 
-            // Process pattern warnings
-            for warning in &extraction.pattern_warnings {
-                issues.push(Issue::DynamicKey(DynamicKeyIssue {
-                    location: SourceLocation::new(&warning.file_path, warning.line).with_col(1),
-                    reason: warning.message.clone(),
-                    source_line: None,
-                    hint: None,
-                }));
-            }
-
             // Process schema calls
             for call in &extraction.schema_calls {
                 let mut visited = HashSet::new();

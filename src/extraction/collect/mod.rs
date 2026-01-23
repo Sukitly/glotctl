@@ -6,6 +6,7 @@
 
 pub mod collector;
 pub mod comment_collector;
+mod comments;
 pub mod types;
 
 pub use collector::RegistryCollector;

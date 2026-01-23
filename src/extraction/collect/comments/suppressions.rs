@@ -1,24 +1,17 @@
-//! Shared directive parsing for glot comments.
+//! Implementation of suppression directives for glot comments.
 //!
 //! Supports rule-specific disable comments:
 //! - `glot-disable-next-line` - disable all rules for next line
 //! - `glot-disable-next-line hardcoded` - disable only hardcoded rule
 //! - `glot-disable-next-line untranslated` - disable only untranslated rule
-//! - `glot-disable-next-line hardcoded untranslated` - disable both
 //! - `glot-disable` / `glot-enable` - range-based disabling
 
 use std::collections::{HashMap, HashSet};
-
 use swc_common::{SourceMap, comments::SingleThreadedComments};
 
-/// Rules that can be disabled via glot comments.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, clap::ValueEnum)]
-pub enum DisableRule {
-    Hardcoded,
-    Untranslated,
-}
+use super::super::types::{Directive, DisabledRange, SuppressibleRule, Suppressions};
 
-impl DisableRule {
+impl SuppressibleRule {
     /// Parse rule name from string (case insensitive).
     pub fn parse(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
@@ -53,14 +46,6 @@ impl DisableRule {
             .collect::<Vec<_>>()
             .join(" ")
     }
-}
-
-/// Parsed glot directive.
-#[derive(Debug, Clone)]
-pub enum Directive {
-    Disable { rules: HashSet<DisableRule> },
-    Enable { rules: HashSet<DisableRule> },
-    DisableNextLine { rules: HashSet<DisableRule> },
 }
 
 impl Directive {
@@ -100,46 +85,30 @@ impl Directive {
     /// The "all invalid = all rules" behavior is intentional for backward compatibility
     /// and fail-safe operation. A typo like `untrasnalted` will disable all rules,
     /// which is more permissive but prevents accidentally leaving issues unchecked.
-    fn parse_rules(rest: &str) -> HashSet<DisableRule> {
+    fn parse_rules(rest: &str) -> HashSet<SuppressibleRule> {
         let rest = rest.trim();
         if rest.is_empty() {
             // No rules specified = all rules (backward compatible)
-            return DisableRule::all();
+            return SuppressibleRule::all();
         }
 
         let parsed: HashSet<_> = rest
             .split_whitespace()
-            .filter_map(DisableRule::parse)
+            .filter_map(SuppressibleRule::parse)
             .collect();
 
         // If no valid rules parsed, fall back to all rules (fail-safe)
         if parsed.is_empty() {
-            DisableRule::all()
+            SuppressibleRule::all()
         } else {
             parsed
         }
     }
 }
 
-/// Range representing disabled lines [start, end] inclusive.
-#[derive(Debug, Clone, Copy)]
-struct DisabledRange {
-    start: usize,
-    end: usize, // usize::MAX for open-ended
-}
-
-/// Tracks disabled lines per rule for a single file.
-#[derive(Debug, Default)]
-pub struct DisableContext {
-    /// Single-line disables: rule -> set of line numbers
-    disabled_lines: HashMap<DisableRule, HashSet<usize>>,
-    /// Range-based disables: rule -> list of (start, end) ranges
-    disabled_ranges: HashMap<DisableRule, Vec<DisabledRange>>,
-}
-
-impl DisableContext {
-    /// Check if a line should be ignored for a specific rule.
-    pub fn should_ignore(&self, line: usize, rule: DisableRule) -> bool {
+impl Suppressions {
+    /// Check if a line is suppressed for a specific rule.
+    pub fn is_suppressed(&self, line: usize, rule: SuppressibleRule) -> bool {
         // Check single-line disables
         if let Some(lines) = self.disabled_lines.get(&rule)
             && lines.contains(&line)
@@ -155,7 +124,7 @@ impl DisableContext {
         false
     }
 
-    /// Build DisableContext from SWC comments.
+    /// Build Suppressions from SWC comments.
     pub fn from_comments(comments: &SingleThreadedComments, source_map: &SourceMap) -> Self {
         let mut ctx = Self::default();
         let (leading, trailing) = comments.borrow_all();
@@ -168,7 +137,7 @@ impl DisableContext {
         all_comments.sort_by_key(|cmt| source_map.lookup_char_pos(cmt.span.lo).line);
 
         // Track open disable ranges per rule
-        let mut open_ranges: HashMap<DisableRule, usize> = HashMap::new();
+        let mut open_ranges: HashMap<SuppressibleRule, usize> = HashMap::new();
 
         for cmt in all_comments {
             let text = cmt.text.trim();
@@ -226,80 +195,85 @@ mod tests {
     use super::*;
 
     // ============================================================
-    // DisableRule Tests
+    // SuppressibleRule Tests
     // ============================================================
 
     #[test]
-    fn test_disable_rule_parse_hardcoded() {
+    fn test_suppressible_rule_parse_hardcoded() {
         assert_eq!(
-            DisableRule::parse("hardcoded"),
-            Some(DisableRule::Hardcoded)
+            SuppressibleRule::parse("hardcoded"),
+            Some(SuppressibleRule::Hardcoded)
         );
         assert_eq!(
-            DisableRule::parse("HARDCODED"),
-            Some(DisableRule::Hardcoded)
+            SuppressibleRule::parse("HARDCODED"),
+            Some(SuppressibleRule::Hardcoded)
         );
         assert_eq!(
-            DisableRule::parse("Hardcoded"),
-            Some(DisableRule::Hardcoded)
-        );
-    }
-
-    #[test]
-    fn test_disable_rule_parse_untranslated() {
-        assert_eq!(
-            DisableRule::parse("untranslated"),
-            Some(DisableRule::Untranslated)
-        );
-        assert_eq!(
-            DisableRule::parse("UNTRANSLATED"),
-            Some(DisableRule::Untranslated)
+            SuppressibleRule::parse("Hardcoded"),
+            Some(SuppressibleRule::Hardcoded)
         );
     }
 
     #[test]
-    fn test_disable_rule_parse_unknown() {
-        assert_eq!(DisableRule::parse("unknown"), None);
-        assert_eq!(DisableRule::parse(""), None);
-        assert_eq!(DisableRule::parse("hard-coded"), None);
+    fn test_suppressible_rule_parse_untranslated() {
+        assert_eq!(
+            SuppressibleRule::parse("untranslated"),
+            Some(SuppressibleRule::Untranslated)
+        );
+        assert_eq!(
+            SuppressibleRule::parse("UNTRANSLATED"),
+            Some(SuppressibleRule::Untranslated)
+        );
     }
 
     #[test]
-    fn test_disable_rule_all() {
-        let all = DisableRule::all();
-        assert!(all.contains(&DisableRule::Hardcoded));
-        assert!(all.contains(&DisableRule::Untranslated));
+    fn test_suppressible_rule_parse_unknown() {
+        assert_eq!(SuppressibleRule::parse("unknown"), None);
+        assert_eq!(SuppressibleRule::parse(""), None);
+        assert_eq!(SuppressibleRule::parse("hard-coded"), None);
+    }
+
+    #[test]
+    fn test_suppressible_rule_all() {
+        let all = SuppressibleRule::all();
+        assert!(all.contains(&SuppressibleRule::Hardcoded));
+        assert!(all.contains(&SuppressibleRule::Untranslated));
         assert_eq!(all.len(), 2);
     }
 
     #[test]
-    fn test_disable_rule_as_str() {
-        assert_eq!(DisableRule::Hardcoded.as_str(), "hardcoded");
-        assert_eq!(DisableRule::Untranslated.as_str(), "untranslated");
+    fn test_suppressible_rule_as_str() {
+        assert_eq!(SuppressibleRule::Hardcoded.as_str(), "hardcoded");
+        assert_eq!(SuppressibleRule::Untranslated.as_str(), "untranslated");
     }
 
     #[test]
     fn test_format_rules_single() {
-        let rules: HashSet<DisableRule> = [DisableRule::Hardcoded].into_iter().collect();
-        assert_eq!(DisableRule::format_rules(&rules), "hardcoded");
+        let rules: HashSet<SuppressibleRule> = [SuppressibleRule::Hardcoded].into_iter().collect();
+        assert_eq!(SuppressibleRule::format_rules(&rules), "hardcoded");
 
-        let rules: HashSet<DisableRule> = [DisableRule::Untranslated].into_iter().collect();
-        assert_eq!(DisableRule::format_rules(&rules), "untranslated");
+        let rules: HashSet<SuppressibleRule> =
+            [SuppressibleRule::Untranslated].into_iter().collect();
+        assert_eq!(SuppressibleRule::format_rules(&rules), "untranslated");
     }
 
     #[test]
     fn test_format_rules_multiple_sorted() {
         // Should be sorted alphabetically: hardcoded < untranslated
-        let rules: HashSet<DisableRule> = [DisableRule::Untranslated, DisableRule::Hardcoded]
-            .into_iter()
-            .collect();
-        assert_eq!(DisableRule::format_rules(&rules), "hardcoded untranslated");
+        let rules: HashSet<SuppressibleRule> =
+            [SuppressibleRule::Untranslated, SuppressibleRule::Hardcoded]
+                .into_iter()
+                .collect();
+        assert_eq!(
+            SuppressibleRule::format_rules(&rules),
+            "hardcoded untranslated"
+        );
     }
 
     #[test]
     fn test_format_rules_empty() {
-        let rules: HashSet<DisableRule> = HashSet::new();
-        assert_eq!(DisableRule::format_rules(&rules), "");
+        let rules: HashSet<SuppressibleRule> = HashSet::new();
+        assert_eq!(SuppressibleRule::format_rules(&rules), "");
     }
 
     // ============================================================
@@ -311,8 +285,8 @@ mod tests {
         let d = Directive::parse("glot-disable-next-line").unwrap();
         match d {
             Directive::DisableNextLine { rules } => {
-                assert!(rules.contains(&DisableRule::Hardcoded));
-                assert!(rules.contains(&DisableRule::Untranslated));
+                assert!(rules.contains(&SuppressibleRule::Hardcoded));
+                assert!(rules.contains(&SuppressibleRule::Untranslated));
                 assert_eq!(rules.len(), 2);
             }
             _ => panic!("expected DisableNextLine"),
@@ -324,8 +298,8 @@ mod tests {
         let d = Directive::parse("glot-disable-next-line hardcoded").unwrap();
         match d {
             Directive::DisableNextLine { rules } => {
-                assert!(rules.contains(&DisableRule::Hardcoded));
-                assert!(!rules.contains(&DisableRule::Untranslated));
+                assert!(rules.contains(&SuppressibleRule::Hardcoded));
+                assert!(!rules.contains(&SuppressibleRule::Untranslated));
                 assert_eq!(rules.len(), 1);
             }
             _ => panic!("expected DisableNextLine"),
@@ -337,8 +311,8 @@ mod tests {
         let d = Directive::parse("glot-disable-next-line untranslated").unwrap();
         match d {
             Directive::DisableNextLine { rules } => {
-                assert!(!rules.contains(&DisableRule::Hardcoded));
-                assert!(rules.contains(&DisableRule::Untranslated));
+                assert!(!rules.contains(&SuppressibleRule::Hardcoded));
+                assert!(rules.contains(&SuppressibleRule::Untranslated));
                 assert_eq!(rules.len(), 1);
             }
             _ => panic!("expected DisableNextLine"),
@@ -350,8 +324,8 @@ mod tests {
         let d = Directive::parse("glot-disable-next-line hardcoded untranslated").unwrap();
         match d {
             Directive::DisableNextLine { rules } => {
-                assert!(rules.contains(&DisableRule::Hardcoded));
-                assert!(rules.contains(&DisableRule::Untranslated));
+                assert!(rules.contains(&SuppressibleRule::Hardcoded));
+                assert!(rules.contains(&SuppressibleRule::Untranslated));
                 assert_eq!(rules.len(), 2);
             }
             _ => panic!("expected DisableNextLine"),
@@ -363,8 +337,8 @@ mod tests {
         let d = Directive::parse("glot-disable-next-line untranslated hardcoded").unwrap();
         match d {
             Directive::DisableNextLine { rules } => {
-                assert!(rules.contains(&DisableRule::Hardcoded));
-                assert!(rules.contains(&DisableRule::Untranslated));
+                assert!(rules.contains(&SuppressibleRule::Hardcoded));
+                assert!(rules.contains(&SuppressibleRule::Untranslated));
             }
             _ => panic!("expected DisableNextLine"),
         }
@@ -376,8 +350,8 @@ mod tests {
         match d {
             Directive::DisableNextLine { rules } => {
                 // Invalid rule name falls back to all rules
-                assert!(rules.contains(&DisableRule::Hardcoded));
-                assert!(rules.contains(&DisableRule::Untranslated));
+                assert!(rules.contains(&SuppressibleRule::Hardcoded));
+                assert!(rules.contains(&SuppressibleRule::Untranslated));
             }
             _ => panic!("expected DisableNextLine"),
         }
@@ -389,8 +363,8 @@ mod tests {
         match d {
             Directive::DisableNextLine { rules } => {
                 // Only valid rule is parsed
-                assert!(rules.contains(&DisableRule::Hardcoded));
-                assert!(!rules.contains(&DisableRule::Untranslated));
+                assert!(rules.contains(&SuppressibleRule::Hardcoded));
+                assert!(!rules.contains(&SuppressibleRule::Untranslated));
                 assert_eq!(rules.len(), 1);
             }
             _ => panic!("expected DisableNextLine"),
@@ -402,8 +376,8 @@ mod tests {
         let d = Directive::parse("glot-disable").unwrap();
         match d {
             Directive::Disable { rules } => {
-                assert!(rules.contains(&DisableRule::Hardcoded));
-                assert!(rules.contains(&DisableRule::Untranslated));
+                assert!(rules.contains(&SuppressibleRule::Hardcoded));
+                assert!(rules.contains(&SuppressibleRule::Untranslated));
             }
             _ => panic!("expected Disable"),
         }
@@ -414,8 +388,8 @@ mod tests {
         let d = Directive::parse("glot-disable hardcoded").unwrap();
         match d {
             Directive::Disable { rules } => {
-                assert!(rules.contains(&DisableRule::Hardcoded));
-                assert!(!rules.contains(&DisableRule::Untranslated));
+                assert!(rules.contains(&SuppressibleRule::Hardcoded));
+                assert!(!rules.contains(&SuppressibleRule::Untranslated));
             }
             _ => panic!("expected Disable"),
         }
@@ -426,8 +400,8 @@ mod tests {
         let d = Directive::parse("glot-enable").unwrap();
         match d {
             Directive::Enable { rules } => {
-                assert!(rules.contains(&DisableRule::Hardcoded));
-                assert!(rules.contains(&DisableRule::Untranslated));
+                assert!(rules.contains(&SuppressibleRule::Hardcoded));
+                assert!(rules.contains(&SuppressibleRule::Untranslated));
             }
             _ => panic!("expected Enable"),
         }
@@ -438,8 +412,8 @@ mod tests {
         let d = Directive::parse("glot-enable untranslated").unwrap();
         match d {
             Directive::Enable { rules } => {
-                assert!(!rules.contains(&DisableRule::Hardcoded));
-                assert!(rules.contains(&DisableRule::Untranslated));
+                assert!(!rules.contains(&SuppressibleRule::Hardcoded));
+                assert!(rules.contains(&SuppressibleRule::Untranslated));
             }
             _ => panic!("expected Enable"),
         }
@@ -457,71 +431,71 @@ mod tests {
         let d = Directive::parse("  glot-disable-next-line  hardcoded  ").unwrap();
         match d {
             Directive::DisableNextLine { rules } => {
-                assert!(rules.contains(&DisableRule::Hardcoded));
+                assert!(rules.contains(&SuppressibleRule::Hardcoded));
             }
             _ => panic!("expected DisableNextLine"),
         }
     }
 
     // ============================================================
-    // DisableContext Tests
+    // Suppressions Tests
     // ============================================================
 
     #[test]
-    fn test_disable_context_default() {
-        let ctx = DisableContext::default();
-        assert!(!ctx.should_ignore(1, DisableRule::Hardcoded));
-        assert!(!ctx.should_ignore(1, DisableRule::Untranslated));
+    fn test_suppressions_default() {
+        let ctx = Suppressions::default();
+        assert!(!ctx.is_suppressed(1, SuppressibleRule::Hardcoded));
+        assert!(!ctx.is_suppressed(1, SuppressibleRule::Untranslated));
     }
 
     #[test]
-    fn test_disable_context_should_ignore_single_line() {
-        let mut ctx = DisableContext::default();
+    fn test_suppressions_single_line() {
+        let mut ctx = Suppressions::default();
         ctx.disabled_lines
-            .entry(DisableRule::Hardcoded)
+            .entry(SuppressibleRule::Hardcoded)
             .or_default()
             .insert(5);
 
-        assert!(!ctx.should_ignore(4, DisableRule::Hardcoded));
-        assert!(ctx.should_ignore(5, DisableRule::Hardcoded));
-        assert!(!ctx.should_ignore(6, DisableRule::Hardcoded));
+        assert!(!ctx.is_suppressed(4, SuppressibleRule::Hardcoded));
+        assert!(ctx.is_suppressed(5, SuppressibleRule::Hardcoded));
+        assert!(!ctx.is_suppressed(6, SuppressibleRule::Hardcoded));
 
         // Untranslated is not affected
-        assert!(!ctx.should_ignore(5, DisableRule::Untranslated));
+        assert!(!ctx.is_suppressed(5, SuppressibleRule::Untranslated));
     }
 
     #[test]
-    fn test_disable_context_should_ignore_range() {
-        let mut ctx = DisableContext::default();
+    fn test_suppressions_range() {
+        let mut ctx = Suppressions::default();
         ctx.disabled_ranges
-            .entry(DisableRule::Untranslated)
+            .entry(SuppressibleRule::Untranslated)
             .or_default()
             .push(DisabledRange { start: 10, end: 20 });
 
-        assert!(!ctx.should_ignore(9, DisableRule::Untranslated));
-        assert!(ctx.should_ignore(10, DisableRule::Untranslated));
-        assert!(ctx.should_ignore(15, DisableRule::Untranslated));
-        assert!(ctx.should_ignore(20, DisableRule::Untranslated));
-        assert!(!ctx.should_ignore(21, DisableRule::Untranslated));
+        assert!(!ctx.is_suppressed(9, SuppressibleRule::Untranslated));
+        assert!(ctx.is_suppressed(10, SuppressibleRule::Untranslated));
+        assert!(ctx.is_suppressed(15, SuppressibleRule::Untranslated));
+        assert!(ctx.is_suppressed(20, SuppressibleRule::Untranslated));
+        assert!(!ctx.is_suppressed(21, SuppressibleRule::Untranslated));
 
         // Hardcoded is not affected
-        assert!(!ctx.should_ignore(15, DisableRule::Hardcoded));
+        assert!(!ctx.is_suppressed(15, SuppressibleRule::Hardcoded));
     }
 
     #[test]
-    fn test_disable_context_multiple_ranges() {
-        let mut ctx = DisableContext::default();
+    fn test_suppressions_multiple_ranges() {
+        let mut ctx = Suppressions::default();
         ctx.disabled_ranges
-            .entry(DisableRule::Hardcoded)
+            .entry(SuppressibleRule::Hardcoded)
             .or_default()
             .push(DisabledRange { start: 5, end: 10 });
         ctx.disabled_ranges
-            .entry(DisableRule::Hardcoded)
+            .entry(SuppressibleRule::Hardcoded)
             .or_default()
             .push(DisabledRange { start: 20, end: 25 });
 
-        assert!(ctx.should_ignore(7, DisableRule::Hardcoded));
-        assert!(!ctx.should_ignore(15, DisableRule::Hardcoded));
-        assert!(ctx.should_ignore(22, DisableRule::Hardcoded));
+        assert!(ctx.is_suppressed(7, SuppressibleRule::Hardcoded));
+        assert!(!ctx.is_suppressed(15, SuppressibleRule::Hardcoded));
+        assert!(ctx.is_suppressed(22, SuppressibleRule::Hardcoded));
     }
 }

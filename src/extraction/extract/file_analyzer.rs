@@ -18,7 +18,7 @@ use swc_ecma_ast::{
 };
 use swc_ecma_visit::{Visit, VisitWith};
 
-use crate::extraction::resolve::comments::DisableRule;
+use crate::extraction::collect::SuppressibleRule;
 use crate::issue::{HardcodedIssue, SourceLocation};
 use crate::utils::contains_alphabetic;
 
@@ -144,7 +144,6 @@ impl<'a> FileAnalyzer<'a> {
                 warnings: self.warnings,
                 schema_calls: self.schema_calls,
                 resolved_keys: self.resolved_keys,
-                pattern_warnings: self.file_comments.pattern_warnings.clone(),
             },
         }
     }
@@ -156,8 +155,8 @@ impl<'a> FileAnalyzer<'a> {
     fn should_report_hardcoded(&self, line: usize, text: &str) -> bool {
         if self
             .file_comments
-            .disable_context
-            .should_ignore(line, DisableRule::Hardcoded)
+            .suppressions
+            .is_suppressed(line, SuppressibleRule::Hardcoded)
         {
             return false;
         }
@@ -271,8 +270,8 @@ impl<'a> FileAnalyzer<'a> {
             .unwrap_or_default();
         let untranslated_disabled = self
             .file_comments
-            .disable_context
-            .should_ignore(loc.line, DisableRule::Untranslated);
+            .suppressions
+            .is_suppressed(loc.line, SuppressibleRule::Untranslated);
         let in_jsx_context = self.should_use_jsx_comment_for_extraction(&source_line);
         self.used_keys.push(UsedKey {
             full_key,
@@ -873,19 +872,19 @@ impl<'a> Visit for FileAnalyzer<'a> {
                             self.process_ternary_arg(cond, loc, &translation_source, is_resolvable);
                         }
                         _ if !is_resolvable => {
-                            let annotation_data = self
+                            let declaration_data = self
                                 .file_comments
-                                .annotations
-                                .get_annotation(loc.line)
-                                .map(|ann| (ann.keys.clone(), ann.relative_patterns.clone()));
+                                .declarations
+                                .get_declaration(loc.line)
+                                .map(|decl| (decl.keys.clone(), decl.relative_patterns.clone()));
 
-                            if let Some((keys, relative_patterns)) = annotation_data {
+                            if let Some((keys, relative_patterns)) = declaration_data {
                                 for key in keys {
                                     self.add_used_key(loc.clone(), key);
                                 }
 
-                                use crate::extraction::resolve::comments::AnnotationStore;
-                                let expanded_relative = AnnotationStore::expand_relative_patterns(
+                                use crate::extraction::collect::Declarations;
+                                let expanded_relative = Declarations::expand_relative_patterns(
                                     &relative_patterns,
                                     &translation_source,
                                     self.available_keys,

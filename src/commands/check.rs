@@ -1017,7 +1017,6 @@ const b = <div>Detected</div>"#;
                 warnings: Vec::new(),
                 schema_calls: Vec::new(),
                 resolved_keys: Vec::new(),
-                pattern_warnings: Vec::new(),
             },
         );
 
@@ -1059,7 +1058,6 @@ const b = <div>Detected</div>"#;
                 warnings: Vec::new(),
                 schema_calls: Vec::new(),
                 resolved_keys: Vec::new(),
-                pattern_warnings: Vec::new(),
             },
         );
 

@@ -197,11 +197,63 @@ pub fn make_registry_key(file_path: &str, name: &str) -> String {
 }
 
 // ============================================================
-// Comment Collection Types
+// Comment Types (glot-disable, glot-message-keys)
 // ============================================================
 
-use crate::extraction::resolve::comments::parser::PatternWarning;
-use crate::extraction::resolve::comments::{AnnotationStore, DisableContext};
+/// Rules that can be suppressed via glot comments.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, clap::ValueEnum)]
+pub enum SuppressibleRule {
+    Hardcoded,
+    Untranslated,
+}
+
+/// Parsed glot directive.
+#[derive(Debug, Clone)]
+pub enum Directive {
+    Disable {
+        rules: std::collections::HashSet<SuppressibleRule>,
+    },
+    Enable {
+        rules: std::collections::HashSet<SuppressibleRule>,
+    },
+    DisableNextLine {
+        rules: std::collections::HashSet<SuppressibleRule>,
+    },
+}
+
+/// Range representing disabled lines [start, end] inclusive.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct DisabledRange {
+    pub start: usize,
+    pub end: usize, // usize::MAX for open-ended
+}
+
+/// Tracks suppressed lines per rule for a single file.
+#[derive(Debug, Default)]
+pub struct Suppressions {
+    /// Single-line suppressions: rule -> set of line numbers
+    pub(crate) disabled_lines:
+        std::collections::HashMap<SuppressibleRule, std::collections::HashSet<usize>>,
+    /// Range-based suppressions: rule -> list of ranges
+    pub(crate) disabled_ranges: std::collections::HashMap<SuppressibleRule, Vec<DisabledRange>>,
+}
+
+/// Key declaration for a single line.
+#[derive(Debug, Clone)]
+pub struct KeyDeclaration {
+    /// Absolute keys after glob expansion (fully qualified keys).
+    pub keys: Vec<String>,
+    /// Relative patterns (starting with `.`) that need namespace expansion.
+    /// e.g., `.features.*.title` will become `Namespace.features.*.title`
+    pub relative_patterns: Vec<String>,
+}
+
+/// Stores parsed glot-message-keys declarations for a file.
+#[derive(Debug, Default)]
+pub struct Declarations {
+    /// Line number -> key declaration
+    pub(crate) entries: std::collections::HashMap<usize, KeyDeclaration>,
+}
 
 /// All glot comments collected from a single file.
 ///
@@ -209,12 +261,10 @@ use crate::extraction::resolve::comments::{AnnotationStore, DisableContext};
 /// and passed to FileAnalyzer in Phase 2 for immediate use.
 #[derive(Debug, Default)]
 pub struct FileComments {
-    /// Disable directives (glot-disable, glot-enable, glot-disable-next-line)
-    pub disable_context: DisableContext,
-    /// Message key annotations (glot-message-keys)
-    pub annotations: AnnotationStore,
-    /// Warnings from annotation parsing (invalid patterns, etc.)
-    pub pattern_warnings: Vec<PatternWarning>,
+    /// Suppression directives (glot-disable, glot-enable, glot-disable-next-line)
+    pub suppressions: Suppressions,
+    /// Key declarations (glot-message-keys)
+    pub declarations: Declarations,
 }
 
 /// All file comments indexed by file path
