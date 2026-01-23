@@ -5,10 +5,9 @@
 //! - Collecting all glot comments (disable directives and message-keys annotations)
 
 pub mod collector;
-pub mod comment_collector;
 mod comments;
 pub mod types;
 
 pub use collector::RegistryCollector;
-pub use comment_collector::CommentCollector;
+pub use comments::collector::CommentCollector;
 pub use types::*;

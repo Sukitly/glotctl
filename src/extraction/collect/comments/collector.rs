@@ -8,7 +8,7 @@ use std::collections::HashSet;
 
 use swc_common::{SourceMap, comments::SingleThreadedComments};
 
-use super::types::{Declarations, FileComments, Suppressions};
+use crate::extraction::collect::types::{Declarations, FileComments, Suppressions};
 
 /// Collects all glot comments from a file.
 pub struct CommentCollector;
