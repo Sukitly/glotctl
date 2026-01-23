@@ -131,10 +131,17 @@ impl BaselineRunner {
                 .expect("hardcoded_issues must be loaded");
 
             // Build translation_lines map from extractions
+            // IMPORTANT: Use resolved_keys instead of used_keys to capture ALL translation calls,
+            // including dynamic keys like t(variable) or t(`prefix.${expr}`).
+            // This prevents baseline from inserting disable comments on lines that have translation
+            // calls but with unresolvable keys (which would be a regression from TranslationCallFinder).
             let mut translation_lines: HashMap<String, HashSet<usize>> = HashMap::new();
             for (file_path, extraction_result) in extractions {
-                let lines: HashSet<usize> =
-                    extraction_result.used_keys.iter().map(|k| k.line).collect();
+                let lines: HashSet<usize> = extraction_result
+                    .resolved_keys
+                    .iter()
+                    .map(|k| k.line)
+                    .collect();
                 if !lines.is_empty() {
                     translation_lines.insert(file_path.clone(), lines);
                 }
