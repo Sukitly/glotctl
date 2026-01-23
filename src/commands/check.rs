@@ -250,13 +250,8 @@ mod tests {
 
         // Collect comments (Phase 1)
         use crate::extraction::collect::CommentCollector;
-        let file_comments = CommentCollector::collect(
-            &parsed.source,
-            &parsed.comments,
-            &parsed.source_map,
-            "test.tsx",
-            &available_keys,
-        );
+        let file_comments =
+            CommentCollector::collect(&parsed.comments, &parsed.source_map, &available_keys);
 
         let analyzer = FileAnalyzer::new(
             "test.tsx",

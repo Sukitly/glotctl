@@ -6,10 +6,9 @@
 //! - `glot-disable-next-line untranslated` - disable only untranslated rule
 //! - `glot-disable` / `glot-enable` - range-based disabling
 
-use std::collections::{HashMap, HashSet};
-use swc_common::{SourceMap, comments::SingleThreadedComments};
+use std::collections::HashSet;
 
-use super::super::types::{Directive, DisabledRange, SuppressibleRule, Suppressions};
+use super::super::types::{Directive, SuppressibleRule, Suppressions};
 
 impl SuppressibleRule {
     /// Parse rule name from string (case insensitive).
@@ -123,75 +122,11 @@ impl Suppressions {
         }
         false
     }
-
-    /// Build Suppressions from SWC comments.
-    pub fn from_comments(comments: &SingleThreadedComments, source_map: &SourceMap) -> Self {
-        let mut ctx = Self::default();
-        let (leading, trailing) = comments.borrow_all();
-
-        let mut all_comments: Vec<_> = leading
-            .iter()
-            .chain(trailing.iter())
-            .flat_map(|(_, cmts)| cmts.iter())
-            .collect();
-        all_comments.sort_by_key(|cmt| source_map.lookup_char_pos(cmt.span.lo).line);
-
-        // Track open disable ranges per rule
-        let mut open_ranges: HashMap<SuppressibleRule, usize> = HashMap::new();
-
-        for cmt in all_comments {
-            let text = cmt.text.trim();
-            let loc = source_map.lookup_char_pos(cmt.span.lo);
-
-            if let Some(directive) = Directive::parse(text) {
-                match directive {
-                    Directive::Disable { rules } => {
-                        for rule in rules {
-                            // Only start a new range if not already open
-                            open_ranges.entry(rule).or_insert(loc.line);
-                        }
-                    }
-                    Directive::Enable { rules } => {
-                        for rule in rules {
-                            if let Some(start) = open_ranges.remove(&rule) {
-                                let end = loc.line.saturating_sub(1);
-                                ctx.disabled_ranges
-                                    .entry(rule)
-                                    .or_default()
-                                    .push(DisabledRange { start, end });
-                            }
-                        }
-                    }
-                    Directive::DisableNextLine { rules } => {
-                        let next_line = loc.line + 1;
-                        for rule in rules {
-                            ctx.disabled_lines
-                                .entry(rule)
-                                .or_default()
-                                .insert(next_line);
-                        }
-                    }
-                }
-            }
-        }
-
-        // Close any open ranges (extend to end of file)
-        for (rule, start) in open_ranges {
-            ctx.disabled_ranges
-                .entry(rule)
-                .or_default()
-                .push(DisabledRange {
-                    start,
-                    end: usize::MAX,
-                });
-        }
-
-        ctx
-    }
 }
 
 #[cfg(test)]
 mod tests {
+    use super::super::super::types::DisabledRange;
     use super::*;
 
     // ============================================================

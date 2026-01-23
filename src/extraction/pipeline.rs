@@ -80,13 +80,8 @@ fn collect_registries_and_comments(
         parsed.module.visit_with(&mut collector);
 
         // Collect comments (Biome-style: in same phase as registries)
-        let comments = CommentCollector::collect(
-            &parsed.source,
-            &parsed.comments,
-            &parsed.source_map,
-            file_path,
-            available_keys,
-        );
+        let comments =
+            CommentCollector::collect(&parsed.comments, &parsed.source_map, available_keys);
         file_comments.insert(file_path.clone(), comments);
 
         // Schema functions
