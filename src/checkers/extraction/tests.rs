@@ -59,7 +59,7 @@ fn parse_and_extract(code: &str) -> KeyExtractionResult {
     let checked_attrs = vec![];
     let ignore_texts = HashSet::new();
 
-    let mut analyzer = FileAnalyzer::new(
+    let analyzer = FileAnalyzer::new(
         file_path,
         source_map,
         comments,
@@ -377,7 +377,7 @@ fn parse_and_extract_with_registries(
     let checked_attrs = vec![];
     let ignore_texts = HashSet::new();
 
-    let mut analyzer = FileAnalyzer::new(
+    let analyzer = FileAnalyzer::new(
         file_path,
         source_map,
         comments,
@@ -1057,7 +1057,7 @@ mod value_source_tests {
         let checked_attrs = vec![];
         let ignore_texts = HashSet::new();
 
-        let mut analyzer = FileAnalyzer::new(
+        let analyzer = FileAnalyzer::new(
             file_path,
             source_map,
             comments,

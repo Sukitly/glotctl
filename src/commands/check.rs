@@ -248,7 +248,7 @@ mod tests {
         let imports = FileImports::new();
         let available_keys = HashSet::new();
 
-        let mut analyzer = FileAnalyzer::new(
+        let analyzer = FileAnalyzer::new(
             "test.tsx",
             &parsed.source_map,
             &parsed.comments,
