@@ -26,11 +26,16 @@ use crate::{
 
 use std::collections::HashMap;
 
+use crate::issue::HardcodedIssue;
+
 /// Type alias for all file imports across the codebase.
 pub type AllFileImports = HashMap<String, crate::checkers::key_objects::FileImports>;
 
 /// Type alias for all extraction results (one per file).
 pub type AllExtractions = HashMap<String, KeyExtractionResult>;
+
+/// Type alias for all hardcoded issues (one vec per file).
+pub type AllHardcodedIssues = HashMap<String, Vec<HardcodedIssue>>;
 
 /// Registry of parsed symbol information (schemas, objects, arrays, translation props).
 /// Does NOT contain file_imports - that's stored separately.
@@ -85,6 +90,7 @@ pub struct CheckContext {
     file_imports: OnceCell<AllFileImports>,
     messages: OnceCell<MessageData>,
     extractions: OnceCell<AllExtractions>,
+    hardcoded_issues: OnceCell<AllHardcodedIssues>,
     used_keys: OnceCell<HashSet<String>>,
 }
 
@@ -138,6 +144,7 @@ impl CheckContext {
             file_imports: OnceCell::new(),
             messages: OnceCell::new(),
             extractions: OnceCell::new(),
+            hardcoded_issues: OnceCell::new(),
             used_keys: OnceCell::new(),
         })
     }
@@ -148,11 +155,6 @@ impl CheckContext {
 
     pub fn parsed_files(&self) -> Option<&HashMap<String, ParsedJSX>> {
         self.parsed_files.get()
-    }
-
-    /// Get a single parsed file by path.
-    pub fn get_parsed(&self, file_path: &str) -> Option<&ParsedJSX> {
-        self.parsed_files.get()?.get(file_path)
     }
 
     pub fn registries(&self) -> Option<&Registries> {
@@ -171,6 +173,10 @@ impl CheckContext {
         self.extractions.get()
     }
 
+    pub fn hardcoded_issues(&self) -> Option<&AllHardcodedIssues> {
+        self.hardcoded_issues.get()
+    }
+
     pub fn used_keys(&self) -> Option<&HashSet<String>> {
         self.used_keys.get()
     }
@@ -178,6 +184,10 @@ impl CheckContext {
     // ============================================================
     // Setters - called by CheckRunner to populate data
     // ============================================================
+
+    pub(crate) fn set_hardcoded_issues(&self, data: AllHardcodedIssues) {
+        let _ = self.hardcoded_issues.set(data);
+    }
 
     pub fn set_parsed_files(&self, data: HashMap<String, ParsedJSX>) {
         let result = self.parsed_files.set(data);
@@ -300,19 +310,34 @@ impl CheckContext {
         Ok(())
     }
 
-    /// Ensure extractions are loaded for all files.
-    pub fn ensure_extractions(&self) -> Result<()> {
-        if self.extractions.get().is_some() {
+    /// Internal: Ensure both extractions and hardcoded_issues are loaded.
+    /// This performs a single AST traversal to generate both results.
+    fn ensure_file_analysis(&self) -> Result<()> {
+        // If both are already loaded, nothing to do
+        if self.extractions.get().is_some() && self.hardcoded_issues.get().is_some() {
             return Ok(());
         }
 
-        // extractions depends on registries and messages
+        // Dependencies
         self.ensure_registries()?;
-        self.ensure_messages()?;
+        // Messages are optional - needed for extraction but not for hardcoded detection
+        let _ = self.ensure_messages();
 
-        let extractions = shared::build_extractions(self);
+        // Single traversal produces both results
+        let (extractions, hardcoded_issues) = shared::build_file_analysis(self);
         self.set_extractions(extractions);
+        self.set_hardcoded_issues(hardcoded_issues);
         Ok(())
+    }
+
+    /// Ensure extractions are loaded for all files.
+    pub fn ensure_extractions(&self) -> Result<()> {
+        self.ensure_file_analysis()
+    }
+
+    /// Ensure hardcoded issues are loaded for all files.
+    pub fn ensure_hardcoded_issues(&self) -> Result<()> {
+        self.ensure_file_analysis()
     }
 
     /// Ensure used_keys are collected.
@@ -377,6 +402,7 @@ mod tests {
             file_imports: OnceCell::new(),
             messages: OnceCell::new(),
             extractions: OnceCell::new(),
+            hardcoded_issues: OnceCell::new(),
             used_keys: OnceCell::new(),
         }
     }

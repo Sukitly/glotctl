@@ -1,58 +1,13 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::{
-    checkers::{
-        extraction::{KeyExtractionResult as ExtractionResult, TranslationKeyVisitor, UsedKey},
-        hardcoded::HardcodedChecker,
-        key_objects::FileImports,
-    },
-    commands::context::Registries,
+    checkers::extraction::{KeyExtractionResult as ExtractionResult, UsedKey},
     issue::{
-        HardcodedIssue, Issue, KeyUsage, MAX_KEY_USAGES, MessageLocation, OrphanKeyIssue,
-        ReplicaLagIssue, SourceLocation, UnusedKeyIssue,
+        Issue, KeyUsage, MAX_KEY_USAGES, MessageLocation, OrphanKeyIssue, ReplicaLagIssue,
+        SourceLocation, UnusedKeyIssue,
     },
     parsers::json::MessageMap,
-    parsers::jsx::ParsedJSX,
 };
-
-pub use crate::checkers::extraction::KeyExtractionResult;
-
-/// Check for hardcoded text in a parsed JSX file.
-pub fn check_hardcoded(
-    file_path: &str,
-    parsed: &ParsedJSX,
-    checked_attributes: &[String],
-    ignore_texts: &HashSet<String>,
-) -> Vec<HardcodedIssue> {
-    let checker = HardcodedChecker::new(
-        file_path,
-        checked_attributes,
-        ignore_texts,
-        &parsed.source_map,
-        &parsed.comments,
-    );
-    checker.check(&parsed.module)
-}
-
-/// Extract translation keys from a parsed JSX file.
-pub fn extract_translation_keys(
-    file_path: &str,
-    parsed: &ParsedJSX,
-    registries: &Registries,
-    file_imports: &FileImports,
-    available_keys: &HashSet<String>,
-) -> KeyExtractionResult {
-    let visitor = TranslationKeyVisitor::new(
-        file_path,
-        &parsed.source_map,
-        &parsed.comments,
-        registries,
-        file_imports,
-        &parsed.source,
-        available_keys,
-    );
-    visitor.extract(&parsed.module)
-}
 
 pub fn find_missing_keys(used_keys: &[UsedKey], messages: &MessageMap) -> Vec<UsedKey> {
     used_keys
@@ -275,9 +230,37 @@ mod tests {
         code: &str,
         attrs: &[String],
         ignore_texts: &HashSet<String>,
-    ) -> Vec<HardcodedIssue> {
+    ) -> Vec<crate::issue::HardcodedIssue> {
+        use crate::checkers::file_analyzer::FileAnalyzer;
+        use crate::checkers::key_objects::FileImports;
+        use crate::commands::context::Registries;
+
         let parsed = parse_jsx_source(code.to_string(), "test.tsx").unwrap();
-        check_hardcoded("test.tsx", &parsed, attrs, ignore_texts)
+        let registries = Registries {
+            schema: Default::default(),
+            key_object: Default::default(),
+            key_array: Default::default(),
+            string_array: Default::default(),
+            translation_prop: Default::default(),
+            translation_fn_call: Default::default(),
+            default_exports: HashMap::new(),
+        };
+        let imports = FileImports::new();
+        let available_keys = HashSet::new();
+
+        let analyzer = FileAnalyzer::new(
+            "test.tsx",
+            &parsed.source_map,
+            &parsed.comments,
+            attrs,
+            ignore_texts,
+            &registries,
+            &imports,
+            &parsed.source,
+            &available_keys,
+        );
+        let result = analyzer.analyze(&parsed.module);
+        result.hardcoded_issues
     }
 
     #[test]
@@ -324,6 +307,30 @@ mod tests {
         let issues = check_code(code, &default_checked_attrs(), &empty_ignore_texts());
         assert_eq!(issues.len(), 1);
         assert_eq!(issues[0].text, "Hello");
+    }
+
+    #[test]
+    fn test_non_checked_attr_with_expression() {
+        // className with template literal should NOT be checked for hardcoded text
+        let code = r#"
+            export function Component() {
+                const isActive = true;
+                return (
+                    <div className={`flex-shrink-0 ${isActive ? "text-green" : "text-red"}`}>
+                        <span title="Tooltip text">Content</span>
+                    </div>
+                );
+            }
+        "#;
+        let issues = check_code(code, &default_checked_attrs(), &empty_ignore_texts());
+        // Should only detect "Tooltip text" in title (checked attr) and "Content" in text
+        assert_eq!(issues.len(), 2);
+        assert!(issues.iter().any(|i| i.text == "Tooltip text"));
+        assert!(issues.iter().any(|i| i.text == "Content"));
+        // Should NOT detect "flex-shrink-0", "text-green", or "text-red"
+        assert!(!issues.iter().any(|i| i.text.contains("flex-shrink")));
+        assert!(!issues.iter().any(|i| i.text.contains("text-green")));
+        assert!(!issues.iter().any(|i| i.text.contains("text-red")));
     }
 
     #[test]

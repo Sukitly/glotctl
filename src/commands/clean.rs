@@ -124,9 +124,8 @@ impl CleanRunner {
             })
         }));
 
-        // Build extractions (uses cached parsed files)
-        let extractions = shared::build_extractions(&self.ctx);
-        self.ctx.set_extractions(extractions);
+        // Build extractions (uses cached parsed files via FileAnalyzer)
+        self.ctx.ensure_extractions()?;
 
         // Collect used keys
         let used_keys = shared::collect_used_keys(&self.ctx);
