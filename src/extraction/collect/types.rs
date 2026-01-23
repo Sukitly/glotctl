@@ -196,6 +196,31 @@ pub fn make_registry_key(file_path: &str, name: &str) -> String {
     format!("{}.{}", file_path, name)
 }
 
+// ============================================================
+// Aggregated Registry Types
+// ============================================================
+
+/// Registry of parsed symbol information (schemas, objects, arrays, translation props).
+///
+/// This struct aggregates all cross-file dependencies collected during Phase 1.
+/// Does NOT contain file_imports - that's stored separately in AllFileImports.
+pub struct Registries {
+    pub schema: super::super::schema::SchemaRegistry,
+    pub key_object: KeyObjectRegistry,
+    pub key_array: KeyArrayRegistry,
+    pub string_array: StringArrayRegistry,
+    /// Translation functions passed as JSX props (e.g., `<Component t={t} />`)
+    pub translation_prop: TranslationPropRegistry,
+    /// Translation functions passed as regular function call arguments (e.g., `someFunc(t)`)
+    pub translation_fn_call: TranslationFnCallRegistry,
+    /// Maps file_path -> default_export_name for files with default exports.
+    /// Used to match translation function calls with default imported functions.
+    pub default_exports: std::collections::HashMap<String, String>,
+}
+
+/// Type alias for all file imports across the codebase (one per file).
+pub type AllFileImports = std::collections::HashMap<String, FileImports>;
+
 #[cfg(test)]
 mod tests {
     use crate::extraction::collect::RegistryCollector;
@@ -876,18 +901,14 @@ mod tests {
         let collector = parse_and_collect(code);
 
         assert_eq!(collector.translation_fn_calls.len(), 2);
-        assert!(
-            collector
-                .translation_fn_calls
-                .iter()
-                .any(|c| c.fn_name == "helperA")
-        );
-        assert!(
-            collector
-                .translation_fn_calls
-                .iter()
-                .any(|c| c.fn_name == "helperB")
-        );
+        assert!(collector
+            .translation_fn_calls
+            .iter()
+            .any(|c| c.fn_name == "helperA"));
+        assert!(collector
+            .translation_fn_calls
+            .iter()
+            .any(|c| c.fn_name == "helperB"));
     }
 
     #[test]
