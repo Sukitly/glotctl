@@ -7,12 +7,12 @@ use colored::Colorize;
 use crate::{
     RunResult,
     args::CleanArgs,
-    checkers::extraction::DynamicKeyReason,
     commands::{
         check::{find_orphan_keys, find_unused_keys},
         context::{CheckContext, MessageData},
         shared,
     },
+    extraction::DynamicKeyReason,
     issue::{
         DynamicKeyIssue, Issue, IssueReport, MessageLocation, ParseErrorIssue, Rule,
         SourceLocation, UnusedKeyIssue,

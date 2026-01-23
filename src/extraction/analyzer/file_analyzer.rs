@@ -22,19 +22,15 @@ use crate::directives::{DisableContext, DisableRule};
 use crate::issue::{HardcodedIssue, SourceLocation};
 use crate::utils::contains_alphabetic;
 
-use super::extraction::{
-    DynamicKeyReason, DynamicKeyWarning, KeyExtractionResult, UsedKey,
-    annotation_store::AnnotationStore, binding_context::BindingContext,
-    translation_source::TranslationSource,
-};
-use super::{
-    extract_namespace_from_call, is_translation_hook,
-    key_objects::{FileImports, extract_binding_names, make_translation_fn_call_key},
-    schema::SchemaCallInfo,
-    value_analyzer::ValueAnalyzer,
-    value_source::ResolvedKey,
-};
+use super::{BindingContext, TranslationSource};
 use crate::commands::context::Registries;
+use crate::extraction::{
+    registry::types::{FileImports, extract_binding_names, make_translation_fn_call_key},
+    resolver::{AnnotationStore, ResolvedKey, ValueAnalyzer},
+    results::{DynamicKeyReason, DynamicKeyWarning, KeyExtractionResult, UsedKey},
+    schema::SchemaCallInfo,
+    utils::{extract_namespace_from_call, is_translation_hook},
+};
 
 /// Tracks JSX context state during AST traversal.
 ///
@@ -367,7 +363,7 @@ impl<'a> FileAnalyzer<'a> {
     }
 
     fn is_template_with_expr(expr: &Expr) -> bool {
-        matches!(crate::checkers::unwrap_paren(expr), Expr::Tpl(tpl) if !tpl.exprs.is_empty())
+        matches!(crate::extraction::utils::unwrap_paren(expr), Expr::Tpl(tpl) if !tpl.exprs.is_empty())
     }
 
     fn infer_pattern_from_template(
@@ -410,7 +406,7 @@ impl<'a> FileAnalyzer<'a> {
     }
 
     fn extract_string_key(expr: &Expr) -> Option<String> {
-        match crate::checkers::unwrap_paren(expr) {
+        match crate::extraction::utils::unwrap_paren(expr) {
             Expr::Lit(Lit::Str(s)) => s.value.as_str().map(|s| s.to_string()),
             Expr::Tpl(tpl) if tpl.exprs.is_empty() => tpl
                 .quasis
@@ -490,7 +486,7 @@ impl<'a> FileAnalyzer<'a> {
         prop_name: &str,
         binding_name: &str,
     ) {
-        use super::key_objects::make_translation_prop_key;
+        use crate::extraction::registry::make_translation_prop_key;
 
         let key = make_translation_prop_key(component_name, prop_name);
 
@@ -862,7 +858,7 @@ impl<'a> Visit for FileAnalyzer<'a> {
                         source,
                     });
 
-                    match crate::checkers::unwrap_paren(&arg.expr) {
+                    match crate::extraction::utils::unwrap_paren(&arg.expr) {
                         Expr::Lit(Lit::Str(s)) => {
                             if let Some(key) = s.value.as_str() {
                                 self.add_used_keys_with_namespaces(loc, key, &translation_source);
@@ -899,7 +895,7 @@ impl<'a> Visit for FileAnalyzer<'a> {
                                     self.add_used_key(loc.clone(), key);
                                 }
                             } else {
-                                let unwrapped = crate::checkers::unwrap_paren(&arg.expr);
+                                let unwrapped = crate::extraction::utils::unwrap_paren(&arg.expr);
                                 let (reason, hint, pattern) = if let Expr::Tpl(tpl) = unwrapped {
                                     let pattern = if translation_source.is_indirect() {
                                         Self::infer_pattern_from_template(tpl, &None)
@@ -985,7 +981,7 @@ impl<'a> Visit for FileAnalyzer<'a> {
             {
                 let loc = self.source_map.lookup_char_pos(node.span.lo);
 
-                match crate::checkers::unwrap_paren(&arg.expr) {
+                match crate::extraction::utils::unwrap_paren(&arg.expr) {
                     Expr::Lit(Lit::Str(s)) => {
                         if let Some(key) = s.value.as_str() {
                             self.add_used_keys_with_namespaces(

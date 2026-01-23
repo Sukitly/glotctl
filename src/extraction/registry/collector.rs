@@ -12,13 +12,14 @@ use swc_ecma_ast::{
 };
 use swc_ecma_visit::{Visit, VisitWith};
 
-use super::{
-    extract_namespace_from_call, is_translation_hook,
-    key_objects::{
-        FileImports, ImportInfo, KeyArray, KeyObject, StringArray, TranslationBindingValue,
-        TranslationFnCall, TranslationProp, extract_binding_names,
-    },
+use crate::extraction::{
     schema::{SchemaFunction, SchemaFunctionContext},
+    utils::{extract_namespace_from_call, is_translation_hook},
+};
+
+use super::types::{
+    FileImports, ImportInfo, KeyArray, KeyObject, StringArray, TranslationBindingValue,
+    TranslationFnCall, TranslationProp, extract_binding_names,
 };
 
 /// Combined collector that gathers both schema functions and key objects in a single AST traversal.
@@ -307,7 +308,7 @@ impl RegistryCollector {
     }
 
     fn resolve_fn_definition(&self, local_fn_name: &str) -> (String, String) {
-        use super::key_objects::resolve_import_path;
+        use super::types::resolve_import_path;
         use std::path::Path;
 
         if let Some(import) = self.imports.iter().find(|i| i.local_name == local_fn_name) {

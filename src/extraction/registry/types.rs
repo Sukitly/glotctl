@@ -198,7 +198,7 @@ pub fn make_registry_key(file_path: &str, name: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use crate::checkers::registry_collector::RegistryCollector;
+    use crate::extraction::registry::RegistryCollector;
     use swc_common::FileName;
     use swc_ecma_parser::{Parser, StringInput, Syntax, TsSyntax};
     use swc_ecma_visit::VisitWith;

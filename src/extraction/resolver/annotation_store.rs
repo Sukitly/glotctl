@@ -7,10 +7,9 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::checkers::glob_matcher::{expand_glob_pattern, is_glob_pattern};
+use crate::extraction::analyzer::TranslationSource;
+use crate::extraction::utils::{expand_glob_pattern, is_glob_pattern};
 use crate::parsers::comment::{PatternWarning, extract_glot_message_keys};
-
-use super::translation_source::TranslationSource;
 
 /// Annotation data for a single line.
 #[derive(Debug, Clone)]
