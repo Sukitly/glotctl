@@ -1,14 +1,14 @@
 //! Tests for translation key extraction.
 
 use std::collections::{HashMap, HashSet};
-use swc_common::{FileName, comments::SingleThreadedComments};
+use swc_common::{comments::SingleThreadedComments, FileName};
 use swc_ecma_parser::{Parser, StringInput, Syntax, TsSyntax};
 
 use super::*;
 use crate::checkers::key_objects::{
-    FileImports, KeyArrayRegistry, KeyObject, KeyObjectRegistry, StringArrayRegistry,
-    TranslationFnCall, TranslationFnCallRegistry, TranslationProp, TranslationPropRegistry,
-    make_registry_key, make_translation_fn_call_key, make_translation_prop_key,
+    make_registry_key, make_translation_fn_call_key, make_translation_prop_key, FileImports,
+    KeyArrayRegistry, KeyObject, KeyObjectRegistry, StringArrayRegistry, TranslationFnCall,
+    TranslationFnCallRegistry, TranslationProp, TranslationPropRegistry,
 };
 use crate::checkers::schema::SchemaRegistry;
 use crate::commands::context::Registries;
@@ -61,17 +61,17 @@ fn parse_and_extract(code: &str) -> KeyExtractionResult {
 
     let mut analyzer = FileAnalyzer::new(
         file_path,
-        source_map,
-        comments,
         &checked_attrs,
         &ignore_texts,
+        source_map,
+        comments,
         registries,
         file_imports,
         code,
         available_keys,
     );
     let result = analyzer.analyze(&module);
-    result.extraction
+    result.extraction_result
 }
 
 #[test]
@@ -675,18 +675,14 @@ fn test_nested_function_binding_shadowing() {
     let visitor = parse_and_extract(code);
 
     assert_eq!(visitor.used_keys.len(), 2);
-    assert!(
-        visitor
-            .used_keys
-            .iter()
-            .any(|k| k.full_key == "Outer.outerKey")
-    );
-    assert!(
-        visitor
-            .used_keys
-            .iter()
-            .any(|k| k.full_key == "Inner.innerKey")
-    );
+    assert!(visitor
+        .used_keys
+        .iter()
+        .any(|k| k.full_key == "Outer.outerKey"));
+    assert!(visitor
+        .used_keys
+        .iter()
+        .any(|k| k.full_key == "Inner.innerKey"));
 }
 
 #[test]

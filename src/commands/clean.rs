@@ -1,10 +1,11 @@
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use colored::Colorize;
 
 use crate::{
+    RunResult,
     args::CleanArgs,
     checkers::extraction::DynamicKeyReason,
     commands::{
@@ -19,7 +20,6 @@ use crate::{
     json_editor::JsonEditor,
     parsers::json::scan_message_files,
     reporter::{FAILURE_MARK, SUCCESS_MARK},
-    RunResult,
 };
 
 /// Runner for the clean command.

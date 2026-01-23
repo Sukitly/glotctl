@@ -6,13 +6,13 @@ use colored::Colorize;
 use unicode_width::UnicodeWidthStr;
 
 use crate::{
+    RunResult,
     args::BaselineArgs,
     commands::context::CheckContext,
     directives::DisableRule,
     issue::{HardcodedIssue, Issue},
     reporter::SUCCESS_MARK,
-    rules::{untranslated::UntranslatedRule, Checker},
-    RunResult,
+    rules::{Checker, untranslated::UntranslatedRule},
 };
 
 /// Represents a location where a disable comment should be inserted.

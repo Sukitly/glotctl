@@ -3,8 +3,8 @@ use std::collections::{HashMap, HashSet};
 use crate::{
     checkers::extraction::{KeyExtractionResult as ExtractionResult, UsedKey},
     issue::{
-        Issue, KeyUsage, MessageLocation, OrphanKeyIssue, ReplicaLagIssue, SourceLocation,
-        UnusedKeyIssue, MAX_KEY_USAGES,
+        Issue, KeyUsage, MAX_KEY_USAGES, MessageLocation, OrphanKeyIssue, ReplicaLagIssue,
+        SourceLocation, UnusedKeyIssue,
     },
     parsers::json::MessageMap,
 };

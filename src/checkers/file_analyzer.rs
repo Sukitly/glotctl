@@ -13,8 +13,8 @@ use std::collections::HashSet;
 use swc_common::{Loc, SourceMap, comments::SingleThreadedComments};
 use swc_ecma_ast::{
     BinaryOp, CallExpr, Callee, CondExpr, DefaultDecl, Expr, FnDecl, JSXAttr, JSXAttrName,
-    JSXAttrValue, JSXElement, JSXElementName, JSXExpr, JSXExprContainer, JSXFragment, JSXText,
-    Lit, MemberProp, Module, ObjectPatProp, Pat, VarDecl, VarDeclarator,
+    JSXAttrValue, JSXElement, JSXElementName, JSXExpr, JSXExprContainer, JSXFragment, JSXText, Lit,
+    MemberProp, Module, ObjectPatProp, Pat, VarDecl, VarDeclarator,
 };
 use swc_ecma_visit::{Visit, VisitWith};
 
@@ -24,8 +24,7 @@ use crate::utils::contains_alphabetic;
 
 use super::extraction::{
     DynamicKeyReason, DynamicKeyWarning, KeyExtractionResult, UsedKey,
-    annotation_store::AnnotationStore,
-    binding_context::BindingContext,
+    annotation_store::AnnotationStore, binding_context::BindingContext,
     translation_source::TranslationSource,
 };
 use super::{
@@ -833,7 +832,6 @@ impl<'a> Visit for FileAnalyzer<'a> {
     }
 
     fn visit_call_expr(&mut self, node: &CallExpr) {
-
         if let Callee::Expr(expr) = &node.callee
             && let Expr::Ident(ident) = &**expr
         {

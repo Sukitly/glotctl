@@ -22,6 +22,5 @@ mod result;
 // Public API
 pub use result::{DynamicKeyReason, DynamicKeyWarning, KeyExtractionResult, UsedKey};
 
-
 #[cfg(test)]
 mod tests;
