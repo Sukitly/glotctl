@@ -196,9 +196,58 @@ pub fn make_registry_key(file_path: &str, name: &str) -> String {
     format!("{}.{}", file_path, name)
 }
 
+// ============================================================
+// Comment Collection Types
+// ============================================================
+
+use crate::extraction::resolve::comments::parser::PatternWarning;
+use crate::extraction::resolve::comments::{AnnotationStore, DisableContext};
+
+/// All glot comments collected from a single file.
+///
+/// This is collected in Phase 1 alongside Registries and FileImports,
+/// and passed to FileAnalyzer in Phase 2 for immediate use.
+#[derive(Debug, Default)]
+pub struct FileComments {
+    /// Disable directives (glot-disable, glot-enable, glot-disable-next-line)
+    pub disable_context: DisableContext,
+    /// Message key annotations (glot-message-keys)
+    pub annotations: AnnotationStore,
+    /// Warnings from annotation parsing (invalid patterns, etc.)
+    pub pattern_warnings: Vec<PatternWarning>,
+}
+
+/// All file comments indexed by file path
+pub type AllFileComments = std::collections::HashMap<String, FileComments>;
+
+// ============================================================
+// Aggregated Registry Types
+// ============================================================
+
+/// Registry of parsed symbol information (schemas, objects, arrays, translation props).
+///
+/// This struct aggregates all cross-file dependencies collected during Phase 1.
+/// Does NOT contain file_imports - that's stored separately in AllFileImports.
+pub struct Registries {
+    pub schema: super::super::schema::SchemaRegistry,
+    pub key_object: KeyObjectRegistry,
+    pub key_array: KeyArrayRegistry,
+    pub string_array: StringArrayRegistry,
+    /// Translation functions passed as JSX props (e.g., `<Component t={t} />`)
+    pub translation_prop: TranslationPropRegistry,
+    /// Translation functions passed as regular function call arguments (e.g., `someFunc(t)`)
+    pub translation_fn_call: TranslationFnCallRegistry,
+    /// Maps file_path -> default_export_name for files with default exports.
+    /// Used to match translation function calls with default imported functions.
+    pub default_exports: std::collections::HashMap<String, String>,
+}
+
+/// Type alias for all file imports across the codebase (one per file).
+pub type AllFileImports = std::collections::HashMap<String, FileImports>;
+
 #[cfg(test)]
 mod tests {
-    use crate::extraction::registry::RegistryCollector;
+    use crate::extraction::collect::RegistryCollector;
     use swc_common::FileName;
     use swc_ecma_parser::{Parser, StringInput, Syntax, TsSyntax};
     use swc_ecma_visit::VisitWith;

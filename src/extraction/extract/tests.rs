@@ -5,7 +5,7 @@ use swc_common::{FileName, comments::SingleThreadedComments};
 use swc_ecma_parser::{Parser, StringInput, Syntax, TsSyntax};
 
 use super::*;
-use crate::extraction::registry::types::{
+use crate::extraction::collect::types::{
     FileImports, KeyArrayRegistry, KeyObject, KeyObjectRegistry, StringArrayRegistry,
     TranslationFnCall, TranslationFnCallRegistry, TranslationProp, TranslationPropRegistry,
     make_registry_key, make_translation_fn_call_key, make_translation_prop_key,
@@ -38,7 +38,7 @@ fn create_registries_with_key_objects(key_object: KeyObjectRegistry) -> Registri
 }
 
 fn parse_and_extract(code: &str) -> KeyExtractionResult {
-    use crate::extraction::analyzer::FileAnalyzer;
+    use crate::extraction::extract::FileAnalyzer;
 
     let source_map = Box::leak(Box::new(swc_common::SourceMap::default()));
     let source_file =
@@ -357,7 +357,7 @@ fn parse_and_extract_with_registries(
     code: &str,
     registries: &'static Registries,
 ) -> KeyExtractionResult {
-    use crate::extraction::analyzer::FileAnalyzer;
+    use crate::extraction::extract::FileAnalyzer;
 
     let source_map = Box::leak(Box::new(swc_common::SourceMap::default()));
     let source_file =
@@ -394,7 +394,7 @@ fn parse_and_extract_with_registries(
 
 #[test]
 fn test_resolvable_dynamic_key_local_object() {
-    use crate::extraction::resolver::ValueSource;
+    use crate::extraction::extract::ValueSource;
 
     let mut key_object = KeyObjectRegistry::new();
     key_object.insert(
@@ -1003,11 +1003,11 @@ fn test_used_key_jsx_disable_comment_style() {
 
 mod value_source_tests {
     use super::*;
-    use crate::extraction::registry::RegistryCollector;
+    use crate::extraction::collect::RegistryCollector;
     use swc_ecma_visit::VisitWith;
 
     fn parse_and_extract_with_collected_registries(code: &str) -> KeyExtractionResult {
-        use crate::extraction::analyzer::FileAnalyzer;
+        use crate::extraction::extract::FileAnalyzer;
 
         let source_map = Box::leak(Box::new(swc_common::SourceMap::default()));
         let source_file =
@@ -1227,7 +1227,7 @@ mod value_source_tests {
             .find(|k| {
                 matches!(
                     &k.source,
-                    crate::extraction::resolver::ValueSource::ObjectAccess { .. }
+                    crate::extraction::extract::ValueSource::ObjectAccess { .. }
                 )
             })
             .expect("Should have ObjectAccess resolved key");

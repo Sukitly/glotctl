@@ -1,33 +1,33 @@
 //! Translation key extraction and analysis.
 //!
-//! This module provides tools for extracting translation keys from TypeScript/JavaScript code:
+//! This module provides a three-phase extraction pipeline for analyzing translation keys:
 //!
 //! ## Module Structure
 //!
-//! - `registry`: Cross-file dependency collection (Phase 1)
-//! - `analyzer`: File analysis and key extraction (Phase 2)
-//! - `resolver`: Dynamic value resolution
+//! - `collect`: Phase 1 - Cross-file dependency collection
+//! - `extract`: Phase 2 - File-level extraction
+//! - `resolve`: Phase 3 - Comment application and final results
 //! - `schema`: Schema function handling
 //! - `utils`: Helper functions and utilities
 //!
-//! ## Extraction Pipeline
+//! ## Three-Phase Extraction Pipeline
 //!
-//! 1. **Registry Collection** (`registry::RegistryCollector`)
-//!    - First pass: collect schema functions, key objects, translation props
+//! 1. **Collection Phase** (`collect::RegistryCollector`)
+//!    - First AST pass: collect schema functions, key objects, translation props
 //!    - Build cross-file dependency registries
 //!
-//! 2. **File Analysis** (`analyzer::FileAnalyzer`)
-//!    - Second pass: analyze each file
-//!    - Extract translation keys, detect hardcoded text
-//!    - Resolve dynamic keys using registries
+//! 2. **Extraction Phase** (`extract::FileExtractor`)
+//!    - Second AST pass: extract translation keys and detect hardcoded text
+//!    - Output: Raw results (without comment processing)
 //!
-//! 3. **Result Aggregation**
-//!    - Combine results from all files
-//!    - Ready for rule checking
+//! 3. **Resolution Phase** (`resolve::Resolver`)
+//!    - No AST traversal: apply disable directives and glot-message-keys annotations
+//!    - Output: Final results ready for rule checking
 
-pub mod analyzer;
-pub mod registry;
-pub mod resolver;
+pub mod collect;
+pub mod extract;
+pub mod pipeline;
+pub mod resolve;
 pub mod results;
 pub mod schema;
 pub mod utils;

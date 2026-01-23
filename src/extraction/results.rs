@@ -6,9 +6,9 @@
 //! - `DynamicKeyWarning`: warning about unresolvable dynamic keys
 //! - `DynamicKeyReason`: why a key is considered dynamic
 
-use crate::extraction::resolver::ResolvedKey;
+use crate::extraction::extract::ResolvedKey;
+use crate::extraction::resolve::comments::parser::PatternWarning;
 use crate::extraction::schema::SchemaCallInfo;
-use crate::parsers::comment::PatternWarning;
 
 /// Result of extracting translation keys from a single file.
 #[derive(Debug, Default)]

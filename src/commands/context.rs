@@ -12,11 +12,6 @@ use crate::{
     config::Config,
     config::load_config,
     extraction::KeyExtractionResult,
-    extraction::registry::{
-        KeyArrayRegistry, KeyObjectRegistry, StringArrayRegistry, TranslationFnCallRegistry,
-        TranslationPropRegistry,
-    },
-    extraction::schema::SchemaRegistry,
     file_scanner::scan_files,
     issue::{Issue, ParseErrorIssue},
     parsers::json::MessageMap,
@@ -28,30 +23,14 @@ use std::collections::HashMap;
 
 use crate::issue::HardcodedIssue;
 
-/// Type alias for all file imports across the codebase.
-pub type AllFileImports = HashMap<String, crate::extraction::registry::FileImports>;
+// Re-export types from extraction module for convenience
+pub use crate::extraction::collect::{AllFileImports, Registries};
 
 /// Type alias for all extraction results (one per file).
 pub type AllExtractions = HashMap<String, KeyExtractionResult>;
 
 /// Type alias for all hardcoded issues (one vec per file).
 pub type AllHardcodedIssues = HashMap<String, Vec<HardcodedIssue>>;
-
-/// Registry of parsed symbol information (schemas, objects, arrays, translation props).
-/// Does NOT contain file_imports - that's stored separately.
-pub struct Registries {
-    pub schema: SchemaRegistry,
-    pub key_object: KeyObjectRegistry,
-    pub key_array: KeyArrayRegistry,
-    pub string_array: StringArrayRegistry,
-    /// Translation functions passed as JSX props (e.g., `<Component t={t} />`)
-    pub translation_prop: TranslationPropRegistry,
-    /// Translation functions passed as regular function call arguments (e.g., `someFunc(t)`)
-    pub translation_fn_call: TranslationFnCallRegistry,
-    /// Maps file_path -> default_export_name for files with default exports.
-    /// Used to match translation function calls with default imported functions.
-    pub default_exports: HashMap<String, String>,
-}
 
 /// Aggregated message data from all locale files.
 pub struct MessageData {
@@ -161,6 +140,7 @@ impl CheckContext {
         self.registries.get()
     }
 
+    #[cfg(test)]
     pub fn file_imports(&self) -> Option<&AllFileImports> {
         self.file_imports.get()
     }

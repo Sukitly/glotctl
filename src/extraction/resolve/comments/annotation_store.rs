@@ -7,9 +7,9 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::extraction::analyzer::TranslationSource;
+use crate::extraction::extract::TranslationSource;
+use crate::extraction::resolve::comments::parser::{PatternWarning, extract_glot_message_keys};
 use crate::extraction::utils::{expand_glob_pattern, is_glob_pattern};
-use crate::parsers::comment::{PatternWarning, extract_glot_message_keys};
 
 /// Annotation data for a single line.
 #[derive(Debug, Clone)]
@@ -22,6 +22,7 @@ pub struct GlotAnnotation {
 }
 
 /// Stores parsed glot-message-keys annotations for a file.
+#[derive(Debug, Default)]
 pub struct AnnotationStore {
     /// Line number -> annotation data
     annotations: HashMap<usize, GlotAnnotation>,

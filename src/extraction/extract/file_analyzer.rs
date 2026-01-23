@@ -10,7 +10,7 @@
 
 use std::collections::HashSet;
 
-use swc_common::{Loc, SourceMap, comments::SingleThreadedComments};
+use swc_common::{Loc, SourceMap};
 use swc_ecma_ast::{
     BinaryOp, CallExpr, Callee, CondExpr, DefaultDecl, Expr, FnDecl, JSXAttr, JSXAttrName,
     JSXAttrValue, JSXElement, JSXElementName, JSXExpr, JSXExprContainer, JSXFragment, JSXText, Lit,
@@ -18,15 +18,16 @@ use swc_ecma_ast::{
 };
 use swc_ecma_visit::{Visit, VisitWith};
 
-use crate::directives::{DisableContext, DisableRule};
+use crate::extraction::resolve::comments::DisableRule;
 use crate::issue::{HardcodedIssue, SourceLocation};
 use crate::utils::contains_alphabetic;
 
-use super::{BindingContext, TranslationSource};
+use super::{BindingContext, ResolvedKey, TranslationSource, ValueAnalyzer};
 use crate::commands::context::Registries;
 use crate::extraction::{
-    registry::types::{FileImports, extract_binding_names, make_translation_fn_call_key},
-    resolver::{AnnotationStore, ResolvedKey, ValueAnalyzer},
+    collect::types::{
+        FileComments, FileImports, extract_binding_names, make_translation_fn_call_key,
+    },
     results::{DynamicKeyReason, DynamicKeyWarning, KeyExtractionResult, UsedKey},
     schema::SchemaCallInfo,
     utils::{extract_namespace_from_call, is_translation_hook},
@@ -75,7 +76,7 @@ pub struct FileAnalyzer<'a> {
     // === Shared fields ===
     file_path: &'a str,
     source_map: &'a SourceMap,
-    disable_context: DisableContext,
+    file_comments: &'a FileComments,
     jsx_state: JsxState,
 
     // === HardcodedChecker specific ===
@@ -84,7 +85,6 @@ pub struct FileAnalyzer<'a> {
 
     // === TranslationKeyVisitor specific ===
     binding_context: BindingContext,
-    annotation_store: AnnotationStore,
     value_analyzer: ValueAnalyzer<'a>,
     registries: &'a Registries,
     available_keys: &'a HashSet<String>,
@@ -102,26 +102,21 @@ impl<'a> FileAnalyzer<'a> {
     pub fn new(
         file_path: &'a str,
         source_map: &'a SourceMap,
-        comments: &SingleThreadedComments,
+        file_comments: &'a FileComments,
         checked_attributes: &'a [String],
         ignore_texts: &'a HashSet<String>,
         registries: &'a Registries,
         file_imports: &'a FileImports,
-        source: &str,
         available_keys: &'a HashSet<String>,
     ) -> Self {
-        let annotation_store = AnnotationStore::parse(source, file_path, available_keys);
-        let disable_context = DisableContext::from_comments(comments, source_map);
-
         Self {
             file_path,
             source_map,
-            disable_context,
+            file_comments,
             jsx_state: JsxState::default(),
             checked_attributes,
             ignore_texts,
             binding_context: BindingContext::new(),
-            annotation_store,
             value_analyzer: ValueAnalyzer::new(
                 file_path,
                 &registries.key_object,
@@ -149,7 +144,7 @@ impl<'a> FileAnalyzer<'a> {
                 warnings: self.warnings,
                 schema_calls: self.schema_calls,
                 resolved_keys: self.resolved_keys,
-                pattern_warnings: self.annotation_store.warnings,
+                pattern_warnings: self.file_comments.pattern_warnings.clone(),
             },
         }
     }
@@ -160,6 +155,7 @@ impl<'a> FileAnalyzer<'a> {
 
     fn should_report_hardcoded(&self, line: usize, text: &str) -> bool {
         if self
+            .file_comments
             .disable_context
             .should_ignore(line, DisableRule::Hardcoded)
         {
@@ -274,6 +270,7 @@ impl<'a> FileAnalyzer<'a> {
             .map(|cow| cow.to_string())
             .unwrap_or_default();
         let untranslated_disabled = self
+            .file_comments
             .disable_context
             .should_ignore(loc.line, DisableRule::Untranslated);
         let in_jsx_context = self.should_use_jsx_comment_for_extraction(&source_line);
@@ -486,7 +483,7 @@ impl<'a> FileAnalyzer<'a> {
         prop_name: &str,
         binding_name: &str,
     ) {
-        use crate::extraction::registry::make_translation_prop_key;
+        use crate::extraction::collect::make_translation_prop_key;
 
         let key = make_translation_prop_key(component_name, prop_name);
 
@@ -877,7 +874,8 @@ impl<'a> Visit for FileAnalyzer<'a> {
                         }
                         _ if !is_resolvable => {
                             let annotation_data = self
-                                .annotation_store
+                                .file_comments
+                                .annotations
                                 .get_annotation(loc.line)
                                 .map(|ann| (ann.keys.clone(), ann.relative_patterns.clone()));
 
@@ -886,6 +884,7 @@ impl<'a> Visit for FileAnalyzer<'a> {
                                     self.add_used_key(loc.clone(), key);
                                 }
 
+                                use crate::extraction::resolve::comments::AnnotationStore;
                                 let expanded_relative = AnnotationStore::expand_relative_patterns(
                                     &relative_patterns,
                                     &translation_source,

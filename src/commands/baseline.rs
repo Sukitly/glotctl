@@ -9,7 +9,7 @@ use crate::{
     RunResult,
     args::BaselineArgs,
     commands::context::CheckContext,
-    directives::DisableRule,
+    extraction::resolve::comments::DisableRule,
     issue::{HardcodedIssue, Issue},
     reporter::SUCCESS_MARK,
     rules::{Checker, untranslated::UntranslatedRule},

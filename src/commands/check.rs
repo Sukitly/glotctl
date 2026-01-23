@@ -232,8 +232,8 @@ mod tests {
         ignore_texts: &HashSet<String>,
     ) -> Vec<crate::issue::HardcodedIssue> {
         use crate::commands::context::Registries;
-        use crate::extraction::analyzer::FileAnalyzer;
-        use crate::extraction::registry::FileImports;
+        use crate::extraction::collect::FileImports;
+        use crate::extraction::extract::FileAnalyzer;
 
         let parsed = parse_jsx_source(code.to_string(), "test.tsx").unwrap();
         let registries = Registries {
@@ -248,15 +248,24 @@ mod tests {
         let imports = FileImports::new();
         let available_keys = HashSet::new();
 
+        // Collect comments (Phase 1)
+        use crate::extraction::collect::CommentCollector;
+        let file_comments = CommentCollector::collect(
+            &parsed.source,
+            &parsed.comments,
+            &parsed.source_map,
+            "test.tsx",
+            &available_keys,
+        );
+
         let analyzer = FileAnalyzer::new(
             "test.tsx",
             &parsed.source_map,
-            &parsed.comments,
+            &file_comments,
             attrs,
             ignore_texts,
             &registries,
             &imports,
-            &parsed.source,
             &available_keys,
         );
         let result = analyzer.analyze(&parsed.module);
