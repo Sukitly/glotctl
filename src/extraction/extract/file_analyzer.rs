@@ -18,7 +18,7 @@ use swc_ecma_ast::{
 };
 use swc_ecma_visit::{Visit, VisitWith};
 
-use crate::extraction::resolve::comments::{DisableContext, DisableRule};
+use crate::extraction::resolve::comments::{CommentStore, DisableRule};
 use crate::issue::{HardcodedIssue, SourceLocation};
 use crate::utils::contains_alphabetic;
 
@@ -26,7 +26,6 @@ use super::{BindingContext, ResolvedKey, TranslationSource, ValueAnalyzer};
 use crate::commands::context::Registries;
 use crate::extraction::{
     collect::types::{FileImports, extract_binding_names, make_translation_fn_call_key},
-    resolve::comments::AnnotationStore,
     results::{DynamicKeyReason, DynamicKeyWarning, KeyExtractionResult, UsedKey},
     schema::SchemaCallInfo,
     utils::{extract_namespace_from_call, is_translation_hook},
@@ -75,7 +74,7 @@ pub struct FileAnalyzer<'a> {
     // === Shared fields ===
     file_path: &'a str,
     source_map: &'a SourceMap,
-    disable_context: DisableContext,
+    comment_store: CommentStore,
     jsx_state: JsxState,
 
     // === HardcodedChecker specific ===
@@ -84,7 +83,6 @@ pub struct FileAnalyzer<'a> {
 
     // === TranslationKeyVisitor specific ===
     binding_context: BindingContext,
-    annotation_store: AnnotationStore,
     value_analyzer: ValueAnalyzer<'a>,
     registries: &'a Registries,
     available_keys: &'a HashSet<String>,
@@ -110,18 +108,17 @@ impl<'a> FileAnalyzer<'a> {
         source: &str,
         available_keys: &'a HashSet<String>,
     ) -> Self {
-        let annotation_store = AnnotationStore::parse(source, file_path, available_keys);
-        let disable_context = DisableContext::from_comments(comments, source_map);
+        let comment_store =
+            CommentStore::parse(source, comments, source_map, file_path, available_keys);
 
         Self {
             file_path,
             source_map,
-            disable_context,
+            comment_store,
             jsx_state: JsxState::default(),
             checked_attributes,
             ignore_texts,
             binding_context: BindingContext::new(),
-            annotation_store,
             value_analyzer: ValueAnalyzer::new(
                 file_path,
                 &registries.key_object,
@@ -149,7 +146,7 @@ impl<'a> FileAnalyzer<'a> {
                 warnings: self.warnings,
                 schema_calls: self.schema_calls,
                 resolved_keys: self.resolved_keys,
-                pattern_warnings: self.annotation_store.warnings,
+                pattern_warnings: self.comment_store.pattern_warnings().to_vec(),
             },
         }
     }
@@ -160,7 +157,7 @@ impl<'a> FileAnalyzer<'a> {
 
     fn should_report_hardcoded(&self, line: usize, text: &str) -> bool {
         if self
-            .disable_context
+            .comment_store
             .should_ignore(line, DisableRule::Hardcoded)
         {
             return false;
@@ -274,7 +271,7 @@ impl<'a> FileAnalyzer<'a> {
             .map(|cow| cow.to_string())
             .unwrap_or_default();
         let untranslated_disabled = self
-            .disable_context
+            .comment_store
             .should_ignore(loc.line, DisableRule::Untranslated);
         let in_jsx_context = self.should_use_jsx_comment_for_extraction(&source_line);
         self.used_keys.push(UsedKey {
@@ -877,7 +874,7 @@ impl<'a> Visit for FileAnalyzer<'a> {
                         }
                         _ if !is_resolvable => {
                             let annotation_data = self
-                                .annotation_store
+                                .comment_store
                                 .get_annotation(loc.line)
                                 .map(|ann| (ann.keys.clone(), ann.relative_patterns.clone()));
 
@@ -886,6 +883,7 @@ impl<'a> Visit for FileAnalyzer<'a> {
                                     self.add_used_key(loc.clone(), key);
                                 }
 
+                                use crate::extraction::resolve::comments::AnnotationStore;
                                 let expanded_relative = AnnotationStore::expand_relative_patterns(
                                     &relative_patterns,
                                     &translation_source,
