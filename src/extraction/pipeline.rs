@@ -1,16 +1,15 @@
-//! Three-phase extraction pipeline.
+//! Two-phase extraction pipeline (Biome-style).
 //!
-//! This module coordinates the three phases of translation key extraction:
-//! 1. **Collection**: Build cross-file registries
-//! 2. **Extraction**: Extract keys and detect hardcoded text from each file
-//! 3. **Resolution**: Apply comments and generate final results (future)
+//! This module coordinates the two phases of translation key extraction:
+//! 1. **Collection**: Build cross-file registries AND collect all glot comments
+//! 2. **Extraction**: Extract keys and detect hardcoded text using collected comments
 
 use std::collections::HashMap;
 
 use crate::{commands::context::CheckContext, parsers::jsx::ParsedJSX};
 
 use super::{
-    collect::{FileImports, RegistryCollector},
+    collect::{CommentCollector, FileImports, RegistryCollector},
     extract::FileAnalyzer,
 };
 
@@ -28,37 +27,39 @@ pub fn run_pipeline(
     crate::commands::context::AllExtractions,
     crate::commands::context::AllHardcodedIssues,
 ) {
-    // Phase 1: Collect registries
-    let (registries, file_imports) = collect_registries(parsed_files);
-
-    // Phase 2: Extract from files
     let available_keys = ctx
         .messages()
         .and_then(|m| m.primary_messages.as_ref())
         .map(|m| m.keys().cloned().collect())
         .unwrap_or_default();
 
+    // Phase 1: Collect registries AND comments (Biome-style: comments collected first)
+    let (registries, file_imports, file_comments) =
+        collect_registries_and_comments(parsed_files, &available_keys);
+
+    // Phase 2: Extract from files using collected comments
     let (extractions, hardcoded_issues) = extract_from_files(
         &ctx.files,
         parsed_files,
         &registries,
         &file_imports,
+        &file_comments,
         &ctx.config.checked_attributes,
         &ctx.ignore_texts,
         &available_keys,
     );
 
-    // Phase 3: TODO - Apply comments (currently done inside FileAnalyzer)
-
     (registries, file_imports, extractions, hardcoded_issues)
 }
 
-/// Phase 1: Collect registries from all files.
-fn collect_registries(
+/// Phase 1: Collect registries AND comments from all files (Biome-style).
+fn collect_registries_and_comments(
     parsed_files: &HashMap<String, ParsedJSX>,
+    available_keys: &std::collections::HashSet<String>,
 ) -> (
     crate::commands::context::Registries,
     crate::commands::context::AllFileImports,
+    super::collect::types::AllFileComments,
 ) {
     use super::collect::types::*;
 
@@ -70,11 +71,23 @@ fn collect_registries(
     let mut translation_fn_call = HashMap::new();
     let mut default_exports = HashMap::new();
     let mut file_imports: crate::commands::context::AllFileImports = HashMap::new();
+    let mut file_comments: AllFileComments = HashMap::new();
     let mut translation_props_by_file: Vec<(String, Vec<TranslationProp>)> = Vec::new();
 
     for (file_path, parsed) in parsed_files {
+        // Collect registries
         let mut collector = RegistryCollector::new(file_path);
         parsed.module.visit_with(&mut collector);
+
+        // Collect comments (Biome-style: in same phase as registries)
+        let comments = CommentCollector::collect(
+            &parsed.source,
+            &parsed.comments,
+            &parsed.source_map,
+            file_path,
+            available_keys,
+        );
+        file_comments.insert(file_path.clone(), comments);
 
         // Schema functions
         for func in collector.schema_functions {
@@ -166,7 +179,7 @@ fn collect_registries(
         default_exports,
     };
 
-    (registries, file_imports)
+    (registries, file_imports, file_comments)
 }
 
 fn resolve_component_name_for_prop(
@@ -195,12 +208,13 @@ fn resolve_component_name_for_prop(
         .unwrap_or_else(|| component_name.to_string())
 }
 
-/// Phase 2: Extract translation keys and hardcoded issues from all files.
+/// Phase 2: Extract translation keys and hardcoded issues from all files using collected comments.
 fn extract_from_files(
     files: &std::collections::HashSet<String>,
     parsed_files: &HashMap<String, ParsedJSX>,
     registries: &crate::commands::context::Registries,
     file_imports: &crate::commands::context::AllFileImports,
+    file_comments: &super::collect::types::AllFileComments,
     checked_attributes: &[String],
     ignore_texts: &std::collections::HashSet<String>,
     available_keys: &std::collections::HashSet<String>,
@@ -217,16 +231,18 @@ fn extract_from_files(
         };
 
         let imports = file_imports.get(file_path).cloned().unwrap_or_default();
+        let comments = file_comments
+            .get(file_path)
+            .expect("comments should be collected in Phase 1");
 
         let analyzer = FileAnalyzer::new(
             file_path,
             &parsed.source_map,
-            &parsed.comments,
+            comments,
             checked_attributes,
             ignore_texts,
             registries,
             &imports,
-            &parsed.source,
             available_keys,
         );
         let result = analyzer.analyze(&parsed.module);

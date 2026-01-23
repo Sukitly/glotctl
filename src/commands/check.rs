@@ -248,15 +248,24 @@ mod tests {
         let imports = FileImports::new();
         let available_keys = HashSet::new();
 
+        // Collect comments (Phase 1)
+        use crate::extraction::collect::CommentCollector;
+        let file_comments = CommentCollector::collect(
+            &parsed.source,
+            &parsed.comments,
+            &parsed.source_map,
+            "test.tsx",
+            &available_keys,
+        );
+
         let analyzer = FileAnalyzer::new(
             "test.tsx",
             &parsed.source_map,
-            &parsed.comments,
+            &file_comments,
             attrs,
             ignore_texts,
             &registries,
             &imports,
-            &parsed.source,
             &available_keys,
         );
         let result = analyzer.analyze(&parsed.module);

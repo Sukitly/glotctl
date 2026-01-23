@@ -197,6 +197,30 @@ pub fn make_registry_key(file_path: &str, name: &str) -> String {
 }
 
 // ============================================================
+// Comment Collection Types
+// ============================================================
+
+use crate::extraction::resolve::comments::parser::PatternWarning;
+use crate::extraction::resolve::comments::{AnnotationStore, DisableContext};
+
+/// All glot comments collected from a single file.
+///
+/// This is collected in Phase 1 alongside Registries and FileImports,
+/// and passed to FileAnalyzer in Phase 2 for immediate use.
+#[derive(Debug, Default)]
+pub struct FileComments {
+    /// Disable directives (glot-disable, glot-enable, glot-disable-next-line)
+    pub disable_context: DisableContext,
+    /// Message key annotations (glot-message-keys)
+    pub annotations: AnnotationStore,
+    /// Warnings from annotation parsing (invalid patterns, etc.)
+    pub pattern_warnings: Vec<PatternWarning>,
+}
+
+/// All file comments indexed by file path
+pub type AllFileComments = std::collections::HashMap<String, FileComments>;
+
+// ============================================================
 // Aggregated Registry Types
 // ============================================================
 
@@ -901,14 +925,18 @@ mod tests {
         let collector = parse_and_collect(code);
 
         assert_eq!(collector.translation_fn_calls.len(), 2);
-        assert!(collector
-            .translation_fn_calls
-            .iter()
-            .any(|c| c.fn_name == "helperA"));
-        assert!(collector
-            .translation_fn_calls
-            .iter()
-            .any(|c| c.fn_name == "helperB"));
+        assert!(
+            collector
+                .translation_fn_calls
+                .iter()
+                .any(|c| c.fn_name == "helperA")
+        );
+        assert!(
+            collector
+                .translation_fn_calls
+                .iter()
+                .any(|c| c.fn_name == "helperB")
+        );
     }
 
     #[test]

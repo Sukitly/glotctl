@@ -22,6 +22,7 @@ pub struct GlotAnnotation {
 }
 
 /// Stores parsed glot-message-keys annotations for a file.
+#[derive(Debug, Default)]
 pub struct AnnotationStore {
     /// Line number -> annotation data
     annotations: HashMap<usize, GlotAnnotation>,

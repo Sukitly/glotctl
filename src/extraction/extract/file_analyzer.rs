@@ -10,7 +10,7 @@
 
 use std::collections::HashSet;
 
-use swc_common::{Loc, SourceMap, comments::SingleThreadedComments};
+use swc_common::{Loc, SourceMap};
 use swc_ecma_ast::{
     BinaryOp, CallExpr, Callee, CondExpr, DefaultDecl, Expr, FnDecl, JSXAttr, JSXAttrName,
     JSXAttrValue, JSXElement, JSXElementName, JSXExpr, JSXExprContainer, JSXFragment, JSXText, Lit,
@@ -18,14 +18,16 @@ use swc_ecma_ast::{
 };
 use swc_ecma_visit::{Visit, VisitWith};
 
-use crate::extraction::resolve::comments::{CommentStore, DisableRule};
+use crate::extraction::resolve::comments::DisableRule;
 use crate::issue::{HardcodedIssue, SourceLocation};
 use crate::utils::contains_alphabetic;
 
 use super::{BindingContext, ResolvedKey, TranslationSource, ValueAnalyzer};
 use crate::commands::context::Registries;
 use crate::extraction::{
-    collect::types::{FileImports, extract_binding_names, make_translation_fn_call_key},
+    collect::types::{
+        FileComments, FileImports, extract_binding_names, make_translation_fn_call_key,
+    },
     results::{DynamicKeyReason, DynamicKeyWarning, KeyExtractionResult, UsedKey},
     schema::SchemaCallInfo,
     utils::{extract_namespace_from_call, is_translation_hook},
@@ -74,7 +76,7 @@ pub struct FileAnalyzer<'a> {
     // === Shared fields ===
     file_path: &'a str,
     source_map: &'a SourceMap,
-    comment_store: CommentStore,
+    file_comments: &'a FileComments,
     jsx_state: JsxState,
 
     // === HardcodedChecker specific ===
@@ -100,21 +102,17 @@ impl<'a> FileAnalyzer<'a> {
     pub fn new(
         file_path: &'a str,
         source_map: &'a SourceMap,
-        comments: &SingleThreadedComments,
+        file_comments: &'a FileComments,
         checked_attributes: &'a [String],
         ignore_texts: &'a HashSet<String>,
         registries: &'a Registries,
         file_imports: &'a FileImports,
-        source: &str,
         available_keys: &'a HashSet<String>,
     ) -> Self {
-        let comment_store =
-            CommentStore::parse(source, comments, source_map, file_path, available_keys);
-
         Self {
             file_path,
             source_map,
-            comment_store,
+            file_comments,
             jsx_state: JsxState::default(),
             checked_attributes,
             ignore_texts,
@@ -146,7 +144,7 @@ impl<'a> FileAnalyzer<'a> {
                 warnings: self.warnings,
                 schema_calls: self.schema_calls,
                 resolved_keys: self.resolved_keys,
-                pattern_warnings: self.comment_store.pattern_warnings().to_vec(),
+                pattern_warnings: self.file_comments.pattern_warnings.clone(),
             },
         }
     }
@@ -157,7 +155,8 @@ impl<'a> FileAnalyzer<'a> {
 
     fn should_report_hardcoded(&self, line: usize, text: &str) -> bool {
         if self
-            .comment_store
+            .file_comments
+            .disable_context
             .should_ignore(line, DisableRule::Hardcoded)
         {
             return false;
@@ -271,7 +270,8 @@ impl<'a> FileAnalyzer<'a> {
             .map(|cow| cow.to_string())
             .unwrap_or_default();
         let untranslated_disabled = self
-            .comment_store
+            .file_comments
+            .disable_context
             .should_ignore(loc.line, DisableRule::Untranslated);
         let in_jsx_context = self.should_use_jsx_comment_for_extraction(&source_line);
         self.used_keys.push(UsedKey {
@@ -874,7 +874,8 @@ impl<'a> Visit for FileAnalyzer<'a> {
                         }
                         _ if !is_resolvable => {
                             let annotation_data = self
-                                .comment_store
+                                .file_comments
+                                .annotations
                                 .get_annotation(loc.line)
                                 .map(|ann| (ann.keys.clone(), ann.relative_patterns.clone()));
 

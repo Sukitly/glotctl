@@ -4,19 +4,19 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
-use anyhow::{anyhow, Context as _, Result};
+use anyhow::{Context as _, Result, anyhow};
 
 use crate::{
     args::CommonArgs,
     commands::shared,
-    config::load_config,
     config::Config,
+    config::load_config,
     extraction::KeyExtractionResult,
     file_scanner::scan_files,
     issue::{Issue, ParseErrorIssue},
-    parsers::json::scan_message_files,
     parsers::json::MessageMap,
-    parsers::jsx::{parse_jsx_source, ParsedJSX},
+    parsers::json::scan_message_files,
+    parsers::jsx::{ParsedJSX, parse_jsx_source},
 };
 
 use std::collections::HashMap;
