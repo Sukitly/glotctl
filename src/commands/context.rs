@@ -157,11 +157,6 @@ impl CheckContext {
         self.parsed_files.get()
     }
 
-    /// Get a single parsed file by path.
-    pub fn get_parsed(&self, file_path: &str) -> Option<&ParsedJSX> {
-        self.parsed_files.get()?.get(file_path)
-    }
-
     pub fn registries(&self) -> Option<&Registries> {
         self.registries.get()
     }
