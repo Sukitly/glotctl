@@ -55,7 +55,7 @@ pub fn run_pipeline(
 /// Phase 1: Collect registries AND comments from all files (Biome-style).
 fn collect_registries_and_comments(
     parsed_files: &HashMap<String, ParsedJSX>,
-    available_keys: &std::collections::HashSet<String>,
+    _available_keys: &std::collections::HashSet<String>,
 ) -> (
     crate::commands::context::Registries,
     crate::commands::context::AllFileImports,
@@ -80,8 +80,7 @@ fn collect_registries_and_comments(
         parsed.module.visit_with(&mut collector);
 
         // Collect comments (Biome-style: in same phase as registries)
-        let comments =
-            CommentCollector::collect(&parsed.comments, &parsed.source_map, available_keys);
+        let comments = CommentCollector::collect(&parsed.comments, &parsed.source_map);
         file_comments.insert(file_path.clone(), comments);
 
         // Schema functions

@@ -207,20 +207,6 @@ pub enum SuppressibleRule {
     Untranslated,
 }
 
-/// Parsed glot directive.
-#[derive(Debug, Clone)]
-pub enum Directive {
-    Disable {
-        rules: std::collections::HashSet<SuppressibleRule>,
-    },
-    Enable {
-        rules: std::collections::HashSet<SuppressibleRule>,
-    },
-    DisableNextLine {
-        rules: std::collections::HashSet<SuppressibleRule>,
-    },
-}
-
 /// Range representing disabled lines [start, end] inclusive.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct DisabledRange {
@@ -241,8 +227,9 @@ pub struct Suppressions {
 /// Key declaration for a single line.
 #[derive(Debug, Clone)]
 pub struct KeyDeclaration {
-    /// Absolute keys after glob expansion (fully qualified keys).
-    pub keys: Vec<String>,
+    /// Absolute patterns (e.g., "Common.key", "errors.*")
+    /// These patterns are fully qualified and ready for expansion.
+    pub absolute_patterns: Vec<String>,
     /// Relative patterns (starting with `.`) that need namespace expansion.
     /// e.g., `.features.*.title` will become `Namespace.features.*.title`
     pub relative_patterns: Vec<String>,

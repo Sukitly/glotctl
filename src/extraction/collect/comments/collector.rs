@@ -4,19 +4,13 @@
 //! from a file's SingleThreadedComments during Phase 1. The collected FileComments are then
 //! passed to FileAnalyzer in Phase 2 for immediate use, avoiding re-parsing.
 
-use regex::Regex;
-use std::collections::{HashMap, HashSet};
-use std::sync::LazyLock;
+use std::collections::HashMap;
 use swc_common::{SourceMap, comments::SingleThreadedComments};
 
+use super::directive::Directive;
 use crate::extraction::collect::types::{
-    Declarations, Directive, DisabledRange, FileComments, KeyDeclaration, SuppressibleRule,
-    Suppressions,
+    Declarations, DisabledRange, FileComments, SuppressibleRule, Suppressions,
 };
-use crate::extraction::utils::{expand_glob_pattern, is_glob_pattern};
-
-// Matches quoted strings: "some.key"
-static QUOTED_STRING_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#""([^"]+)""#).unwrap());
 
 /// Collects all glot comments from a file.
 pub struct CommentCollector;
@@ -31,12 +25,7 @@ impl CommentCollector {
     /// # Arguments
     /// * `swc_comments` - SWC parsed comments
     /// * `source_map` - Source map for line number lookup
-    /// * `available_keys` - Available translation keys for glob expansion
-    pub fn collect(
-        swc_comments: &SingleThreadedComments,
-        source_map: &SourceMap,
-        available_keys: &HashSet<String>,
-    ) -> FileComments {
+    pub fn collect(swc_comments: &SingleThreadedComments, source_map: &SourceMap) -> FileComments {
         let mut suppressions = Suppressions::default();
         let mut declaration_entries = HashMap::new();
 
@@ -56,71 +45,43 @@ impl CommentCollector {
             let text = cmt.text.trim();
             let line = source_map.lookup_char_pos(cmt.span.lo).line;
 
-            // Try to parse as suppression directive
             if let Some(directive) = Directive::parse(text) {
-                Self::handle_suppression(&mut suppressions, &mut open_ranges, directive, line);
-            }
-            // Try to parse as message-keys declaration
-            else if let Some(decl) = Self::parse_message_keys(text, available_keys) {
-                declaration_entries.insert(line, decl);
+                match directive {
+                    Directive::Disable { rules } => {
+                        for rule in rules {
+                            open_ranges.entry(rule).or_insert(line);
+                        }
+                    }
+                    Directive::Enable { rules } => {
+                        for rule in rules {
+                            if let Some(start) = open_ranges.remove(&rule) {
+                                let end = line.saturating_sub(1);
+                                suppressions
+                                    .disabled_ranges
+                                    .entry(rule)
+                                    .or_default()
+                                    .push(DisabledRange { start, end });
+                            }
+                        }
+                    }
+                    Directive::DisableNextLine { rules } => {
+                        let next_line = line + 1;
+                        for rule in rules {
+                            suppressions
+                                .disabled_lines
+                                .entry(rule)
+                                .or_default()
+                                .insert(next_line);
+                        }
+                    }
+                    Directive::MessageKeys(decl) => {
+                        declaration_entries.insert(line, decl);
+                    }
+                }
             }
         }
 
         // Close any open ranges (extend to end of file)
-        Self::close_open_ranges(&mut suppressions, open_ranges);
-
-        FileComments {
-            suppressions,
-            declarations: Declarations {
-                entries: declaration_entries,
-            },
-        }
-    }
-
-    /// Handle a suppression directive by updating suppressions state.
-    fn handle_suppression(
-        suppressions: &mut Suppressions,
-        open_ranges: &mut HashMap<SuppressibleRule, usize>,
-        directive: Directive,
-        line: usize,
-    ) {
-        match directive {
-            Directive::Disable { rules } => {
-                for rule in rules {
-                    // Only start a new range if not already open
-                    open_ranges.entry(rule).or_insert(line);
-                }
-            }
-            Directive::Enable { rules } => {
-                for rule in rules {
-                    if let Some(start) = open_ranges.remove(&rule) {
-                        let end = line.saturating_sub(1);
-                        suppressions
-                            .disabled_ranges
-                            .entry(rule)
-                            .or_default()
-                            .push(DisabledRange { start, end });
-                    }
-                }
-            }
-            Directive::DisableNextLine { rules } => {
-                let next_line = line + 1;
-                for rule in rules {
-                    suppressions
-                        .disabled_lines
-                        .entry(rule)
-                        .or_default()
-                        .insert(next_line);
-                }
-            }
-        }
-    }
-
-    /// Close any open disable ranges (extend to end of file).
-    fn close_open_ranges(
-        suppressions: &mut Suppressions,
-        open_ranges: HashMap<SuppressibleRule, usize>,
-    ) {
         for (rule, start) in open_ranges {
             suppressions
                 .disabled_ranges
@@ -131,98 +92,14 @@ impl CommentCollector {
                     end: usize::MAX,
                 });
         }
-    }
 
-    /// Parse glot-message-keys declaration from comment text.
-    ///
-    /// SWC has already stripped comment delimiters, so text is like:
-    /// - " glot-message-keys \"key1\", \"key2\""
-    ///
-    /// Returns None if not a glot-message-keys comment or no valid patterns found.
-    fn parse_message_keys(text: &str, available_keys: &HashSet<String>) -> Option<KeyDeclaration> {
-        // Check if this is a glot-message-keys comment
-        let rest = text.strip_prefix("glot-message-keys")?;
-
-        // Extract quoted patterns
-        let patterns: Vec<String> = QUOTED_STRING_REGEX
-            .captures_iter(rest)
-            .filter_map(|cap| cap.get(1).map(|m| m.as_str().to_string()))
-            .collect();
-
-        if patterns.is_empty() {
-            return None;
+        FileComments {
+            suppressions,
+            declarations: Declarations {
+                entries: declaration_entries,
+            },
         }
-
-        // Validate and filter patterns
-        let valid_patterns: Vec<String> = patterns
-            .into_iter()
-            .filter(|p| is_valid_pattern(p))
-            .collect();
-
-        if valid_patterns.is_empty() {
-            return None;
-        }
-
-        // Expand and categorize patterns
-        let mut expanded_keys = Vec::new();
-        let mut relative_patterns = Vec::new();
-
-        for pattern in valid_patterns {
-            if pattern.starts_with('.') {
-                // Relative pattern - store for later expansion with namespace
-                relative_patterns.push(pattern);
-            } else if is_glob_pattern(&pattern) {
-                // Absolute glob pattern - expand immediately
-                let expanded = expand_glob_pattern(&pattern, available_keys);
-                expanded_keys.extend(expanded);
-            } else {
-                // Absolute literal pattern - add as-is
-                expanded_keys.push(pattern);
-            }
-        }
-
-        Some(KeyDeclaration {
-            keys: expanded_keys,
-            relative_patterns,
-        })
     }
-}
-
-/// Validate a pattern. Returns true if valid, false if invalid.
-///
-/// Valid patterns:
-/// - Absolute: `Namespace.key.path` or `key.path`
-/// - Relative: `.key.path` (will be expanded with namespace at runtime)
-/// - Glob: `Namespace.features.*` or `.features.*`
-///
-/// Invalid patterns:
-/// - Prefix wildcard: `*.suffix` (not supported)
-/// - Empty segments: `foo..bar`
-fn is_valid_pattern(pattern: &str) -> bool {
-    // Handle relative patterns (starting with `.`)
-    let pattern_to_check = if let Some(stripped) = pattern.strip_prefix('.') {
-        // For relative patterns, validate the part after the leading `.`
-        stripped
-    } else {
-        pattern
-    };
-
-    let segments: Vec<&str> = pattern_to_check.split('.').collect();
-
-    // Check for prefix wildcard pattern like "*.suffix"
-    if let Some(first) = segments.first()
-        && *first == "*"
-        && segments.len() > 1
-    {
-        return false;
-    }
-
-    // Check for empty segments
-    if segments.iter().any(|s| s.is_empty()) {
-        return false;
-    }
-
-    true
 }
 
 #[cfg(test)]
@@ -231,9 +108,9 @@ mod tests {
     use crate::parsers::jsx::parse_jsx_source;
 
     /// Helper to parse source and collect comments
-    fn parse_and_collect(source: &str, available_keys: &HashSet<String>) -> FileComments {
+    fn parse_and_collect(source: &str) -> FileComments {
         let parsed = parse_jsx_source(source.to_string(), "test.tsx").unwrap();
-        CommentCollector::collect(&parsed.comments, &parsed.source_map, available_keys)
+        CommentCollector::collect(&parsed.comments, &parsed.source_map)
     }
 
     // ============================================================
@@ -242,7 +119,7 @@ mod tests {
 
     #[test]
     fn test_parse_empty_source() {
-        let comments = parse_and_collect("const x = 1;", &HashSet::new());
+        let comments = parse_and_collect("const x = 1;");
         assert!(comments.declarations.entries.is_empty());
     }
 
@@ -252,11 +129,14 @@ mod tests {
 // glot-message-keys "Common.submit"
 t(`${key}`)
 "#;
-        let comments = parse_and_collect(source, &HashSet::new());
+        let comments = parse_and_collect(source);
 
         let decl = comments.declarations.get_declaration(3);
         assert!(decl.is_some());
-        assert_eq!(decl.unwrap().keys, vec!["Common.submit".to_string()]);
+        assert_eq!(
+            decl.unwrap().absolute_patterns,
+            vec!["Common.submit".to_string()]
+        );
         assert!(decl.unwrap().relative_patterns.is_empty());
     }
 
@@ -266,33 +146,29 @@ t(`${key}`)
 // glot-message-keys ".submit"
 t(`${key}`)
 "#;
-        let comments = parse_and_collect(source, &HashSet::new());
+        let comments = parse_and_collect(source);
 
         let decl = comments.declarations.get_declaration(3);
         assert!(decl.is_some());
-        assert!(decl.unwrap().keys.is_empty());
+        assert!(decl.unwrap().absolute_patterns.is_empty());
         assert_eq!(decl.unwrap().relative_patterns, vec![".submit".to_string()]);
     }
 
     #[test]
-    fn test_parse_glob_pattern_with_available_keys() {
-        let mut available_keys = HashSet::new();
-        available_keys.insert("Common.btn.submit".to_string());
-        available_keys.insert("Common.btn.cancel".to_string());
-        available_keys.insert("Other.key".to_string());
-
+    fn test_parse_glob_pattern() {
         let source = r#"
 // glot-message-keys "Common.btn.*"
 t(`${key}`)
 "#;
-        let comments = parse_and_collect(source, &available_keys);
+        let comments = parse_and_collect(source);
 
         let decl = comments.declarations.get_declaration(3);
         assert!(decl.is_some());
-        let keys = &decl.unwrap().keys;
-        assert_eq!(keys.len(), 2);
-        assert!(keys.contains(&"Common.btn.submit".to_string()));
-        assert!(keys.contains(&"Common.btn.cancel".to_string()));
+        assert_eq!(
+            decl.unwrap().absolute_patterns,
+            vec!["Common.btn.*".to_string()]
+        );
+        assert!(decl.unwrap().relative_patterns.is_empty());
     }
 
     #[test]
@@ -301,22 +177,22 @@ t(`${key}`)
 // glot-message-keys "Common.submit"
 const x = 1;
 "#;
-        let comments = parse_and_collect(source, &HashSet::new());
+        let comments = parse_and_collect(source);
 
         assert_eq!(comments.declarations.entries.len(), 1);
         let decl = comments.declarations.entries.get(&2).unwrap();
-        assert_eq!(decl.keys, vec!["Common.submit"]);
+        assert_eq!(decl.absolute_patterns, vec!["Common.submit"]);
     }
 
     #[test]
     fn test_multiple_keys() {
         let source = r#"// glot-message-keys "Status.active", "Status.inactive", "Status.pending""#;
-        let comments = parse_and_collect(source, &HashSet::new());
+        let comments = parse_and_collect(source);
 
         assert_eq!(comments.declarations.entries.len(), 1);
         let decl = comments.declarations.entries.get(&1).unwrap();
         assert_eq!(
-            decl.keys,
+            decl.absolute_patterns,
             vec!["Status.active", "Status.inactive", "Status.pending"]
         );
     }
@@ -324,27 +200,27 @@ const x = 1;
     #[test]
     fn test_glob_pattern() {
         let source = r#"// glot-message-keys "errors.*""#;
-        let comments = parse_and_collect(source, &HashSet::new());
+        let comments = parse_and_collect(source);
 
         assert_eq!(comments.declarations.entries.len(), 1);
         let decl = comments.declarations.entries.get(&1).unwrap();
-        assert_eq!(decl.keys, Vec::<String>::new()); // Glob with no available keys = empty
+        assert_eq!(decl.absolute_patterns, vec!["errors.*"]); // Glob patterns stored as-is
     }
 
     #[test]
     fn test_middle_wildcard() {
         let source = r#"// glot-message-keys "form.*.label""#;
-        let comments = parse_and_collect(source, &HashSet::new());
+        let comments = parse_and_collect(source);
 
         assert_eq!(comments.declarations.entries.len(), 1);
         let decl = comments.declarations.entries.get(&1).unwrap();
-        assert_eq!(decl.keys, Vec::<String>::new()); // Glob with no available keys = empty
+        assert_eq!(decl.absolute_patterns, vec!["form.*.label"]); // Glob patterns stored as-is
     }
 
     #[test]
     fn test_prefix_wildcard_skipped() {
         let source = r#"// glot-message-keys "*.title""#;
-        let comments = parse_and_collect(source, &HashSet::new());
+        let comments = parse_and_collect(source);
 
         // Invalid pattern is skipped, no entry created
         assert_eq!(comments.declarations.entries.len(), 0);
@@ -359,7 +235,7 @@ function showError() {}
 // glot-message-keys "form.*.label", "form.*.placeholder"
 function renderForm() {}
 "#;
-        let comments = parse_and_collect(source, &HashSet::new());
+        let comments = parse_and_collect(source);
 
         assert_eq!(comments.declarations.entries.len(), 2);
         assert!(comments.declarations.entries.contains_key(&2));
@@ -369,7 +245,7 @@ function renderForm() {}
     #[test]
     fn test_no_patterns_skipped() {
         let source = r#"// glot-message-keys"#;
-        let comments = parse_and_collect(source, &HashSet::new());
+        let comments = parse_and_collect(source);
 
         // No valid patterns - no entry created
         assert_eq!(comments.declarations.entries.len(), 0);
@@ -382,31 +258,37 @@ function renderForm() {}
     #[test]
     fn test_jsx_comment_single_key() {
         let source = r#"{/* glot-message-keys "Common.submit" */}"#;
-        let comments = parse_and_collect(source, &HashSet::new());
+        let comments = parse_and_collect(source);
 
         assert_eq!(comments.declarations.entries.len(), 1);
         let decl = comments.declarations.entries.get(&1).unwrap();
-        assert_eq!(decl.keys, vec!["Common.submit"]);
+        assert_eq!(decl.absolute_patterns, vec!["Common.submit"]);
     }
 
     #[test]
     fn test_jsx_comment_multiple_keys() {
         let source = r#"{/* glot-message-keys "Status.active", "Status.inactive" */}"#;
-        let comments = parse_and_collect(source, &HashSet::new());
+        let comments = parse_and_collect(source);
 
         assert_eq!(comments.declarations.entries.len(), 1);
         let decl = comments.declarations.entries.get(&1).unwrap();
-        assert_eq!(decl.keys, vec!["Status.active", "Status.inactive"]);
+        assert_eq!(
+            decl.absolute_patterns,
+            vec!["Status.active", "Status.inactive"]
+        );
     }
 
     #[test]
     fn test_jsx_comment_glob_pattern() {
         let source = r#"{/* glot-message-keys "CharacterForm.genderOptions.*" */}"#;
-        let comments = parse_and_collect(source, &HashSet::new());
+        let comments = parse_and_collect(source);
 
         assert_eq!(comments.declarations.entries.len(), 1);
         let decl = comments.declarations.entries.get(&1).unwrap();
-        assert_eq!(decl.keys, Vec::<String>::new()); // Glob with no available keys = empty
+        assert_eq!(
+            decl.absolute_patterns,
+            vec!["CharacterForm.genderOptions.*"]
+        ); // Glob patterns stored as-is
     }
 
     // ============================================================
@@ -416,7 +298,7 @@ function renderForm() {}
     #[test]
     fn test_relative_pattern_simple() {
         let source = r#"// glot-message-keys ".features.title""#;
-        let comments = parse_and_collect(source, &HashSet::new());
+        let comments = parse_and_collect(source);
 
         assert_eq!(comments.declarations.entries.len(), 1);
         let decl = comments.declarations.entries.get(&1).unwrap();
@@ -426,7 +308,7 @@ function renderForm() {}
     #[test]
     fn test_relative_pattern_with_glob() {
         let source = r#"// glot-message-keys ".features.*.title""#;
-        let comments = parse_and_collect(source, &HashSet::new());
+        let comments = parse_and_collect(source);
 
         assert_eq!(comments.declarations.entries.len(), 1);
         let decl = comments.declarations.entries.get(&1).unwrap();
@@ -436,7 +318,7 @@ function renderForm() {}
     #[test]
     fn test_relative_pattern_jsx_comment() {
         let source = r#"{/* glot-message-keys ".items.*" */}"#;
-        let comments = parse_and_collect(source, &HashSet::new());
+        let comments = parse_and_collect(source);
 
         assert_eq!(comments.declarations.entries.len(), 1);
         let decl = comments.declarations.entries.get(&1).unwrap();
@@ -446,11 +328,11 @@ function renderForm() {}
     #[test]
     fn test_mixed_absolute_and_relative_patterns() {
         let source = r#"// glot-message-keys "Common.title", ".features.*""#;
-        let comments = parse_and_collect(source, &HashSet::new());
+        let comments = parse_and_collect(source);
 
         assert_eq!(comments.declarations.entries.len(), 1);
         let decl = comments.declarations.entries.get(&1).unwrap();
-        assert_eq!(decl.keys, vec!["Common.title"]);
+        assert_eq!(decl.absolute_patterns, vec!["Common.title"]);
         assert_eq!(decl.relative_patterns, vec![".features.*"]);
     }
 
@@ -467,7 +349,7 @@ const x = "Hardcoded text";
 // glot-message-keys "Common.key1", "Common.key2"
 t(`${dynamicKey}`);
 "#;
-        let comments = parse_and_collect(source, &HashSet::new());
+        let comments = parse_and_collect(source);
 
         // Check suppression
         assert!(
@@ -484,7 +366,7 @@ t(`${dynamicKey}`);
         // Check declaration
         assert_eq!(comments.declarations.entries.len(), 1);
         let decl = comments.declarations.entries.get(&5).unwrap();
-        assert_eq!(decl.keys, vec!["Common.key1", "Common.key2"]);
+        assert_eq!(decl.absolute_patterns, vec!["Common.key1", "Common.key2"]);
     }
 
     #[test]
@@ -498,7 +380,7 @@ t(`${dynamicKey}`);
 // glot-disable-next-line
 // Line 8
 "#;
-        let comments = parse_and_collect(source, &HashSet::new());
+        let comments = parse_and_collect(source);
 
         // Declaration on line 3
         assert!(comments.declarations.entries.contains_key(&3));

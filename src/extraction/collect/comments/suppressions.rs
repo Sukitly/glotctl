@@ -1,14 +1,12 @@
-//! Implementation of suppression directives for glot comments.
+//! Implementation of suppression-related types and methods.
 //!
-//! Supports rule-specific disable comments:
-//! - `glot-disable-next-line` - disable all rules for next line
-//! - `glot-disable-next-line hardcoded` - disable only hardcoded rule
-//! - `glot-disable-next-line untranslated` - disable only untranslated rule
-//! - `glot-disable` / `glot-enable` - range-based disabling
+//! Provides:
+//! - `SuppressibleRule` - Rules that can be suppressed
+//! - `Suppressions` - Query methods for checking suppression status
 
 use std::collections::HashSet;
 
-use super::super::types::{Directive, SuppressibleRule, Suppressions};
+use super::super::types::{SuppressibleRule, Suppressions};
 
 impl SuppressibleRule {
     /// Parse rule name from string (case insensitive).
@@ -44,64 +42,6 @@ impl SuppressibleRule {
             .map(|r| r.as_str())
             .collect::<Vec<_>>()
             .join(" ")
-    }
-}
-
-impl Directive {
-    /// Parse directive from comment text.
-    /// Returns None if not a glot directive.
-    pub fn parse(text: &str) -> Option<Self> {
-        let text = text.trim();
-
-        // Order matters: check longer prefix first
-        if let Some(rest) = text.strip_prefix("glot-disable-next-line") {
-            return Some(Self::DisableNextLine {
-                rules: Self::parse_rules(rest),
-            });
-        }
-        if let Some(rest) = text.strip_prefix("glot-disable") {
-            return Some(Self::Disable {
-                rules: Self::parse_rules(rest),
-            });
-        }
-        if let Some(rest) = text.strip_prefix("glot-enable") {
-            return Some(Self::Enable {
-                rules: Self::parse_rules(rest),
-            });
-        }
-
-        None
-    }
-
-    /// Parse rule names from the rest of the directive text.
-    ///
-    /// Design decisions:
-    /// - Empty input = all rules (backward compatible with `glot-disable-next-line`)
-    /// - Valid tokens only = only those rules (e.g., `hardcoded` = Hardcoded only)
-    /// - Mixed valid/invalid = only valid rules (e.g., `hardcoded foobar` = Hardcoded only)
-    /// - All invalid tokens = all rules (fail-safe: disable more rather than less)
-    ///
-    /// The "all invalid = all rules" behavior is intentional for backward compatibility
-    /// and fail-safe operation. A typo like `untrasnalted` will disable all rules,
-    /// which is more permissive but prevents accidentally leaving issues unchecked.
-    fn parse_rules(rest: &str) -> HashSet<SuppressibleRule> {
-        let rest = rest.trim();
-        if rest.is_empty() {
-            // No rules specified = all rules (backward compatible)
-            return SuppressibleRule::all();
-        }
-
-        let parsed: HashSet<_> = rest
-            .split_whitespace()
-            .filter_map(SuppressibleRule::parse)
-            .collect();
-
-        // If no valid rules parsed, fall back to all rules (fail-safe)
-        if parsed.is_empty() {
-            SuppressibleRule::all()
-        } else {
-            parsed
-        }
     }
 }
 
@@ -209,167 +149,6 @@ mod tests {
     fn test_format_rules_empty() {
         let rules: HashSet<SuppressibleRule> = HashSet::new();
         assert_eq!(SuppressibleRule::format_rules(&rules), "");
-    }
-
-    // ============================================================
-    // Directive Tests
-    // ============================================================
-
-    #[test]
-    fn test_directive_parse_disable_next_line_no_args() {
-        let d = Directive::parse("glot-disable-next-line").unwrap();
-        match d {
-            Directive::DisableNextLine { rules } => {
-                assert!(rules.contains(&SuppressibleRule::Hardcoded));
-                assert!(rules.contains(&SuppressibleRule::Untranslated));
-                assert_eq!(rules.len(), 2);
-            }
-            _ => panic!("expected DisableNextLine"),
-        }
-    }
-
-    #[test]
-    fn test_directive_parse_disable_next_line_hardcoded() {
-        let d = Directive::parse("glot-disable-next-line hardcoded").unwrap();
-        match d {
-            Directive::DisableNextLine { rules } => {
-                assert!(rules.contains(&SuppressibleRule::Hardcoded));
-                assert!(!rules.contains(&SuppressibleRule::Untranslated));
-                assert_eq!(rules.len(), 1);
-            }
-            _ => panic!("expected DisableNextLine"),
-        }
-    }
-
-    #[test]
-    fn test_directive_parse_disable_next_line_untranslated() {
-        let d = Directive::parse("glot-disable-next-line untranslated").unwrap();
-        match d {
-            Directive::DisableNextLine { rules } => {
-                assert!(!rules.contains(&SuppressibleRule::Hardcoded));
-                assert!(rules.contains(&SuppressibleRule::Untranslated));
-                assert_eq!(rules.len(), 1);
-            }
-            _ => panic!("expected DisableNextLine"),
-        }
-    }
-
-    #[test]
-    fn test_directive_parse_disable_next_line_both_rules() {
-        let d = Directive::parse("glot-disable-next-line hardcoded untranslated").unwrap();
-        match d {
-            Directive::DisableNextLine { rules } => {
-                assert!(rules.contains(&SuppressibleRule::Hardcoded));
-                assert!(rules.contains(&SuppressibleRule::Untranslated));
-                assert_eq!(rules.len(), 2);
-            }
-            _ => panic!("expected DisableNextLine"),
-        }
-    }
-
-    #[test]
-    fn test_directive_parse_disable_next_line_reversed_order() {
-        let d = Directive::parse("glot-disable-next-line untranslated hardcoded").unwrap();
-        match d {
-            Directive::DisableNextLine { rules } => {
-                assert!(rules.contains(&SuppressibleRule::Hardcoded));
-                assert!(rules.contains(&SuppressibleRule::Untranslated));
-            }
-            _ => panic!("expected DisableNextLine"),
-        }
-    }
-
-    #[test]
-    fn test_directive_parse_disable_next_line_invalid_rule_falls_back_to_all() {
-        let d = Directive::parse("glot-disable-next-line foobar").unwrap();
-        match d {
-            Directive::DisableNextLine { rules } => {
-                // Invalid rule name falls back to all rules
-                assert!(rules.contains(&SuppressibleRule::Hardcoded));
-                assert!(rules.contains(&SuppressibleRule::Untranslated));
-            }
-            _ => panic!("expected DisableNextLine"),
-        }
-    }
-
-    #[test]
-    fn test_directive_parse_disable_next_line_mixed_valid_invalid() {
-        let d = Directive::parse("glot-disable-next-line hardcoded foobar").unwrap();
-        match d {
-            Directive::DisableNextLine { rules } => {
-                // Only valid rule is parsed
-                assert!(rules.contains(&SuppressibleRule::Hardcoded));
-                assert!(!rules.contains(&SuppressibleRule::Untranslated));
-                assert_eq!(rules.len(), 1);
-            }
-            _ => panic!("expected DisableNextLine"),
-        }
-    }
-
-    #[test]
-    fn test_directive_parse_disable_no_args() {
-        let d = Directive::parse("glot-disable").unwrap();
-        match d {
-            Directive::Disable { rules } => {
-                assert!(rules.contains(&SuppressibleRule::Hardcoded));
-                assert!(rules.contains(&SuppressibleRule::Untranslated));
-            }
-            _ => panic!("expected Disable"),
-        }
-    }
-
-    #[test]
-    fn test_directive_parse_disable_with_rule() {
-        let d = Directive::parse("glot-disable hardcoded").unwrap();
-        match d {
-            Directive::Disable { rules } => {
-                assert!(rules.contains(&SuppressibleRule::Hardcoded));
-                assert!(!rules.contains(&SuppressibleRule::Untranslated));
-            }
-            _ => panic!("expected Disable"),
-        }
-    }
-
-    #[test]
-    fn test_directive_parse_enable_no_args() {
-        let d = Directive::parse("glot-enable").unwrap();
-        match d {
-            Directive::Enable { rules } => {
-                assert!(rules.contains(&SuppressibleRule::Hardcoded));
-                assert!(rules.contains(&SuppressibleRule::Untranslated));
-            }
-            _ => panic!("expected Enable"),
-        }
-    }
-
-    #[test]
-    fn test_directive_parse_enable_with_rule() {
-        let d = Directive::parse("glot-enable untranslated").unwrap();
-        match d {
-            Directive::Enable { rules } => {
-                assert!(!rules.contains(&SuppressibleRule::Hardcoded));
-                assert!(rules.contains(&SuppressibleRule::Untranslated));
-            }
-            _ => panic!("expected Enable"),
-        }
-    }
-
-    #[test]
-    fn test_directive_parse_not_a_directive() {
-        assert!(Directive::parse("some random comment").is_none());
-        assert!(Directive::parse("glot-something").is_none());
-        assert!(Directive::parse("").is_none());
-    }
-
-    #[test]
-    fn test_directive_parse_with_whitespace() {
-        let d = Directive::parse("  glot-disable-next-line  hardcoded  ").unwrap();
-        match d {
-            Directive::DisableNextLine { rules } => {
-                assert!(rules.contains(&SuppressibleRule::Hardcoded));
-            }
-            _ => panic!("expected DisableNextLine"),
-        }
     }
 
     // ============================================================

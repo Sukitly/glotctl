@@ -872,24 +872,13 @@ impl<'a> Visit for FileAnalyzer<'a> {
                             self.process_ternary_arg(cond, loc, &translation_source, is_resolvable);
                         }
                         _ if !is_resolvable => {
-                            let declaration_data = self
-                                .file_comments
-                                .declarations
-                                .get_declaration(loc.line)
-                                .map(|decl| (decl.keys.clone(), decl.relative_patterns.clone()));
-
-                            if let Some((keys, relative_patterns)) = declaration_data {
-                                for key in keys {
-                                    self.add_used_key(loc.clone(), key);
-                                }
-
-                                use crate::extraction::collect::Declarations;
-                                let expanded_relative = Declarations::expand_relative_patterns(
-                                    &relative_patterns,
-                                    &translation_source,
-                                    self.available_keys,
-                                );
-                                for key in expanded_relative {
+                            if let Some(decl) =
+                                self.file_comments.declarations.get_declaration(loc.line)
+                            {
+                                let namespaces = translation_source.namespaces();
+                                let expanded_keys =
+                                    decl.expand_all(&namespaces, self.available_keys);
+                                for key in expanded_keys {
                                     self.add_used_key(loc.clone(), key);
                                 }
                             } else {
