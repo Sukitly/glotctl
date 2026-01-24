@@ -1,15 +1,16 @@
 //! Translation key extraction and analysis.
 //!
-//! This module provides a two-phase extraction pipeline for analyzing translation keys:
+//! This module provides a three-phase extraction pipeline for analyzing translation keys:
 //!
 //! ## Module Structure
 //!
 //! - `collect`: Phase 1 - Cross-file dependency and comment collection
-//! - `extract`: Phase 2 - File-level extraction with comment application
+//! - `extract`: Phase 2 - File-level raw data collection
+//! - `resolve`: Phase 3 - Resolution to final UsedKey/DynamicKeyWarning
 //! - `schema`: Schema function handling
 //! - `utils`: Helper functions and utilities
 //!
-//! ## Two-Phase Extraction Pipeline
+//! ## Three-Phase Extraction Pipeline
 //!
 //! 1. **Collection Phase** (`collect::RegistryCollector` + `collect::CommentCollector`)
 //!    - First AST pass: collect schema functions, key objects, translation props
@@ -17,13 +18,19 @@
 //!    - Build cross-file dependency registries
 //!
 //! 2. **Extraction Phase** (`extract::FileAnalyzer`)
-//!    - Second AST pass: extract translation keys and detect hardcoded text
-//!    - Apply disable directives and glot-message-keys during extraction
-//!    - Output: Final results ready for rule checking
+//!    - Second AST pass: collect raw translation calls and detect hardcoded text
+//!    - Output: RawTranslationCall with ValueSource (no resolution yet)
+//!
+//! 3. **Resolution Phase** (`resolve::resolve_translation_calls`)
+//!    - Resolve ValueSource to static keys
+//!    - Apply glot-message-keys expansion
+//!    - Generate warnings for unresolvable dynamic keys
+//!    - Output: Final UsedKey/DynamicKeyWarning results
 
 pub mod collect;
 pub mod extract;
 pub mod pipeline;
+pub mod resolve;
 pub mod results;
 pub mod schema;
 pub mod utils;

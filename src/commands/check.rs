@@ -246,7 +246,6 @@ mod tests {
             default_exports: HashMap::new(),
         };
         let imports = FileImports::new();
-        let available_keys = HashSet::new();
 
         // Collect comments (Phase 1)
         use crate::extraction::collect::CommentCollector;
@@ -260,7 +259,6 @@ mod tests {
             ignore_texts,
             &registries,
             &imports,
-            &available_keys,
         );
         let result = analyzer.analyze(&parsed.module);
         result.hardcoded_issues

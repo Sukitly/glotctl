@@ -42,6 +42,7 @@ pub mod mcp;
 pub(crate) mod parsers;
 pub mod reporter;
 pub(crate) mod rules;
+pub mod types;
 pub mod utils;
 
 /// Main entry point for the glot CLI.
