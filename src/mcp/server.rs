@@ -155,16 +155,12 @@ impl GlotMcpServer {
             })
             .count();
 
-        // Count primary missing (including expanded keys from MissingDynamicKeyCandidates)
+        // Count primary missing
         let primary_missing_count: usize = result
             .issues
             .iter()
-            .map(|i| match i {
-                Issue::MissingKey(_) => 1,
-                Issue::MissingDynamicKeyCandidates(dyn_missing) => dyn_missing.missing_keys.len(),
-                _ => 0,
-            })
-            .sum();
+            .filter(|i| matches!(i, Issue::MissingKey(_)))
+            .count();
 
         // Count replica lag and collect affected locales
         let mut replica_lag_locales: HashSet<String> = HashSet::new();
@@ -289,28 +285,24 @@ impl GlotMcpServer {
             .run()
             .map_err(|e| McpError::internal_error(format!("Scan failed: {}", e), None))?;
 
-        // Collect primary missing keys (including expanded keys from MissingDynamicKeyCandidates)
+        // Collect primary missing keys
         let all_items: Vec<PrimaryMissingItem> = result
             .issues
             .iter()
-            .flat_map(|i| match i {
-                Issue::MissingKey(missing) => vec![PrimaryMissingItem {
-                    key: missing.key.clone(),
-                    file_path: missing.location.file_path.clone(),
-                    line: missing.location.line,
-                    source: None,
-                }],
-                Issue::MissingDynamicKeyCandidates(dyn_missing) => dyn_missing
-                    .missing_keys
-                    .iter()
-                    .map(|key| PrimaryMissingItem {
-                        key: key.clone(),
-                        file_path: dyn_missing.location.file_path.clone(),
-                        line: dyn_missing.location.line,
-                        source: Some(format!("from \"{}\"", dyn_missing.source_object)),
+            .filter_map(|i| {
+                if let Issue::MissingKey(missing) = i {
+                    Some(PrimaryMissingItem {
+                        key: missing.key.clone(),
+                        file_path: missing.location.file_path.clone(),
+                        line: missing.location.line,
+                        source: missing
+                            .from_schema
+                            .as_ref()
+                            .map(|(name, _)| format!("from schema \"{}\"", name)),
                     })
-                    .collect(),
-                _ => vec![],
+                } else {
+                    None
+                }
             })
             .collect();
 

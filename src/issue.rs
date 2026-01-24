@@ -186,7 +186,7 @@ impl fmt::Display for Severity {
 pub enum Rule {
     HardcodedText,
     MissingKey,
-    DynamicKey,
+    UnresolvedKey,
     ReplicaLag,
     UnusedKey,
     OrphanKey,
@@ -201,7 +201,7 @@ impl fmt::Display for Rule {
         match self {
             Rule::HardcodedText => write!(f, "hardcoded-text"),
             Rule::MissingKey => write!(f, "missing-key"),
-            Rule::DynamicKey => write!(f, "dynamic-key"),
+            Rule::UnresolvedKey => write!(f, "unresolved-key"),
             Rule::ReplicaLag => write!(f, "replica-lag"),
             Rule::UnusedKey => write!(f, "unused-key"),
             Rule::OrphanKey => write!(f, "orphan-key"),
@@ -248,13 +248,16 @@ pub struct MissingKeyIssue {
     pub from_schema: Option<(String, String)>,
 }
 
-/// Dynamic key that cannot be statically analyzed.
+/// Key that cannot be statically resolved.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DynamicKeyIssue {
+pub struct UnresolvedKeyIssue {
     pub location: SourceLocation,
-    pub reason: String,
+    pub reason: crate::types::key_usage::UnresolvedKeyReason,
     pub source_line: Option<String>,
     pub hint: Option<String>,
+    /// Pattern inferred from template (e.g., "Common.*.submit").
+    /// Used by fix command to generate glot-message-keys comments.
+    pub pattern: Option<String>,
 }
 
 /// Namespace could not be determined for schema-derived key.
@@ -264,36 +267,6 @@ pub struct UntrackedNamespaceIssue {
     pub raw_key: String,
     pub schema_name: String,
     pub source_line: Option<String>,
-}
-
-/// Some candidates from dynamic key source are missing.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct MissingDynamicKeyCandidatesIssue {
-    pub location: SourceLocation,
-    pub source_object: String,
-    pub missing_keys: Vec<String>,
-    pub source_line: Option<String>,
-    /// Cached message for display (owned version to satisfy lifetime)
-    #[doc(hidden)]
-    message_cache: String,
-}
-
-impl MissingDynamicKeyCandidatesIssue {
-    pub fn new(
-        location: SourceLocation,
-        source_object: String,
-        missing_keys: Vec<String>,
-        source_line: Option<String>,
-    ) -> Self {
-        let message_cache = format!("dynamic key from \"{}\"", source_object);
-        Self {
-            location,
-            source_object,
-            missing_keys,
-            source_line,
-            message_cache,
-        }
-    }
 }
 
 // ============================================================
@@ -482,14 +455,13 @@ pub trait IssueReport {
 pub enum Issue {
     Hardcoded(HardcodedIssue),
     MissingKey(MissingKeyIssue),
-    DynamicKey(DynamicKeyIssue),
+    UnresolvedKey(UnresolvedKeyIssue),
     ReplicaLag(ReplicaLagIssue),
     UnusedKey(UnusedKeyIssue),
     OrphanKey(OrphanKeyIssue),
     Untranslated(UntranslatedIssue),
     TypeMismatch(TypeMismatchIssue),
     UntrackedNamespace(UntrackedNamespaceIssue),
-    MissingDynamicKeyCandidates(MissingDynamicKeyCandidatesIssue),
     ParseError(ParseErrorIssue),
 }
 
@@ -565,7 +537,7 @@ impl IssueReport for MissingKeyIssue {
     }
 }
 
-impl IssueReport for DynamicKeyIssue {
+impl IssueReport for UnresolvedKeyIssue {
     fn file_path(&self) -> Option<&str> {
         Some(&self.location.file_path)
     }
@@ -576,13 +548,22 @@ impl IssueReport for DynamicKeyIssue {
         self.location.col
     }
     fn message(&self) -> &str {
-        &self.reason
+        // Return a static description based on reason type
+        match &self.reason {
+            crate::types::key_usage::UnresolvedKeyReason::VariableKey => "variable key",
+            crate::types::key_usage::UnresolvedKeyReason::TemplateWithExpr => {
+                "template with expression"
+            }
+            crate::types::key_usage::UnresolvedKeyReason::UnknownNamespace { .. } => {
+                "unknown namespace"
+            }
+        }
     }
     fn severity(&self) -> Severity {
         Severity::Warning
     }
     fn rule(&self) -> Rule {
-        Rule::DynamicKey
+        Rule::UnresolvedKey
     }
     fn source_line(&self) -> Option<&str> {
         self.source_line.as_deref()
@@ -816,39 +797,6 @@ impl IssueReport for UntrackedNamespaceIssue {
             "from {} - namespace could not be determined",
             self.schema_name
         ))
-    }
-    fn usages(&self) -> Option<(&Vec<KeyUsage>, usize)> {
-        None
-    }
-}
-
-impl IssueReport for MissingDynamicKeyCandidatesIssue {
-    fn file_path(&self) -> Option<&str> {
-        Some(&self.location.file_path)
-    }
-    fn line(&self) -> Option<usize> {
-        Some(self.location.line)
-    }
-    fn col(&self) -> Option<usize> {
-        self.location.col
-    }
-    fn message(&self) -> &str {
-        &self.message_cache
-    }
-    fn severity(&self) -> Severity {
-        Severity::Error
-    }
-    fn rule(&self) -> Rule {
-        Rule::MissingKey
-    }
-    fn source_line(&self) -> Option<&str> {
-        self.source_line.as_deref()
-    }
-    fn hint(&self) -> Option<&str> {
-        None
-    }
-    fn format_details(&self) -> Option<String> {
-        Some(format!("missing: {}", self.missing_keys.join(", ")))
     }
     fn usages(&self) -> Option<(&Vec<KeyUsage>, usize)> {
         None
@@ -1270,24 +1218,26 @@ mod tests {
     }
 
     // ============================================================
-    // DynamicKeyIssue Tests
+    // UnresolvedKeyIssue Tests
     // ============================================================
 
     #[test]
-    fn test_dynamic_key_issue_report() {
-        let issue = DynamicKeyIssue {
+    fn test_unresolved_key_issue_report() {
+        use crate::types::key_usage::UnresolvedKeyReason;
+        let issue = UnresolvedKeyIssue {
             location: SourceLocation::new("./src/utils.tsx", 30).with_col(12),
-            reason: "dynamic key".to_string(),
+            reason: UnresolvedKeyReason::VariableKey,
             source_line: Some("const msg = t(keyVar);".to_string()),
             hint: None,
+            pattern: None,
         };
 
         assert_eq!(issue.file_path(), Some("./src/utils.tsx"));
         assert_eq!(issue.line(), Some(30));
         assert_eq!(issue.col(), Some(12));
-        assert_eq!(issue.message(), "dynamic key");
+        assert_eq!(issue.message(), "variable key");
         assert_eq!(issue.severity(), Severity::Warning);
-        assert_eq!(issue.rule(), Rule::DynamicKey);
+        assert_eq!(issue.rule(), Rule::UnresolvedKey);
         assert_eq!(issue.source_line(), Some("const msg = t(keyVar);"));
         assert!(issue.hint().is_none());
         assert!(issue.format_details().is_none());
@@ -1295,12 +1245,14 @@ mod tests {
     }
 
     #[test]
-    fn test_dynamic_key_issue_with_hint() {
-        let issue = DynamicKeyIssue {
+    fn test_unresolved_key_issue_with_hint() {
+        use crate::types::key_usage::UnresolvedKeyReason;
+        let issue = UnresolvedKeyIssue {
             location: SourceLocation::new("./src/app.tsx", 25).with_col(8),
-            reason: "template with expression".to_string(),
+            reason: UnresolvedKeyReason::TemplateWithExpr,
             source_line: Some("t(`prefix.${key}`)".to_string()),
             hint: Some("Consider using a key object pattern".to_string()),
+            pattern: Some("prefix.*".to_string()),
         };
 
         assert_eq!(issue.message(), "template with expression");
@@ -1354,34 +1306,6 @@ mod tests {
         assert_eq!(
             issue.format_details(),
             Some("from dynamicSchema - namespace could not be determined".to_string())
-        );
-        assert!(issue.usages().is_none());
-    }
-
-    // ============================================================
-    // MissingDynamicKeyCandidatesIssue Tests
-    // ============================================================
-
-    #[test]
-    fn test_missing_dynamic_key_candidates_issue_report() {
-        let issue = MissingDynamicKeyCandidatesIssue::new(
-            SourceLocation::new("./src/app.tsx", 50).with_col(20),
-            "FEATURE_KEYS".to_string(),
-            vec!["features.alpha".to_string(), "features.beta".to_string()],
-            Some("FEATURE_KEYS.map(k => t(k))".to_string()),
-        );
-
-        assert_eq!(issue.file_path(), Some("./src/app.tsx"));
-        assert_eq!(issue.line(), Some(50));
-        assert_eq!(issue.col(), Some(20));
-        assert_eq!(issue.message(), "dynamic key from \"FEATURE_KEYS\"");
-        assert_eq!(issue.severity(), Severity::Error);
-        assert_eq!(issue.rule(), Rule::MissingKey);
-        assert_eq!(issue.source_line(), Some("FEATURE_KEYS.map(k => t(k))"));
-        assert!(issue.hint().is_none());
-        assert_eq!(
-            issue.format_details(),
-            Some("missing: features.alpha, features.beta".to_string())
         );
         assert!(issue.usages().is_none());
     }

@@ -11,7 +11,7 @@ use crate::{
     RunResult,
     args::FixArgs,
     commands::context::CheckContext,
-    extraction::{DynamicKeyReason, DynamicKeyWarning},
+    extraction::{UnresolvedKeyReason, UnresolvedKeyUsage},
     reporter::{FAILURE_MARK, SUCCESS_MARK},
 };
 
@@ -31,10 +31,10 @@ struct CommentInsertion {
     indentation: String,
 }
 
-/// A fixable warning with hint
+/// A fixable unresolved key with pattern hint
 #[derive(Debug, Clone)]
 struct FixableWarning {
-    warning: DynamicKeyWarning,
+    unresolved: UnresolvedKeyUsage,
 }
 
 /// Warnings grouped by line, with merged patterns
@@ -143,11 +143,11 @@ impl FixRunner {
         self.execute(grouped, unfixable.len())
     }
 
-    /// Collects dynamic key warnings and splits into fixable/unfixable.
+    /// Collects unresolved key warnings and splits into fixable/unfixable.
     ///
     /// - Fixable: TemplateWithExpr with a pattern
     /// - Unfixable: VariableKey or TemplateWithExpr without pattern
-    fn collect_warnings(&self) -> (Vec<FixableWarning>, Vec<DynamicKeyWarning>) {
+    fn collect_warnings(&self) -> (Vec<FixableWarning>, Vec<UnresolvedKeyUsage>) {
         let mut fixable = Vec::new();
         let mut unfixable = Vec::new();
 
@@ -156,14 +156,21 @@ impl FixRunner {
             None => return (fixable, unfixable),
         };
 
-        for extraction in extractions.values() {
-            for warning in &extraction.warnings {
-                if warning.pattern.is_some() {
+        for file_usages in extractions.values() {
+            for unresolved in &file_usages.unresolved {
+                // Skip UnknownNamespace - those are handled differently
+                if matches!(
+                    unresolved.reason,
+                    UnresolvedKeyReason::UnknownNamespace { .. }
+                ) {
+                    continue;
+                }
+                if unresolved.pattern.is_some() {
                     fixable.push(FixableWarning {
-                        warning: warning.clone(),
+                        unresolved: unresolved.clone(),
                     });
                 } else {
-                    unfixable.push(warning.clone());
+                    unfixable.push(unresolved.clone());
                 }
             }
         }
@@ -171,57 +178,63 @@ impl FixRunner {
         // Sort for deterministic output
         fixable.sort_by(|a, b| {
             (
-                &a.warning.file_path,
-                a.warning.line,
-                a.warning.col,
-                a.warning.pattern.as_ref(),
+                &a.unresolved.context.location.file_path,
+                a.unresolved.context.location.line,
+                a.unresolved.context.location.col,
+                a.unresolved.pattern.as_ref(),
             )
                 .cmp(&(
-                    &b.warning.file_path,
-                    b.warning.line,
-                    b.warning.col,
-                    b.warning.pattern.as_ref(),
+                    &b.unresolved.context.location.file_path,
+                    b.unresolved.context.location.line,
+                    b.unresolved.context.location.col,
+                    b.unresolved.pattern.as_ref(),
                 ))
         });
-        unfixable.sort_by(|a, b| (&a.file_path, a.line).cmp(&(&b.file_path, b.line)));
+        unfixable.sort_by(|a, b| {
+            (&a.context.location.file_path, a.context.location.line)
+                .cmp(&(&b.context.location.file_path, b.context.location.line))
+        });
 
         (fixable, unfixable)
     }
 
-    fn report_unfixable(&self, unfixable: &[DynamicKeyWarning]) {
+    fn report_unfixable(&self, unfixable: &[UnresolvedKeyUsage]) {
         println!(
-            "{} {} {} dynamic key(s) (variable keys without pattern hints):\n",
+            "{} {} {} unresolved key(s) (variable keys without pattern hints):\n",
             FAILURE_MARK.yellow(),
             "Cannot fix".yellow().bold(),
             unfixable.len()
         );
 
-        for warning in unfixable {
-            let reason = match warning.reason {
-                DynamicKeyReason::VariableKey => "variable key",
-                DynamicKeyReason::TemplateWithExpr => "template (no pattern inferred)",
+        for unresolved in unfixable {
+            let reason = match &unresolved.reason {
+                UnresolvedKeyReason::VariableKey => "variable key",
+                UnresolvedKeyReason::TemplateWithExpr => "template (no pattern inferred)",
+                UnresolvedKeyReason::UnknownNamespace { .. } => "unknown namespace",
             };
 
+            let loc = &unresolved.context.location;
+            let col = loc.col;
+
             // Clickable location
-            println!(
-                "  {} {}:{}:{}",
-                "-->".blue(),
-                warning.file_path,
-                warning.line,
-                warning.col
-            );
+            println!("  {} {}:{}:{}", "-->".blue(), loc.file_path, loc.line, col);
 
             // Source context
             println!("     {}", "|".blue());
             println!(
                 " {:>3} {} {}",
-                warning.line.to_string().blue(),
+                loc.line.to_string().blue(),
                 "|".blue(),
-                warning.source_line
+                unresolved.context.source_line
             );
 
             // Caret
-            let prefix: String = warning.source_line.chars().take(warning.col - 1).collect();
+            let prefix: String = unresolved
+                .context
+                .source_line
+                .chars()
+                .take(col - 1)
+                .collect();
             let caret_padding = UnicodeWidthStr::width(prefix.as_str());
             println!(
                 "     {} {:>padding$}{}",
@@ -239,19 +252,23 @@ impl FixRunner {
 
     /// Groups warnings by file and line, merging patterns for same-line warnings.
     fn group_by_file_and_line(fixable: &[FixableWarning]) -> HashMap<String, Vec<LineGroup>> {
+        use crate::types::context::CommentStyle;
+
         let mut by_file: HashMap<String, HashMap<usize, LineGroup>> = HashMap::new();
 
         for fw in fixable {
-            let warning = &fw.warning;
-            let pattern = warning.pattern.as_ref().unwrap().clone();
+            let unresolved = &fw.unresolved;
+            let pattern = unresolved.pattern.as_ref().unwrap().clone();
+            let loc = &unresolved.context.location;
+            let in_jsx_context = unresolved.context.comment_style == CommentStyle::Jsx;
 
-            let file_entry = by_file.entry(warning.file_path.clone()).or_default();
-            let line_group = file_entry.entry(warning.line).or_insert_with(|| LineGroup {
-                line: warning.line,
+            let file_entry = by_file.entry(loc.file_path.clone()).or_default();
+            let line_group = file_entry.entry(loc.line).or_insert_with(|| LineGroup {
+                line: loc.line,
                 patterns: Vec::new(),
-                source_line: warning.source_line.clone(),
-                col: warning.col,
-                in_jsx_context: warning.in_jsx_context,
+                source_line: unresolved.context.source_line.clone(),
+                col: loc.col,
+                in_jsx_context,
             });
 
             // Add pattern if not already present (deduplicate same pattern on same line)
@@ -260,7 +277,7 @@ impl FixRunner {
             }
 
             // If any warning on this line is in JSX context, the group is in JSX context
-            if warning.in_jsx_context {
+            if in_jsx_context {
                 line_group.in_jsx_context = true;
             }
         }

@@ -1,7 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::{
-    extraction::{KeyExtractionResult as ExtractionResult, UsedKey},
+    commands::context::AllKeyUsages,
+    extraction::{ResolvedKeyUsage, collect::SuppressibleRule},
     issue::{
         Issue, KeyUsage, MAX_KEY_USAGES, MessageLocation, OrphanKeyIssue, ReplicaLagIssue,
         SourceLocation, UnusedKeyIssue,
@@ -9,11 +10,14 @@ use crate::{
     parsers::json::MessageMap,
 };
 
-pub fn find_missing_keys(used_keys: &[UsedKey], messages: &MessageMap) -> Vec<UsedKey> {
-    used_keys
+#[allow(dead_code)]
+pub fn find_missing_keys<'a>(
+    resolved_keys: &'a [ResolvedKeyUsage],
+    messages: &MessageMap,
+) -> Vec<&'a ResolvedKeyUsage> {
+    resolved_keys
         .iter()
-        .filter(|key| !messages.contains_key(&key.full_key))
-        .cloned()
+        .filter(|key| !messages.contains_key(key.key.as_str()))
         .collect()
 }
 
@@ -23,17 +27,21 @@ pub type KeyUsageMap = HashMap<String, Vec<KeyUsage>>;
 /// Build a map from full_key to all its usage locations across the codebase.
 ///
 /// This is used by replica-lag and untranslated rules to show where keys are referenced.
-pub fn build_key_usage_map(extractions: &HashMap<String, ExtractionResult>) -> KeyUsageMap {
+pub fn build_key_usage_map(extractions: &AllKeyUsages) -> KeyUsageMap {
+    use crate::types::context::CommentStyle;
+
     let mut map: KeyUsageMap = HashMap::new();
 
-    for extraction in extractions.values() {
-        for used_key in &extraction.used_keys {
-            map.entry(used_key.full_key.clone())
+    for file_usages in extractions.values() {
+        for resolved in &file_usages.resolved {
+            let loc = &resolved.context.location;
+            let in_jsx = resolved.context.comment_style == CommentStyle::Jsx;
+            map.entry(resolved.key.as_str().to_string())
                 .or_default()
                 .push(KeyUsage::new(
-                    SourceLocation::new(&used_key.file_path, used_key.line)
-                        .with_col(used_key.col)
-                        .with_jsx_context(used_key.in_jsx_context),
+                    SourceLocation::new(&loc.file_path, loc.line)
+                        .with_col(loc.col)
+                        .with_jsx_context(in_jsx),
                 ));
         }
     }
@@ -87,14 +95,17 @@ pub type KeyDisableMap = HashMap<String, KeyDisableStats>;
 ///
 /// For each key, tracks how many usages have `glot-disable-next-line untranslated`.
 /// A key is fully disabled if ALL its usages have the disable comment.
-pub fn build_key_disable_map(extractions: &HashMap<String, ExtractionResult>) -> KeyDisableMap {
+pub fn build_key_disable_map(extractions: &AllKeyUsages) -> KeyDisableMap {
     let mut map: KeyDisableMap = HashMap::new();
 
-    for extraction in extractions.values() {
-        for used_key in &extraction.used_keys {
-            let stats = map.entry(used_key.full_key.clone()).or_default();
+    for file_usages in extractions.values() {
+        for resolved in &file_usages.resolved {
+            let stats = map.entry(resolved.key.as_str().to_string()).or_default();
             stats.total_usages += 1;
-            if used_key.untranslated_disabled {
+            if resolved
+                .suppressed_rules
+                .contains(&SuppressibleRule::Untranslated)
+            {
                 stats.disabled_usages += 1;
             }
         }
@@ -973,42 +984,44 @@ const b = <div>Detected</div>"#;
 
     #[test]
     fn test_build_key_disable_map_empty() {
-        let extractions: HashMap<String, ExtractionResult> = HashMap::new();
+        let extractions: AllKeyUsages = HashMap::new();
         let map = build_key_disable_map(&extractions);
         assert!(map.is_empty());
     }
 
     #[test]
     fn test_build_key_disable_map_basic() {
-        use crate::extraction::UsedKey;
+        use crate::extraction::FileKeyUsages;
+        use crate::types::context::{CommentStyle, SourceContext, SourceLocation};
+        use crate::types::key_usage::FullKey;
 
-        let mut extractions: HashMap<String, ExtractionResult> = HashMap::new();
+        let mut extractions: AllKeyUsages = HashMap::new();
         extractions.insert(
             "test.tsx".to_string(),
-            ExtractionResult {
-                used_keys: vec![
-                    UsedKey {
-                        full_key: "Common.submit".to_string(),
-                        file_path: "test.tsx".to_string(),
-                        line: 1,
-                        col: 1,
-                        source_line: String::new(),
-                        in_jsx_context: false,
-                        untranslated_disabled: false,
+            FileKeyUsages {
+                resolved: vec![
+                    ResolvedKeyUsage {
+                        key: FullKey::new("Common.submit"),
+                        context: SourceContext::new(
+                            SourceLocation::new("test.tsx", 1, 1),
+                            "t('Common.submit')",
+                            CommentStyle::Js,
+                        ),
+                        suppressed_rules: HashSet::new(),
+                        from_schema: None,
                     },
-                    UsedKey {
-                        full_key: "Common.submit".to_string(),
-                        file_path: "test.tsx".to_string(),
-                        line: 2,
-                        col: 1,
-                        source_line: String::new(),
-                        in_jsx_context: false,
-                        untranslated_disabled: true, // One usage disabled
+                    ResolvedKeyUsage {
+                        key: FullKey::new("Common.submit"),
+                        context: SourceContext::new(
+                            SourceLocation::new("test.tsx", 2, 1),
+                            "t('Common.submit')",
+                            CommentStyle::Js,
+                        ),
+                        suppressed_rules: [SuppressibleRule::Untranslated].into_iter().collect(),
+                        from_schema: None,
                     },
                 ],
-                warnings: Vec::new(),
-                schema_calls: Vec::new(),
-                resolved_keys: Vec::new(),
+                unresolved: Vec::new(),
             },
         );
 
@@ -1021,35 +1034,37 @@ const b = <div>Detected</div>"#;
 
     #[test]
     fn test_build_key_disable_map_all_disabled() {
-        use crate::extraction::UsedKey;
+        use crate::extraction::FileKeyUsages;
+        use crate::types::context::{CommentStyle, SourceContext, SourceLocation};
+        use crate::types::key_usage::FullKey;
 
-        let mut extractions: HashMap<String, ExtractionResult> = HashMap::new();
+        let mut extractions: AllKeyUsages = HashMap::new();
         extractions.insert(
             "test.tsx".to_string(),
-            ExtractionResult {
-                used_keys: vec![
-                    UsedKey {
-                        full_key: "Common.submit".to_string(),
-                        file_path: "test.tsx".to_string(),
-                        line: 1,
-                        col: 1,
-                        source_line: String::new(),
-                        in_jsx_context: false,
-                        untranslated_disabled: true,
+            FileKeyUsages {
+                resolved: vec![
+                    ResolvedKeyUsage {
+                        key: FullKey::new("Common.submit"),
+                        context: SourceContext::new(
+                            SourceLocation::new("test.tsx", 1, 1),
+                            "t('Common.submit')",
+                            CommentStyle::Js,
+                        ),
+                        suppressed_rules: [SuppressibleRule::Untranslated].into_iter().collect(),
+                        from_schema: None,
                     },
-                    UsedKey {
-                        full_key: "Common.submit".to_string(),
-                        file_path: "test.tsx".to_string(),
-                        line: 2,
-                        col: 1,
-                        source_line: String::new(),
-                        in_jsx_context: false,
-                        untranslated_disabled: true,
+                    ResolvedKeyUsage {
+                        key: FullKey::new("Common.submit"),
+                        context: SourceContext::new(
+                            SourceLocation::new("test.tsx", 2, 1),
+                            "t('Common.submit')",
+                            CommentStyle::Js,
+                        ),
+                        suppressed_rules: [SuppressibleRule::Untranslated].into_iter().collect(),
+                        from_schema: None,
                     },
                 ],
-                warnings: Vec::new(),
-                schema_calls: Vec::new(),
-                resolved_keys: Vec::new(),
+                unresolved: Vec::new(),
             },
         );
 

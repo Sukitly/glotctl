@@ -12,6 +12,6 @@ exit_code: 1
 ----- stdout -----
 
 ----- stderr -----
-Error: ✘ Cannot clean, 1 dynamic key warning(s) found.
-Dynamic keys prevent tracking all key usage.
+Error: ✘ Cannot clean, 1 unresolved key warning(s) found.
+Unresolved keys prevent tracking all key usage.
 Run `glot check` to see details, then fix or suppress them.

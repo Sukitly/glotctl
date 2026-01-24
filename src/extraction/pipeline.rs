@@ -3,7 +3,7 @@
 //! This module coordinates the three phases of translation key extraction:
 //! 1. **Collection**: Build cross-file registries AND collect all glot comments
 //! 2. **Extraction**: Collect raw translation calls and detect hardcoded text
-//! 3. **Resolution**: Resolve raw calls to UsedKey/DynamicKeyWarning
+//! 3. **Resolution**: Resolve raw calls to ResolvedKeyUsage/UnresolvedKeyUsage
 
 use std::collections::HashMap;
 
@@ -13,21 +13,20 @@ use super::{
     collect::{CommentCollector, FileImports, RegistryCollector},
     extract::FileAnalyzer,
     resolve::resolve_translation_calls,
-    results::KeyExtractionResult,
 };
 
 use swc_ecma_visit::VisitWith;
 
 /// Run the complete extraction pipeline.
 ///
-/// Returns (Registries, AllFileImports, AllExtractions, AllHardcodedIssues)
+/// Returns (Registries, AllFileImports, AllKeyUsages, AllHardcodedIssues)
 pub fn run_pipeline(
     ctx: &CheckContext,
     parsed_files: &HashMap<String, ParsedJSX>,
 ) -> (
     crate::commands::context::Registries,
     crate::commands::context::AllFileImports,
-    crate::commands::context::AllExtractions,
+    crate::commands::context::AllKeyUsages,
     crate::commands::context::AllHardcodedIssues,
 ) {
     let available_keys = ctx
@@ -40,8 +39,8 @@ pub fn run_pipeline(
     let (registries, file_imports, file_comments) =
         collect_registries_and_comments(parsed_files, &available_keys);
 
-    // Phase 2: Extract from files using collected comments
-    let (extractions, hardcoded_issues) = extract_from_files(
+    // Phase 2 & 3: Extract from files and resolve
+    let (key_usages, hardcoded_issues) = extract_from_files(
         &ctx.files,
         parsed_files,
         &registries,
@@ -52,7 +51,7 @@ pub fn run_pipeline(
         &available_keys,
     );
 
-    (registries, file_imports, extractions, hardcoded_issues)
+    (registries, file_imports, key_usages, hardcoded_issues)
 }
 
 /// Phase 1: Collect registries AND comments from all files (Biome-style).
@@ -208,7 +207,7 @@ fn resolve_component_name_for_prop(
 /// Phase 2 & 3: Extract and resolve translation keys from all files.
 ///
 /// - Phase 2: Collect raw translation calls and hardcoded issues
-/// - Phase 3: Resolve raw calls to UsedKey/DynamicKeyWarning
+/// - Phase 3: Resolve raw calls to ResolvedKeyUsage/UnresolvedKeyUsage
 #[allow(clippy::too_many_arguments)]
 fn extract_from_files(
     files: &std::collections::HashSet<String>,
@@ -220,10 +219,10 @@ fn extract_from_files(
     ignore_texts: &std::collections::HashSet<String>,
     available_keys: &std::collections::HashSet<String>,
 ) -> (
-    crate::commands::context::AllExtractions,
+    crate::commands::context::AllKeyUsages,
     crate::commands::context::AllHardcodedIssues,
 ) {
-    let mut extractions = HashMap::new();
+    let mut key_usages = HashMap::new();
     let mut hardcoded_issues = HashMap::new();
 
     for file_path in files {
@@ -236,7 +235,7 @@ fn extract_from_files(
             .get(file_path)
             .expect("comments should be collected in Phase 1");
 
-        // Phase 2: Collect raw translation calls
+        // Phase 2: Collect raw translation calls and hardcoded text
         let analyzer = FileAnalyzer::new(
             file_path,
             &parsed.source_map,
@@ -248,20 +247,19 @@ fn extract_from_files(
         );
         let result = analyzer.analyze(&parsed.module);
 
-        // Phase 3: Resolve raw calls to UsedKey/DynamicKeyWarning
-        let resolve_result = resolve_translation_calls(&result.raw_calls, comments, available_keys);
-
-        extractions.insert(
-            file_path.clone(),
-            KeyExtractionResult {
-                used_keys: resolve_result.used_keys,
-                warnings: resolve_result.warnings,
-                schema_calls: result.schema_calls,
-                resolved_keys: resolve_result.resolved_keys,
-            },
+        // Phase 3: Resolve raw calls and schema calls to key usages
+        let file_key_usages = resolve_translation_calls(
+            &result.raw_calls,
+            &result.schema_calls,
+            file_path,
+            comments,
+            registries,
+            available_keys,
         );
+
+        key_usages.insert(file_path.clone(), file_key_usages);
         hardcoded_issues.insert(file_path.clone(), result.hardcoded_issues);
     }
 
-    (extractions, hardcoded_issues)
+    (key_usages, hardcoded_issues)
 }

@@ -136,11 +136,11 @@ impl BaselineRunner {
             // This prevents baseline from inserting disable comments on lines that have translation
             // calls but with unresolvable keys (which would be a regression from TranslationCallFinder).
             let mut translation_lines: HashMap<String, HashSet<usize>> = HashMap::new();
-            for (file_path, extraction_result) in extractions {
-                let lines: HashSet<usize> = extraction_result
-                    .resolved_keys
+            for (file_path, file_usages) in extractions {
+                let lines: HashSet<usize> = file_usages
+                    .resolved
                     .iter()
-                    .map(|k| k.line)
+                    .map(|k| k.context.location.line)
                     .collect();
                 if !lines.is_empty() {
                     translation_lines.insert(file_path.clone(), lines);

@@ -12,10 +12,10 @@ use crate::{
         context::{CheckContext, MessageData},
         shared,
     },
-    extraction::DynamicKeyReason,
+    extraction::UnresolvedKeyReason,
     issue::{
-        DynamicKeyIssue, Issue, IssueReport, MessageLocation, ParseErrorIssue, Rule,
-        SourceLocation, UnusedKeyIssue,
+        Issue, IssueReport, MessageLocation, ParseErrorIssue, Rule, SourceLocation,
+        UnresolvedKeyIssue, UnusedKeyIssue,
     },
     json_editor::JsonEditor,
     parsers::json::scan_message_files,
@@ -131,20 +131,27 @@ impl CleanRunner {
         let used_keys = shared::collect_used_keys(&self.ctx);
         self.ctx.set_used_keys(used_keys);
 
-        // Collect dynamic key warnings
+        // Collect unresolved key issues
         let extractions = self.ctx.extractions().unwrap();
-        for extraction in extractions.values() {
-            for warning in &extraction.warnings {
-                let reason = match warning.reason {
-                    DynamicKeyReason::VariableKey => "dynamic key",
-                    DynamicKeyReason::TemplateWithExpr => "template with expression",
-                };
-                issues.push(Issue::DynamicKey(DynamicKeyIssue {
-                    location: SourceLocation::new(&warning.file_path, warning.line)
-                        .with_col(warning.col),
-                    reason: reason.to_string(),
-                    source_line: Some(warning.source_line.clone()),
-                    hint: warning.hint.clone(),
+        for file_usages in extractions.values() {
+            for unresolved in &file_usages.unresolved {
+                // Skip UnknownNamespace - those become UntrackedNamespace issues
+                if matches!(
+                    unresolved.reason,
+                    UnresolvedKeyReason::UnknownNamespace { .. }
+                ) {
+                    continue;
+                }
+                issues.push(Issue::UnresolvedKey(UnresolvedKeyIssue {
+                    location: SourceLocation::new(
+                        &unresolved.context.location.file_path,
+                        unresolved.context.location.line,
+                    )
+                    .with_col(unresolved.context.location.col),
+                    reason: unresolved.reason.clone(),
+                    source_line: Some(unresolved.context.source_line.clone()),
+                    hint: unresolved.hint.clone(),
+                    pattern: unresolved.pattern.clone(),
                 }));
             }
         }
@@ -198,23 +205,23 @@ impl CleanRunner {
     /// # Arguments
     /// * `issues` - All collected issues
     fn validate_safety(&self, issues: &[Issue]) -> Result<()> {
-        let dynamic_key_count = issues
+        let unresolved_key_count = issues
             .iter()
-            .filter(|i| i.rule() == Rule::DynamicKey)
+            .filter(|i| i.rule() == Rule::UnresolvedKey)
             .count();
         let parse_error_count = issues
             .iter()
             .filter(|i| i.rule() == Rule::ParseError)
             .count();
 
-        if dynamic_key_count > 0 {
+        if unresolved_key_count > 0 {
             bail!(
-                "{} {}, {} dynamic key warning(s) found.\n\
-                 Dynamic keys prevent tracking all key usage.\n\
+                "{} {}, {} unresolved key warning(s) found.\n\
+                 Unresolved keys prevent tracking all key usage.\n\
                  Run `glot check` to see details, then fix or suppress them.",
                 FAILURE_MARK,
                 "Cannot clean".red().bold(),
-                dynamic_key_count
+                unresolved_key_count
             );
         }
 

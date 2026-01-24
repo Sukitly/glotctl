@@ -20,14 +20,19 @@ error: "Tools.delete"  missing-key
  4 | const missing = t("delete");
    |                 ^
 
-error: "dynamic key from "object "toolKeys"""  missing-key
+error: "Tools.archive"  missing-key
   --> ./src/app.tsx:13:12
    |
 13 |     return t(key);
    |            ^
-   = note: missing: Tools.update, Tools.archive
+
+error: "Tools.update"  missing-key
+  --> ./src/app.tsx:13:12
+   |
+13 |     return t(key);
+   |            ^
 
 
-✘ 3 problems (2 errors, 1 warning)
+✘ 4 problems (3 errors, 1 warning)
 
 ----- stderr -----

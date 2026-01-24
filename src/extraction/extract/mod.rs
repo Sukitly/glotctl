@@ -17,4 +17,4 @@ pub use file_analyzer::FileAnalyzer;
 pub use raw_call::{RawTranslationCall, TranslationCallKind};
 pub use translation_source::TranslationSource;
 pub use value_analyzer::ValueAnalyzer;
-pub use value_source::{ResolvedKey, ValueSource};
+pub use value_source::ValueSource;
