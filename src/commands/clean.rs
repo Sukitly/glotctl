@@ -147,15 +147,6 @@ impl CleanRunner {
                     hint: warning.hint.clone(),
                 }));
             }
-
-            for warning in &extraction.pattern_warnings {
-                issues.push(Issue::DynamicKey(DynamicKeyIssue {
-                    location: SourceLocation::new(&warning.file_path, warning.line).with_col(1),
-                    reason: warning.message.clone(),
-                    source_line: None,
-                    hint: None,
-                }));
-            }
         }
 
         // Collect unused keys from primary locale

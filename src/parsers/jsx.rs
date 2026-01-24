@@ -7,7 +7,6 @@ pub struct ParsedJSX {
     pub module: Module,
     pub source_map: SourceMap,
     pub comments: SingleThreadedComments,
-    pub source: String,
 }
 
 /// Parse JSX/TSX source code string into an AST.
@@ -32,6 +31,5 @@ pub fn parse_jsx_source(code: String, file_path: &str) -> Result<ParsedJSX> {
         module,
         source_map,
         comments,
-        source: code,
     })
 }

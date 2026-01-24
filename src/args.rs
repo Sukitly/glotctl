@@ -1,7 +1,7 @@
 use clap::{Args, CommandFactory, Parser, Subcommand};
 
 use crate::commands::runner::CheckType;
-use crate::extraction::resolve::comments::DisableRule;
+use crate::extraction::collect::SuppressibleRule;
 
 #[derive(Debug, Parser)]
 #[command(author, version, about, long_about = None)]
@@ -95,7 +95,7 @@ pub struct BaselineArgs {
     /// Rules to add disable comments for (default: all)
     /// Can be specified multiple times: --rule hardcoded --rule untranslated
     #[arg(long, value_enum)]
-    pub rule: Vec<DisableRule>,
+    pub rule: Vec<SuppressibleRule>,
 }
 
 #[derive(Debug, Args)]

@@ -9,7 +9,7 @@ use crate::{
     RunResult,
     args::BaselineArgs,
     commands::context::CheckContext,
-    extraction::resolve::comments::DisableRule,
+    extraction::collect::SuppressibleRule,
     issue::{HardcodedIssue, Issue},
     reporter::SUCCESS_MARK,
     rules::{Checker, untranslated::UntranslatedRule},
@@ -22,7 +22,7 @@ struct InsertionTarget {
     line: usize,
     col: usize,
     in_jsx_context: bool,
-    rules: HashSet<DisableRule>,
+    rules: HashSet<SuppressibleRule>,
 }
 
 /// Statistics for the insertion operation.
@@ -62,7 +62,7 @@ struct CommentInsertion {
 pub struct BaselineRunner {
     ctx: CheckContext,
     apply: bool,
-    rules: HashSet<DisableRule>,
+    rules: HashSet<SuppressibleRule>,
 }
 
 impl BaselineRunner {
@@ -71,7 +71,7 @@ impl BaselineRunner {
 
         // If no rules specified, process all rules
         let rules = if args.rule.is_empty() {
-            DisableRule::all()
+            SuppressibleRule::all()
         } else {
             args.rule.into_iter().collect()
         };
@@ -120,7 +120,7 @@ impl BaselineRunner {
         self.ctx.ensure_parsed_files();
 
         // Collect hardcoded issues (if enabled)
-        if self.rules.contains(&DisableRule::Hardcoded) {
+        if self.rules.contains(&SuppressibleRule::Hardcoded) {
             // Ensure file analysis (extractions + hardcoded) is loaded
             self.ctx.ensure_extractions()?;
             self.ctx.ensure_hardcoded_issues()?;
@@ -167,14 +167,14 @@ impl BaselineRunner {
                                 rules: HashSet::new(),
                             })
                             .rules
-                            .insert(DisableRule::Hardcoded);
+                            .insert(SuppressibleRule::Hardcoded);
                     }
                 }
             }
         }
 
         // Collect untranslated issues (if enabled)
-        if self.rules.contains(&DisableRule::Untranslated) {
+        if self.rules.contains(&SuppressibleRule::Untranslated) {
             let rule = UntranslatedRule;
             let issues = rule.check(&self.ctx)?;
 
@@ -196,7 +196,7 @@ impl BaselineRunner {
                                 rules: HashSet::new(),
                             })
                             .rules
-                            .insert(DisableRule::Untranslated);
+                            .insert(SuppressibleRule::Untranslated);
                     }
                 }
             }
@@ -213,10 +213,10 @@ impl BaselineRunner {
             ..Default::default()
         };
         for target in targets_map.values() {
-            if target.rules.contains(&DisableRule::Hardcoded) {
+            if target.rules.contains(&SuppressibleRule::Hardcoded) {
                 stats.hardcoded += 1;
             }
-            if target.rules.contains(&DisableRule::Untranslated) {
+            if target.rules.contains(&SuppressibleRule::Untranslated) {
                 stats.untranslated += 1;
             }
         }
@@ -448,8 +448,8 @@ impl BaselineRunner {
     }
 
     /// Generate comment string for the given rules.
-    fn make_comment(in_jsx_context: bool, rules: &HashSet<DisableRule>) -> String {
-        let rules_str = DisableRule::format_rules(rules);
+    fn make_comment(in_jsx_context: bool, rules: &HashSet<SuppressibleRule>) -> String {
+        let rules_str = SuppressibleRule::format_rules(rules);
         if in_jsx_context {
             format!("{{/* glot-disable-next-line {} */}}", rules_str)
         } else {
@@ -550,14 +550,14 @@ mod tests {
             line: 10,
             col: 5,
             in_jsx_context: true,
-            rules: [DisableRule::Hardcoded].into_iter().collect(),
+            rules: [SuppressibleRule::Hardcoded].into_iter().collect(),
         };
 
         assert_eq!(target.file_path, "src/app.tsx");
         assert_eq!(target.line, 10);
         assert_eq!(target.col, 5);
         assert!(target.in_jsx_context);
-        assert!(target.rules.contains(&DisableRule::Hardcoded));
+        assert!(target.rules.contains(&SuppressibleRule::Hardcoded));
     }
 
     #[test]
@@ -583,23 +583,25 @@ mod tests {
 
     #[test]
     fn test_make_comment_js_single_rule() {
-        let rules: HashSet<DisableRule> = [DisableRule::Hardcoded].into_iter().collect();
+        let rules: HashSet<SuppressibleRule> = [SuppressibleRule::Hardcoded].into_iter().collect();
         let comment = BaselineRunner::make_comment(false, &rules);
         assert_eq!(comment, "// glot-disable-next-line hardcoded");
     }
 
     #[test]
     fn test_make_comment_jsx_single_rule() {
-        let rules: HashSet<DisableRule> = [DisableRule::Untranslated].into_iter().collect();
+        let rules: HashSet<SuppressibleRule> =
+            [SuppressibleRule::Untranslated].into_iter().collect();
         let comment = BaselineRunner::make_comment(true, &rules);
         assert_eq!(comment, "{/* glot-disable-next-line untranslated */}");
     }
 
     #[test]
     fn test_make_comment_js_multiple_rules() {
-        let rules: HashSet<DisableRule> = [DisableRule::Hardcoded, DisableRule::Untranslated]
-            .into_iter()
-            .collect();
+        let rules: HashSet<SuppressibleRule> =
+            [SuppressibleRule::Hardcoded, SuppressibleRule::Untranslated]
+                .into_iter()
+                .collect();
         let comment = BaselineRunner::make_comment(false, &rules);
         // Rules should be sorted alphabetically
         assert_eq!(comment, "// glot-disable-next-line hardcoded untranslated");
@@ -607,9 +609,10 @@ mod tests {
 
     #[test]
     fn test_make_comment_jsx_multiple_rules() {
-        let rules: HashSet<DisableRule> = [DisableRule::Untranslated, DisableRule::Hardcoded]
-            .into_iter()
-            .collect();
+        let rules: HashSet<SuppressibleRule> =
+            [SuppressibleRule::Untranslated, SuppressibleRule::Hardcoded]
+                .into_iter()
+                .collect();
         let comment = BaselineRunner::make_comment(true, &rules);
         // Rules should be sorted alphabetically
         assert_eq!(

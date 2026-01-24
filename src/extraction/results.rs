@@ -7,7 +7,6 @@
 //! - `DynamicKeyReason`: why a key is considered dynamic
 
 use crate::extraction::extract::ResolvedKey;
-use crate::extraction::resolve::comments::parser::PatternWarning;
 use crate::extraction::schema::SchemaCallInfo;
 
 /// Result of extracting translation keys from a single file.
@@ -21,8 +20,6 @@ pub struct KeyExtractionResult {
     pub schema_calls: Vec<SchemaCallInfo>,
     /// Resolved keys from ValueAnalyzer (for dynamic key resolution).
     pub resolved_keys: Vec<ResolvedKey>,
-    /// Warnings from glot-message-keys annotation parsing.
-    pub pattern_warnings: Vec<PatternWarning>,
 }
 
 /// A translation key used in code.
