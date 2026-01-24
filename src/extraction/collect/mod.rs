@@ -4,10 +4,10 @@
 //! - Collecting schema functions, key objects, string arrays, translation props/calls
 //! - Collecting all glot comments (disable directives and message-keys annotations)
 
-pub mod collector;
 mod comments;
+pub mod registry;
 pub mod types;
 
-pub use collector::RegistryCollector;
 pub use comments::collector::CommentCollector;
+pub use registry::RegistryCollector;
 pub use types::*;
