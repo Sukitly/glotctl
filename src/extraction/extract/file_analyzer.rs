@@ -2,33 +2,38 @@
 //!
 //! This module merges the functionality of:
 //! - `HardcodedChecker`: detects hardcoded text in JSX/TSX
-//! - `TranslationKeyVisitor`: extracts translation keys from code
-//! - `TranslationCallFinder`: finds lines with translation calls (derived from used_keys)
+//! - `TranslationCallCollector`: collects raw translation calls for later resolution
+//! - `SchemaCallCollector`: collects schema function calls
 //!
 //! By combining these into a single visitor, we reduce the number of AST traversals per file
 //! from 3-4 to just 1, significantly improving performance.
+//!
+//! The actual resolution of translation calls to UsedKey/DynamicKeyWarning happens
+//! in the resolve phase (see `crate::extraction::resolve`).
 
 use std::collections::HashSet;
 
 use swc_common::{Loc, SourceMap};
 use swc_ecma_ast::{
-    BinaryOp, CallExpr, Callee, CondExpr, DefaultDecl, Expr, FnDecl, JSXAttr, JSXAttrName,
-    JSXAttrValue, JSXElement, JSXElementName, JSXExpr, JSXExprContainer, JSXFragment, JSXText, Lit,
-    MemberProp, Module, ObjectPatProp, Pat, VarDecl, VarDeclarator,
+    BinaryOp, CallExpr, Callee, DefaultDecl, Expr, FnDecl, JSXAttr, JSXAttrName, JSXAttrValue,
+    JSXElement, JSXElementName, JSXExpr, JSXExprContainer, JSXFragment, JSXText, Lit, MemberProp,
+    Module, ObjectPatProp, Pat, VarDecl, VarDeclarator,
 };
 use swc_ecma_visit::{Visit, VisitWith};
 
 use crate::extraction::collect::SuppressibleRule;
 use crate::issue::{HardcodedIssue, SourceLocation};
+use crate::types::context::{CommentStyle, SourceContext, SourceLocation as TypesSourceLocation};
 use crate::utils::contains_alphabetic;
 
-use super::{BindingContext, ResolvedKey, TranslationSource, ValueAnalyzer};
+use super::{
+    BindingContext, RawTranslationCall, TranslationCallKind, TranslationSource, ValueAnalyzer,
+};
 use crate::commands::context::Registries;
 use crate::extraction::{
     collect::types::{
         FileComments, FileImports, extract_binding_names, make_translation_fn_call_key,
     },
-    results::{DynamicKeyReason, DynamicKeyWarning, KeyExtractionResult, UsedKey},
     schema::SchemaCallInfo,
     utils::{extract_namespace_from_call, is_translation_hook},
 };
@@ -64,14 +69,20 @@ impl JsxState {
     }
 }
 
-/// Result of analyzing a single file.
+/// Result of analyzing a single file (Phase 2).
+///
+/// Contains raw collected data. Resolution to UsedKey/warnings happens in Phase 3.
 #[derive(Debug)]
 pub struct FileAnalysisResult {
+    /// Hardcoded text issues (directly collected).
     pub hardcoded_issues: Vec<HardcodedIssue>,
-    pub extraction: KeyExtractionResult,
+    /// Raw translation calls (to be resolved in Phase 3).
+    pub raw_calls: Vec<RawTranslationCall>,
+    /// Schema function calls (directly collected).
+    pub schema_calls: Vec<SchemaCallInfo>,
 }
 
-/// Combined analyzer that extracts translation keys and detects hardcoded text.
+/// Combined analyzer that collects translation calls and detects hardcoded text.
 pub struct FileAnalyzer<'a> {
     // === Shared fields ===
     file_path: &'a str,
@@ -83,18 +94,15 @@ pub struct FileAnalyzer<'a> {
     checked_attributes: &'a [String],
     ignore_texts: &'a HashSet<String>,
 
-    // === TranslationKeyVisitor specific ===
+    // === TranslationCallCollector specific ===
     binding_context: BindingContext,
     value_analyzer: ValueAnalyzer<'a>,
     registries: &'a Registries,
-    available_keys: &'a HashSet<String>,
 
     // === Output ===
     hardcoded_issues: Vec<HardcodedIssue>,
-    used_keys: Vec<UsedKey>,
-    warnings: Vec<DynamicKeyWarning>,
+    raw_calls: Vec<RawTranslationCall>,
     schema_calls: Vec<SchemaCallInfo>,
-    resolved_keys: Vec<ResolvedKey>,
 }
 
 impl<'a> FileAnalyzer<'a> {
@@ -107,7 +115,6 @@ impl<'a> FileAnalyzer<'a> {
         ignore_texts: &'a HashSet<String>,
         registries: &'a Registries,
         file_imports: &'a FileImports,
-        available_keys: &'a HashSet<String>,
     ) -> Self {
         Self {
             file_path,
@@ -125,12 +132,9 @@ impl<'a> FileAnalyzer<'a> {
                 file_imports,
             ),
             registries,
-            available_keys,
             hardcoded_issues: Vec::new(),
-            used_keys: Vec::new(),
-            warnings: Vec::new(),
+            raw_calls: Vec::new(),
             schema_calls: Vec::new(),
-            resolved_keys: Vec::new(),
         }
     }
 
@@ -139,12 +143,8 @@ impl<'a> FileAnalyzer<'a> {
         self.visit_module(module);
         FileAnalysisResult {
             hardcoded_issues: self.hardcoded_issues,
-            extraction: KeyExtractionResult {
-                used_keys: self.used_keys,
-                warnings: self.warnings,
-                schema_calls: self.schema_calls,
-                resolved_keys: self.resolved_keys,
-            },
+            raw_calls: self.raw_calls,
+            schema_calls: self.schema_calls,
         }
     }
 
@@ -245,174 +245,60 @@ impl<'a> FileAnalyzer<'a> {
     }
 
     // ============================================================
-    // TranslationKeyVisitor methods
+    // TranslationCallCollector methods
     // ============================================================
 
-    fn should_use_jsx_comment_for_extraction(&self, source_line: &str) -> bool {
-        // Use JSX state for determining comment style
+    /// Compute comment style for current JSX state.
+    fn compute_comment_style(&self, source_line: &str) -> CommentStyle {
+        // Use the same logic as should_use_jsx_comment but for extraction context
         if !self.jsx_state.in_context {
-            return false;
+            return CommentStyle::Js;
         }
         if self.jsx_state.in_expr {
             let trimmed = source_line.trim_start();
             if trimmed.starts_with(':') || trimmed.starts_with('?') {
-                return false;
+                return CommentStyle::Js;
             }
         }
-        true
+        CommentStyle::Jsx
     }
 
-    fn add_used_key(&mut self, loc: Loc, full_key: String) {
+    /// Create SourceContext from Loc.
+    fn make_source_context(&self, loc: &Loc) -> SourceContext {
         let source_line = loc
             .file
             .get_line(loc.line - 1)
             .map(|cow| cow.to_string())
             .unwrap_or_default();
-        let untranslated_disabled = self
-            .file_comments
-            .suppressions
-            .is_suppressed(loc.line, SuppressibleRule::Untranslated);
-        let in_jsx_context = self.should_use_jsx_comment_for_extraction(&source_line);
-        self.used_keys.push(UsedKey {
-            full_key,
-            file_path: self.file_path.to_string(),
-            line: loc.line,
-            col: loc.col_display + 1,
+        let comment_style = self.compute_comment_style(&source_line);
+
+        SourceContext::new(
+            TypesSourceLocation::new(self.file_path, loc.line, loc.col_display + 1),
             source_line,
-            in_jsx_context,
-            untranslated_disabled,
+            comment_style,
+        )
+    }
+
+    /// Collect a translation call.
+    fn collect_translation_call(
+        &mut self,
+        loc: Loc,
+        translation_source: TranslationSource,
+        argument: super::ValueSource,
+        call_kind: TranslationCallKind,
+    ) {
+        let context = self.make_source_context(&loc);
+        self.raw_calls.push(RawTranslationCall {
+            context,
+            translation_source,
+            argument,
+            call_kind,
         });
     }
 
-    fn add_used_keys_with_namespaces(
-        &mut self,
-        loc: Loc,
-        key: &str,
-        translation_source: &TranslationSource,
-    ) {
-        let namespaces = translation_source.namespaces();
-        for namespace in namespaces {
-            let full_key = self.resolve_full_key(&namespace, key);
-            self.add_used_key(loc.clone(), full_key);
-        }
-    }
-
-    fn add_warning(
-        &mut self,
-        loc: Loc,
-        reason: DynamicKeyReason,
-        hint: Option<String>,
-        pattern: Option<String>,
-    ) {
-        let source_line = loc
-            .file
-            .get_line(loc.line - 1)
-            .map(|cow| cow.to_string())
-            .unwrap_or_default();
-        let in_jsx_context = self.should_use_jsx_comment_for_extraction(&source_line);
-        self.warnings.push(DynamicKeyWarning {
-            file_path: self.file_path.to_string(),
-            line: loc.line,
-            col: loc.col_display + 1,
-            reason,
-            source_line,
-            hint,
-            pattern,
-            in_jsx_context,
-        });
-    }
-
-    fn resolve_full_key(&self, namespace: &Option<String>, key: &str) -> String {
-        match namespace {
-            Some(ns) => format!("{}.{}", ns, key),
-            _ => key.to_string(),
-        }
-    }
-
-    fn process_ternary_arg(
-        &mut self,
-        cond: &CondExpr,
-        loc: Loc,
-        translation_source: &TranslationSource,
-        is_resolvable: bool,
-    ) {
-        let cons_key = Self::extract_string_key(&cond.cons);
-        let alt_key = Self::extract_string_key(&cond.alt);
-
-        match (cons_key, alt_key) {
-            (Some(k1), Some(k2)) => {
-                self.add_used_keys_with_namespaces(loc.clone(), &k1, translation_source);
-                self.add_used_keys_with_namespaces(loc, &k2, translation_source);
-            }
-            _ if !is_resolvable => {
-                let reason = if Self::is_template_with_expr(&cond.cons)
-                    || Self::is_template_with_expr(&cond.alt)
-                {
-                    DynamicKeyReason::TemplateWithExpr
-                } else {
-                    DynamicKeyReason::VariableKey
-                };
-                self.add_warning(loc, reason, None, None);
-            }
-            _ => {}
-        }
-    }
-
-    fn is_template_with_expr(expr: &Expr) -> bool {
-        matches!(crate::extraction::utils::unwrap_paren(expr), Expr::Tpl(tpl) if !tpl.exprs.is_empty())
-    }
-
-    fn infer_pattern_from_template(
-        tpl: &swc_ecma_ast::Tpl,
-        namespace: &Option<String>,
-    ) -> Option<String> {
-        let mut pattern = String::new();
-        for (i, quasi) in tpl.quasis.iter().enumerate() {
-            if let Some(cooked) = &quasi.cooked
-                && let Some(s) = cooked.as_str()
-            {
-                pattern.push_str(s);
-            }
-            if i < tpl.quasis.len() - 1 {
-                pattern.push('*');
-            }
-        }
-
-        let full_pattern = match namespace {
-            Some(ns) => format!("{}.{}", ns, pattern),
-            None => pattern,
-        };
-
-        let segments: Vec<&str> = full_pattern.split('.').collect();
-        if segments.first().is_some_and(|s| *s == "*") && segments.len() > 1 {
-            return None;
-        }
-
-        let all_wildcards = segments.iter().all(|s| *s == "*");
-        if all_wildcards {
-            return None;
-        }
-
-        let wildcard_count = full_pattern.matches('*').count();
-        if wildcard_count > 2 {
-            return None;
-        }
-
-        Some(full_pattern)
-    }
-
-    fn extract_string_key(expr: &Expr) -> Option<String> {
-        match crate::extraction::utils::unwrap_paren(expr) {
-            Expr::Lit(Lit::Str(s)) => s.value.as_str().map(|s| s.to_string()),
-            Expr::Tpl(tpl) if tpl.exprs.is_empty() => tpl
-                .quasis
-                .first()
-                .and_then(|q| q.cooked.as_ref())
-                .and_then(|s| s.as_str())
-                .map(|s| s.to_string()),
-            _ => None,
-        }
-    }
+    // ============================================================
+    // Binding registration methods
+    // ============================================================
 
     fn extract_object_access_name(expr: &Expr) -> Option<String> {
         match expr {
@@ -824,6 +710,7 @@ impl<'a> Visit for FileAnalyzer<'a> {
     }
 
     fn visit_call_expr(&mut self, node: &CallExpr) {
+        // Handle direct translation calls: t("key")
         if let Callee::Expr(expr) = &node.callee
             && let Expr::Ident(ident) = &**expr
         {
@@ -832,86 +719,16 @@ impl<'a> Visit for FileAnalyzer<'a> {
             if let Some(translation_source) = self.binding_context.get_binding(fn_name).cloned()
                 && !translation_source.is_shadowed()
             {
-                let namespace = translation_source.primary_namespace();
                 let loc = self.source_map.lookup_char_pos(node.span.lo);
 
                 if let Some(arg) = node.args.first() {
-                    let source = self.value_analyzer.analyze_expr(&arg.expr);
-                    let source_line = loc
-                        .file
-                        .get_line(loc.line - 1)
-                        .map(|cow| cow.to_string())
-                        .unwrap_or_default();
-
-                    let is_resolvable = source.resolve_keys().is_ok();
-
-                    self.resolved_keys.push(ResolvedKey {
-                        file_path: self.file_path.to_string(),
-                        line: loc.line,
-                        col: loc.col_display + 1,
-                        source_line: source_line.clone(),
-                        namespace: namespace.clone(),
-                        source,
-                    });
-
-                    match crate::extraction::utils::unwrap_paren(&arg.expr) {
-                        Expr::Lit(Lit::Str(s)) => {
-                            if let Some(key) = s.value.as_str() {
-                                self.add_used_keys_with_namespaces(loc, key, &translation_source);
-                            }
-                        }
-                        Expr::Tpl(tpl) if tpl.exprs.is_empty() => {
-                            if let Some(quasi) = tpl.quasis.first()
-                                && let Some(cooked) = &quasi.cooked
-                                && let Some(key) = cooked.as_str()
-                            {
-                                self.add_used_keys_with_namespaces(loc, key, &translation_source);
-                            }
-                        }
-                        Expr::Cond(cond) => {
-                            self.process_ternary_arg(cond, loc, &translation_source, is_resolvable);
-                        }
-                        _ if !is_resolvable => {
-                            if let Some(decl) =
-                                self.file_comments.declarations.get_declaration(loc.line)
-                            {
-                                let namespaces = translation_source.namespaces();
-                                let expanded_keys =
-                                    decl.expand_all(&namespaces, self.available_keys);
-                                for key in expanded_keys {
-                                    self.add_used_key(loc.clone(), key);
-                                }
-                            } else {
-                                let unwrapped = crate::extraction::utils::unwrap_paren(&arg.expr);
-                                let (reason, hint, pattern) = if let Expr::Tpl(tpl) = unwrapped {
-                                    let pattern = if translation_source.is_indirect() {
-                                        Self::infer_pattern_from_template(tpl, &None)
-                                            .map(|p| format!(".{}", p))
-                                    } else {
-                                        Self::infer_pattern_from_template(tpl, &namespace)
-                                    };
-                                    let hint = pattern.as_ref().map(|p| {
-                                        if self.should_use_jsx_comment(&source_line) {
-                                            format!(
-                                                "add `{{/* glot-message-keys \"{}\" */}}` to declare expected keys",
-                                                p
-                                            )
-                                        } else {
-                                            format!(
-                                                "add `// glot-message-keys \"{}\"` to declare expected keys",
-                                                p
-                                            )
-                                        }
-                                    });
-                                    (DynamicKeyReason::TemplateWithExpr, hint, pattern)
-                                } else {
-                                    (DynamicKeyReason::VariableKey, None, None)
-                                };
-                                self.add_warning(loc, reason, hint, pattern);
-                            }
-                        }
-                        _ => {}
-                    }
+                    let argument = self.value_analyzer.analyze_expr(&arg.expr);
+                    self.collect_translation_call(
+                        loc,
+                        translation_source,
+                        argument,
+                        TranslationCallKind::Direct,
+                    );
                 }
             }
 
@@ -967,31 +784,13 @@ impl<'a> Visit for FileAnalyzer<'a> {
                 && let Some(arg) = node.args.first()
             {
                 let loc = self.source_map.lookup_char_pos(node.span.lo);
-
-                match crate::extraction::utils::unwrap_paren(&arg.expr) {
-                    Expr::Lit(Lit::Str(s)) => {
-                        if let Some(key) = s.value.as_str() {
-                            self.add_used_keys_with_namespaces(
-                                loc.clone(),
-                                key,
-                                &translation_source,
-                            );
-                        }
-                    }
-                    Expr::Tpl(tpl) if tpl.exprs.is_empty() => {
-                        if let Some(quasi) = tpl.quasis.first()
-                            && let Some(cooked) = &quasi.cooked
-                            && let Some(key) = cooked.as_str()
-                        {
-                            self.add_used_keys_with_namespaces(
-                                loc.clone(),
-                                key,
-                                &translation_source,
-                            );
-                        }
-                    }
-                    _ => {}
-                }
+                let argument = self.value_analyzer.analyze_expr(&arg.expr);
+                self.collect_translation_call(
+                    loc,
+                    translation_source,
+                    argument,
+                    TranslationCallKind::Method(method_name.to_string()),
+                );
             }
         }
 

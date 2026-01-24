@@ -1,8 +1,9 @@
-//! Two-phase extraction pipeline (Biome-style).
+//! Three-phase extraction pipeline (Biome-style).
 //!
-//! This module coordinates the two phases of translation key extraction:
+//! This module coordinates the three phases of translation key extraction:
 //! 1. **Collection**: Build cross-file registries AND collect all glot comments
-//! 2. **Extraction**: Extract keys and detect hardcoded text using collected comments
+//! 2. **Extraction**: Collect raw translation calls and detect hardcoded text
+//! 3. **Resolution**: Resolve raw calls to UsedKey/DynamicKeyWarning
 
 use std::collections::HashMap;
 
@@ -11,6 +12,8 @@ use crate::{commands::context::CheckContext, parsers::jsx::ParsedJSX};
 use super::{
     collect::{CommentCollector, FileImports, RegistryCollector},
     extract::FileAnalyzer,
+    resolve::resolve_translation_calls,
+    results::KeyExtractionResult,
 };
 
 use swc_ecma_visit::VisitWith;
@@ -202,7 +205,10 @@ fn resolve_component_name_for_prop(
         .unwrap_or_else(|| component_name.to_string())
 }
 
-/// Phase 2: Extract translation keys and hardcoded issues from all files using collected comments.
+/// Phase 2 & 3: Extract and resolve translation keys from all files.
+///
+/// - Phase 2: Collect raw translation calls and hardcoded issues
+/// - Phase 3: Resolve raw calls to UsedKey/DynamicKeyWarning
 #[allow(clippy::too_many_arguments)]
 fn extract_from_files(
     files: &std::collections::HashSet<String>,
@@ -230,6 +236,7 @@ fn extract_from_files(
             .get(file_path)
             .expect("comments should be collected in Phase 1");
 
+        // Phase 2: Collect raw translation calls
         let analyzer = FileAnalyzer::new(
             file_path,
             &parsed.source_map,
@@ -238,11 +245,21 @@ fn extract_from_files(
             ignore_texts,
             registries,
             &imports,
-            available_keys,
         );
         let result = analyzer.analyze(&parsed.module);
 
-        extractions.insert(file_path.clone(), result.extraction);
+        // Phase 3: Resolve raw calls to UsedKey/DynamicKeyWarning
+        let resolve_result = resolve_translation_calls(&result.raw_calls, comments, available_keys);
+
+        extractions.insert(
+            file_path.clone(),
+            KeyExtractionResult {
+                used_keys: resolve_result.used_keys,
+                warnings: resolve_result.warnings,
+                schema_calls: result.schema_calls,
+                resolved_keys: resolve_result.resolved_keys,
+            },
+        );
         hardcoded_issues.insert(file_path.clone(), result.hardcoded_issues);
     }
 
