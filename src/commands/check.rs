@@ -2,10 +2,10 @@ use std::collections::{HashMap, HashSet};
 
 use crate::{
     commands::context::AllKeyUsages,
-    extraction::{collect::SuppressibleRule, ResolvedKeyUsage},
+    extraction::{ResolvedKeyUsage, collect::SuppressibleRule},
     issue::{
-        Issue, KeyUsage, MessageLocation, OrphanKeyIssue, ReplicaLagIssue, SourceLocation,
-        UnusedKeyIssue, MAX_KEY_USAGES,
+        Issue, KeyUsage, MAX_KEY_USAGES, MessageLocation, OrphanKeyIssue, ReplicaLagIssue,
+        SourceLocation, UnusedKeyIssue,
     },
     parsers::json::MessageMap,
 };
