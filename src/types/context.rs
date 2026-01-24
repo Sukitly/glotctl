@@ -4,6 +4,8 @@
 //! - `SourceLocation` / `SourceContext`: For source code (TSX/JSX) positions
 //! - `MessageLocation` / `MessageContext`: For message file (JSON) positions
 //! - `LocaleTypeMismatch`: For type mismatch information in a specific locale
+
+use std::fmt;
 /// Type of JSON value at a key path.
 ///
 /// Used to detect type mismatches between primary and replica locales.
@@ -15,6 +17,15 @@ pub enum ValueType {
     String,
     /// A string array (accessed via t.raw() as a whole)
     StringArray,
+}
+
+impl fmt::Display for ValueType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ValueType::String => write!(f, "string"),
+            ValueType::StringArray => write!(f, "array"),
+        }
+    }
 }
 
 // ============================================================

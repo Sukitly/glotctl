@@ -6,20 +6,15 @@
 //! - Schema-based keys
 //! - Replica lag (keys missing in non-primary locales)
 
-use std::collections::HashSet;
-
 use anyhow::Result;
 
 use crate::{
     commands::{
-        check::{build_key_usage_map, find_missing_keys, find_replica_lag},
+        check::{build_key_usage_map, find_replica_lag},
         context::CheckContext,
     },
-    extraction::{DynamicKeyReason, extract::ValueSource, schema::expand_schema_keys},
-    issue::{
-        DynamicKeyIssue, Issue, MissingDynamicKeyCandidatesIssue, MissingKeyIssue, SourceLocation,
-        UntrackedNamespaceIssue,
-    },
+    extraction::UnresolvedKeyReason,
+    issue::{Issue, MissingKeyIssue, SourceLocation, UnresolvedKeyIssue, UntrackedNamespaceIssue},
     rules::Checker,
 };
 
@@ -52,106 +47,56 @@ impl Checker for MissingKeysRule {
             None => return Ok(issues),
         };
 
-        // Process cached extractions
-        for (file_path, extraction) in extractions {
-            // Check missing static keys
-            let missing = find_missing_keys(&extraction.used_keys, primary_messages);
-            for key in missing {
-                issues.push(Issue::MissingKey(MissingKeyIssue {
-                    location: SourceLocation::new(&key.file_path, key.line).with_col(key.col),
-                    key: key.full_key.clone(),
-                    source_line: Some(key.source_line.clone()),
-                    from_schema: None,
-                }));
-            }
-
-            // Process dynamic key warnings
-            for warning in &extraction.warnings {
-                let reason = match warning.reason {
-                    DynamicKeyReason::VariableKey => "dynamic key",
-                    DynamicKeyReason::TemplateWithExpr => "template with expression",
-                };
-                issues.push(Issue::DynamicKey(DynamicKeyIssue {
-                    location: SourceLocation::new(&warning.file_path, warning.line)
-                        .with_col(warning.col),
-                    reason: reason.to_string(),
-                    source_line: Some(warning.source_line.clone()),
-                    hint: warning.hint.clone(),
-                }));
-            }
-
-            // Process schema calls
-            for call in &extraction.schema_calls {
-                let mut visited = HashSet::new();
-                let expand_result = expand_schema_keys(
-                    &call.schema_name,
-                    &call.namespace,
-                    &registries.schema,
-                    &mut visited,
-                );
-                for key in expand_result.keys {
-                    if !key.has_namespace {
-                        issues.push(Issue::UntrackedNamespace(UntrackedNamespaceIssue {
-                            location: SourceLocation::new(file_path.as_str(), call.line)
-                                .with_col(call.col),
-                            raw_key: key.raw_key.clone(),
-                            schema_name: key.from_schema.clone(),
-                            source_line: None,
-                        }));
-                        continue;
-                    }
-
-                    if !primary_messages.contains_key(&key.full_key) {
+        // Process cached extractions (now FileKeyUsages)
+        for file_usages in extractions.values() {
+            // Check missing resolved keys
+            for resolved in &file_usages.resolved {
+                let key = resolved.key.as_str();
+                if !primary_messages.contains_key(key) {
+                    let loc = &resolved.context.location;
+                    let from_schema = resolved.from_schema.as_ref().map(|s| {
                         let schema_file = registries
                             .schema
-                            .get(&key.from_schema)
-                            .map(|s| s.file_path.as_str())
-                            .unwrap_or("unknown");
+                            .get(&s.schema_name)
+                            .map(|sf| sf.file_path.as_str())
+                            .unwrap_or(&s.schema_file);
+                        (s.schema_name.clone(), schema_file.to_string())
+                    });
 
-                        issues.push(Issue::MissingKey(MissingKeyIssue {
-                            location: SourceLocation::new(file_path.as_str(), call.line)
-                                .with_col(call.col),
-                            key: key.full_key.clone(),
-                            source_line: None,
-                            from_schema: Some((key.from_schema.clone(), schema_file.to_string())),
-                        }));
-                    }
+                    issues.push(Issue::MissingKey(MissingKeyIssue {
+                        location: SourceLocation::new(&loc.file_path, loc.line).with_col(loc.col),
+                        key: key.to_string(),
+                        source_line: Some(resolved.context.source_line.clone()),
+                        from_schema,
+                    }));
                 }
             }
 
-            // Process resolved keys
-            for resolved_key in &extraction.resolved_keys {
-                if matches!(resolved_key.source, ValueSource::Literal(_)) {
-                    continue;
-                }
-
-                match resolved_key.source.resolve_keys() {
-                    Ok(keys) => {
-                        let mut missing_keys = Vec::new();
-                        for key in keys {
-                            let full_key = match &resolved_key.namespace {
-                                Some(ns) => format!("{}.{}", ns, key),
-                                None => key,
-                            };
-                            if !primary_messages.contains_key(&full_key) {
-                                missing_keys.push(full_key);
-                            }
-                        }
-                        if !missing_keys.is_empty() {
-                            let source_desc = resolved_key.source.source_description();
-                            issues.push(Issue::MissingDynamicKeyCandidates(
-                                MissingDynamicKeyCandidatesIssue::new(
-                                    SourceLocation::new(&resolved_key.file_path, resolved_key.line)
-                                        .with_col(resolved_key.col),
-                                    source_desc,
-                                    missing_keys,
-                                    Some(resolved_key.source_line.clone()),
-                                ),
-                            ));
-                        }
+            // Process unresolved keys
+            for unresolved in &file_usages.unresolved {
+                let loc = &unresolved.context.location;
+                match &unresolved.reason {
+                    UnresolvedKeyReason::UnknownNamespace {
+                        schema_name,
+                        raw_key,
+                    } => {
+                        issues.push(Issue::UntrackedNamespace(UntrackedNamespaceIssue {
+                            location: SourceLocation::new(&loc.file_path, loc.line)
+                                .with_col(loc.col),
+                            raw_key: raw_key.clone(),
+                            schema_name: schema_name.clone(),
+                            source_line: Some(unresolved.context.source_line.clone()),
+                        }));
                     }
-                    Err(_) => {
-                        // Cannot resolve - warnings already emitted by the checker
+                    _ => {
+                        issues.push(Issue::UnresolvedKey(UnresolvedKeyIssue {
+                            location: SourceLocation::new(&loc.file_path, loc.line)
+                                .with_col(loc.col),
+                            reason: unresolved.reason.clone(),
+                            source_line: Some(unresolved.context.source_line.clone()),
+                            hint: unresolved.hint.clone(),
+                            pattern: unresolved.pattern.clone(),
+                        }));
                     }
                 }
             }

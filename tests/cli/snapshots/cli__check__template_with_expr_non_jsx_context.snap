@@ -14,7 +14,7 @@ warning: "Common.error.unknown"  unused-key
   --> ./messages/en.json:1:0
   = note: ("Unknown error")
 
-warning: "template with expression"  dynamic-key
+warning: "template with expression"  unresolved-key
   --> ./src/app.tsx:6:21
   |
 6 |         console.log(t(`error.${code}`));

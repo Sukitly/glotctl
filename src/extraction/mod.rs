@@ -6,7 +6,7 @@
 //!
 //! - `collect`: Phase 1 - Cross-file dependency and comment collection
 //! - `extract`: Phase 2 - File-level raw data collection
-//! - `resolve`: Phase 3 - Resolution to final UsedKey/DynamicKeyWarning
+//! - `resolve`: Phase 3 - Resolution to final ResolvedKeyUsage/UnresolvedKeyUsage
 //! - `schema`: Schema function handling
 //! - `utils`: Helper functions and utilities
 //!
@@ -23,9 +23,10 @@
 //!
 //! 3. **Resolution Phase** (`resolve::resolve_translation_calls`)
 //!    - Resolve ValueSource to static keys
+//!    - Expand schema calls
 //!    - Apply glot-message-keys expansion
 //!    - Generate warnings for unresolvable dynamic keys
-//!    - Output: Final UsedKey/DynamicKeyWarning results
+//!    - Output: Final ResolvedKeyUsage/UnresolvedKeyUsage results
 
 pub mod collect;
 pub mod extract;
@@ -36,4 +37,4 @@ pub mod schema;
 pub mod utils;
 
 // Re-export commonly used types from results module
-pub use results::{DynamicKeyReason, DynamicKeyWarning, KeyExtractionResult, UsedKey};
+pub use results::{AllKeyUsages, ResolvedKeyUsage, UnresolvedKeyReason, UnresolvedKeyUsage};

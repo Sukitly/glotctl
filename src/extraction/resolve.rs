@@ -1,63 +1,66 @@
 //! Translation call resolution (Phase 3).
 //!
 //! This module resolves raw translation calls collected in Phase 2 into
-//! final UsedKey and DynamicKeyWarning results.
+//! final ResolvedKeyUsage and UnresolvedKeyUsage results.
+//!
+//! It also handles schema calls expansion.
 
 use std::collections::HashSet;
 
-use crate::extraction::extract::ResolvedKey;
 use crate::extraction::{
     collect::SuppressibleRule,
-    collect::types::FileComments,
+    collect::types::{FileComments, Registries},
     extract::{RawTranslationCall, TranslationCallKind, TranslationSource, ValueSource},
-    results::{DynamicKeyReason, DynamicKeyWarning, UsedKey},
+    schema::{SchemaCallInfo, expand_schema_keys},
 };
-use crate::types::context::CommentStyle;
+use crate::types::context::{CommentStyle, SourceContext, SourceLocation};
+use crate::types::key_usage::{
+    FileKeyUsages, FullKey, ResolvedKeyUsage, SchemaSource, UnresolvedKeyReason, UnresolvedKeyUsage,
+};
 
-/// Result of resolving translation calls for a single file.
-pub struct ResolveResult {
-    pub used_keys: Vec<UsedKey>,
-    pub warnings: Vec<DynamicKeyWarning>,
-    pub resolved_keys: Vec<ResolvedKey>,
-}
-
-/// Resolve translation calls to used keys and warnings.
+/// Resolve translation calls and schema calls to key usages.
 ///
-/// This is Phase 3 of extraction, processing the raw calls collected in Phase 2.
+/// This is Phase 3 of extraction, processing the raw calls and schema calls
+/// collected in Phase 2. It produces:
+/// - `resolved`: All keys that were successfully resolved (static, dynamic, schema)
+/// - `unresolved`: Keys that could not be statically resolved (warnings)
 pub fn resolve_translation_calls(
     raw_calls: &[RawTranslationCall],
+    schema_calls: &[SchemaCallInfo],
+    file_path: &str,
     file_comments: &FileComments,
+    registries: &Registries,
     available_keys: &HashSet<String>,
-) -> ResolveResult {
-    let mut used_keys = Vec::new();
-    let mut warnings = Vec::new();
-    let mut resolved_keys = Vec::new();
+) -> FileKeyUsages {
+    let mut resolved = Vec::new();
+    let mut unresolved = Vec::new();
 
+    // Process raw translation calls
     for call in raw_calls {
-        // Build ResolvedKey for compatibility
-        let namespace = call.translation_source.primary_namespace();
-        resolved_keys.push(ResolvedKey {
-            file_path: call.context.file_path().to_string(),
-            line: call.context.line(),
-            col: call.context.col(),
-            source_line: call.context.source_line.clone(),
-            namespace: namespace.clone(),
-            source: call.argument.clone(),
-        });
-
         resolve_single_call(
             call,
             file_comments,
             available_keys,
-            &mut used_keys,
-            &mut warnings,
+            &mut resolved,
+            &mut unresolved,
         );
     }
 
-    ResolveResult {
-        used_keys,
-        warnings,
-        resolved_keys,
+    // Process schema calls
+    for call in schema_calls {
+        resolve_schema_call(
+            call,
+            file_path,
+            file_comments,
+            registries,
+            &mut resolved,
+            &mut unresolved,
+        );
+    }
+
+    FileKeyUsages {
+        resolved,
+        unresolved,
     }
 }
 
@@ -65,55 +68,152 @@ fn resolve_single_call(
     call: &RawTranslationCall,
     file_comments: &FileComments,
     available_keys: &HashSet<String>,
-    used_keys: &mut Vec<UsedKey>,
-    warnings: &mut Vec<DynamicKeyWarning>,
+    resolved: &mut Vec<ResolvedKeyUsage>,
+    unresolved: &mut Vec<UnresolvedKeyUsage>,
 ) {
     let ctx = &call.context;
     let namespaces = call.translation_source.namespaces();
-    let is_suppressed = file_comments
-        .suppressions
-        .is_suppressed(ctx.line(), SuppressibleRule::Untranslated);
 
-    // Only add STATIC keys to used_keys.
-    // Dynamic keys that can be resolved (ObjectAccess, ArrayIteration, etc.)
-    // are handled via resolved_keys in rules/missing.rs.
+    // Collect suppressed rules for this location
+    let suppressed_rules = collect_suppressed_rules(file_comments, ctx.line());
+
+    // Try to extract static keys first
     if let Some(keys) = extract_static_keys(&call.argument) {
         for key in keys {
             for namespace in &namespaces {
                 let full_key = resolve_full_key(namespace, &key);
-                add_used_key(used_keys, ctx, full_key, is_suppressed);
+                resolved.push(ResolvedKeyUsage {
+                    key: FullKey::new(full_key),
+                    context: ctx.clone(),
+                    suppressed_rules: suppressed_rules.clone(),
+                    from_schema: None,
+                });
             }
         }
         return;
     }
 
-    // Not a static key - check if resolvable (for resolved_keys processing in rules/missing.rs)
-    let is_resolvable = call.argument.resolve_keys().is_ok();
-
-    if is_resolvable {
-        // Resolvable but not static - handled by resolved_keys in rules/missing.rs
-        // Don't add to used_keys, don't generate warning
-        return;
-    }
-
-    // Cannot resolve - check for glot-message-keys declaration or generate warning
-    // Method calls don't generate warnings (preserve original behavior)
-    if matches!(call.call_kind, TranslationCallKind::Method(_)) {
-        return;
-    }
-
-    if let Some(decl) = file_comments.declarations.get_declaration(ctx.line()) {
-        // Has declaration, expand pattern
-        let expanded_keys = decl.expand_all(&namespaces, available_keys);
-        for key in expanded_keys {
-            add_used_key(used_keys, ctx, key, is_suppressed);
+    // Not a static key - try to resolve dynamically
+    match call.argument.resolve_keys() {
+        Ok(keys) => {
+            // Dynamic but resolvable - add all resolved keys
+            for key in keys {
+                for namespace in &namespaces {
+                    let full_key = resolve_full_key(namespace, &key);
+                    resolved.push(ResolvedKeyUsage {
+                        key: FullKey::new(full_key),
+                        context: ctx.clone(),
+                        suppressed_rules: suppressed_rules.clone(),
+                        from_schema: None,
+                    });
+                }
+            }
         }
-    } else {
-        // No declaration, generate warning
-        let (reason, hint, pattern) =
-            infer_warning_details(&call.argument, &call.translation_source, ctx.comment_style);
-        add_warning(warnings, ctx, reason, hint, pattern);
+        Err(_) => {
+            // Cannot resolve - check for glot-message-keys declaration
+            // Method calls don't generate warnings (preserve original behavior)
+            if matches!(call.call_kind, TranslationCallKind::Method(_)) {
+                return;
+            }
+
+            if let Some(decl) = file_comments.declarations.get_declaration(ctx.line()) {
+                // Has declaration, expand pattern
+                let expanded_keys = decl.expand_all(&namespaces, available_keys);
+                for key in expanded_keys {
+                    resolved.push(ResolvedKeyUsage {
+                        key: FullKey::new(key),
+                        context: ctx.clone(),
+                        suppressed_rules: suppressed_rules.clone(),
+                        from_schema: None,
+                    });
+                }
+            } else {
+                // No declaration, generate unresolved warning
+                let (reason, hint, pattern) = infer_warning_details(
+                    &call.argument,
+                    &call.translation_source,
+                    ctx.comment_style,
+                );
+                unresolved.push(UnresolvedKeyUsage {
+                    context: ctx.clone(),
+                    reason,
+                    hint,
+                    pattern,
+                });
+            }
+        }
     }
+}
+
+fn resolve_schema_call(
+    call: &SchemaCallInfo,
+    file_path: &str,
+    file_comments: &FileComments,
+    registries: &Registries,
+    resolved: &mut Vec<ResolvedKeyUsage>,
+    unresolved: &mut Vec<UnresolvedKeyUsage>,
+) {
+    let mut visited = HashSet::new();
+    let expand_result = expand_schema_keys(
+        &call.schema_name,
+        &call.namespace,
+        &registries.schema,
+        &mut visited,
+    );
+
+    // Build context for this schema call location
+    // Note: schema calls don't have source_line in SchemaCallInfo, use empty string
+    let location = SourceLocation::new(file_path, call.line, call.col);
+    let context = SourceContext::new(location, "", CommentStyle::Js);
+
+    let suppressed_rules = collect_suppressed_rules(file_comments, call.line);
+
+    // Get schema file path for from_schema info
+    let schema_file = registries
+        .schema
+        .get(&call.schema_name)
+        .map(|s| s.file_path.clone())
+        .unwrap_or_else(|| "unknown".to_string());
+
+    for key in expand_result.keys {
+        if !key.has_namespace {
+            // Namespace could not be determined
+            unresolved.push(UnresolvedKeyUsage {
+                context: context.clone(),
+                reason: UnresolvedKeyReason::UnknownNamespace {
+                    schema_name: key.from_schema.clone(),
+                    raw_key: key.raw_key.clone(),
+                },
+                hint: None,
+                pattern: None,
+            });
+        } else {
+            // Successfully resolved with namespace
+            resolved.push(ResolvedKeyUsage {
+                key: FullKey::new(key.full_key),
+                context: context.clone(),
+                suppressed_rules: suppressed_rules.clone(),
+                from_schema: Some(SchemaSource {
+                    schema_name: key.from_schema.clone(),
+                    schema_file: schema_file.clone(),
+                }),
+            });
+        }
+    }
+}
+
+/// Collect all suppressed rules for a given line.
+fn collect_suppressed_rules(
+    file_comments: &FileComments,
+    line: usize,
+) -> HashSet<SuppressibleRule> {
+    let mut suppressed = HashSet::new();
+    for rule in [SuppressibleRule::Hardcoded, SuppressibleRule::Untranslated] {
+        if file_comments.suppressions.is_suppressed(line, rule) {
+            suppressed.insert(rule);
+        }
+    }
+    suppressed
 }
 
 /// Extract static keys from a ValueSource.
@@ -150,54 +250,18 @@ fn resolve_full_key(namespace: &Option<String>, key: &str) -> String {
     }
 }
 
-fn add_used_key(
-    used_keys: &mut Vec<UsedKey>,
-    ctx: &crate::types::context::SourceContext,
-    full_key: String,
-    is_suppressed: bool,
-) {
-    used_keys.push(UsedKey {
-        full_key,
-        file_path: ctx.file_path().to_string(),
-        line: ctx.line(),
-        col: ctx.col(),
-        source_line: ctx.source_line.clone(),
-        in_jsx_context: ctx.comment_style.is_jsx(),
-        untranslated_disabled: is_suppressed,
-    });
-}
-
-fn add_warning(
-    warnings: &mut Vec<DynamicKeyWarning>,
-    ctx: &crate::types::context::SourceContext,
-    reason: DynamicKeyReason,
-    hint: Option<String>,
-    pattern: Option<String>,
-) {
-    warnings.push(DynamicKeyWarning {
-        file_path: ctx.file_path().to_string(),
-        line: ctx.line(),
-        col: ctx.col(),
-        reason,
-        source_line: ctx.source_line.clone(),
-        hint,
-        pattern,
-        in_jsx_context: ctx.comment_style.is_jsx(),
-    });
-}
-
 /// Infer warning details from ValueSource.
 fn infer_warning_details(
     argument: &ValueSource,
     translation_source: &TranslationSource,
     comment_style: CommentStyle,
-) -> (DynamicKeyReason, Option<String>, Option<String>) {
+) -> (UnresolvedKeyReason, Option<String>, Option<String>) {
     match argument {
         ValueSource::Template { prefix, suffix, .. } => {
             // Reconstruct pattern from Template
             let pattern = infer_pattern_from_template(prefix, suffix, translation_source);
             let hint = pattern.as_ref().map(|p| format_hint(p, comment_style));
-            (DynamicKeyReason::TemplateWithExpr, hint, pattern)
+            (UnresolvedKeyReason::TemplateWithExpr, hint, pattern)
         }
         ValueSource::Conditional {
             consequent,
@@ -207,12 +271,12 @@ fn infer_warning_details(
             let is_template = matches!(consequent.as_ref(), ValueSource::Template { .. })
                 || matches!(alternate.as_ref(), ValueSource::Template { .. });
             if is_template {
-                (DynamicKeyReason::TemplateWithExpr, None, None)
+                (UnresolvedKeyReason::TemplateWithExpr, None, None)
             } else {
-                (DynamicKeyReason::VariableKey, None, None)
+                (UnresolvedKeyReason::VariableKey, None, None)
             }
         }
-        _ => (DynamicKeyReason::VariableKey, None, None),
+        _ => (UnresolvedKeyReason::VariableKey, None, None),
     }
 }
 

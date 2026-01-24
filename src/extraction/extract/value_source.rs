@@ -92,6 +92,7 @@ pub enum UnresolvableReason {
 ///
 /// This represents a single `t(...)` call that has been analyzed.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct ResolvedKey {
     pub file_path: String,
     pub line: usize,
@@ -168,6 +169,7 @@ impl ValueSource {
     }
 
     /// Get a human-readable description of the value source for error messages.
+    #[allow(dead_code)]
     pub fn source_description(&self) -> String {
         match self {
             ValueSource::Literal(s) => format!("literal \"{}\"", s),

@@ -14,7 +14,7 @@ warning: "Common.submit"  unused-key
   --> ./messages/en.json:1:0
   = note: ("Submit")
 
-warning: "dynamic key"  dynamic-key
+warning: "variable key"  unresolved-key
   --> ./src/app.tsx:4:23
   |
 4 |       return <button>{t(keyName)}</button>;

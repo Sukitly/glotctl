@@ -10,12 +10,11 @@ info:
 success: false
 exit_code: 1
 ----- stdout -----
-error: "dynamic key from "object "toolKeys"""  missing-key
+error: "Tools.updateNovel"  missing-key
   --> ./src/app.tsx:9:12
   |
 9 |     return t(key);
   |            ^
-  = note: missing: Tools.updateNovel
 
 
 ✘ 1 problems (1 error, 0 warnings)

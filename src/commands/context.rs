@@ -11,9 +11,8 @@ use crate::{
     commands::shared,
     config::Config,
     config::load_config,
-    extraction::KeyExtractionResult,
     file_scanner::scan_files,
-    issue::{Issue, ParseErrorIssue},
+    issue::{HardcodedIssue, Issue, ParseErrorIssue},
     parsers::json::MessageMap,
     parsers::json::scan_message_files,
     parsers::jsx::{ParsedJSX, parse_jsx_source},
@@ -21,13 +20,9 @@ use crate::{
 
 use std::collections::HashMap;
 
-use crate::issue::HardcodedIssue;
-
 // Re-export types from extraction module for convenience
+pub use crate::extraction::AllKeyUsages;
 pub use crate::extraction::collect::{AllFileImports, Registries};
-
-/// Type alias for all extraction results (one per file).
-pub type AllExtractions = HashMap<String, KeyExtractionResult>;
 
 /// Type alias for all hardcoded issues (one vec per file).
 pub type AllHardcodedIssues = HashMap<String, Vec<HardcodedIssue>>;
@@ -68,7 +63,7 @@ pub struct CheckContext {
     registries: OnceCell<Registries>,
     file_imports: OnceCell<AllFileImports>,
     messages: OnceCell<MessageData>,
-    extractions: OnceCell<AllExtractions>,
+    extractions: OnceCell<AllKeyUsages>,
     hardcoded_issues: OnceCell<AllHardcodedIssues>,
     used_keys: OnceCell<HashSet<String>>,
 }
@@ -149,7 +144,7 @@ impl CheckContext {
         self.messages.get()
     }
 
-    pub fn extractions(&self) -> Option<&AllExtractions> {
+    pub fn extractions(&self) -> Option<&AllKeyUsages> {
         self.extractions.get()
     }
 
@@ -189,7 +184,7 @@ impl CheckContext {
         debug_assert!(result.is_ok(), "messages already initialized");
     }
 
-    pub fn set_extractions(&self, data: AllExtractions) {
+    pub fn set_extractions(&self, data: AllKeyUsages) {
         let result = self.extractions.set(data);
         debug_assert!(result.is_ok(), "extractions already initialized");
     }

@@ -10,12 +10,11 @@ info:
 success: false
 exit_code: 1
 ----- stdout -----
-error: "dynamic key from "template""  missing-key
+error: "Features.prefix.load"  missing-key
   --> ./src/app.tsx:4:25
   |
 4 | FEATURE_KEYS.map((k) => t(`prefix.${k}`));
   |                         ^
-  = note: missing: Features.prefix.load
 
 
 ✘ 1 problems (1 error, 0 warnings)
