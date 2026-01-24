@@ -2,10 +2,10 @@ use std::collections::{HashMap, HashSet};
 
 use crate::{
     commands::context::AllKeyUsages,
-    extraction::{ResolvedKeyUsage, collect::SuppressibleRule},
+    extraction::{collect::SuppressibleRule, ResolvedKeyUsage},
     issue::{
-        Issue, KeyUsage, MAX_KEY_USAGES, MessageLocation, OrphanKeyIssue, ReplicaLagIssue,
-        SourceLocation, UnusedKeyIssue,
+        Issue, KeyUsage, MessageLocation, OrphanKeyIssue, ReplicaLagIssue, SourceLocation,
+        UnusedKeyIssue, MAX_KEY_USAGES,
     },
     parsers::json::MessageMap,
 };
@@ -991,9 +991,8 @@ const b = <div>Detected</div>"#;
 
     #[test]
     fn test_build_key_disable_map_basic() {
-        use crate::extraction::FileKeyUsages;
         use crate::types::context::{CommentStyle, SourceContext, SourceLocation};
-        use crate::types::key_usage::FullKey;
+        use crate::types::key_usage::{FileKeyUsages, FullKey};
 
         let mut extractions: AllKeyUsages = HashMap::new();
         extractions.insert(
@@ -1034,9 +1033,8 @@ const b = <div>Detected</div>"#;
 
     #[test]
     fn test_build_key_disable_map_all_disabled() {
-        use crate::extraction::FileKeyUsages;
         use crate::types::context::{CommentStyle, SourceContext, SourceLocation};
-        use crate::types::key_usage::FullKey;
+        use crate::types::key_usage::{FileKeyUsages, FullKey};
 
         let mut extractions: AllKeyUsages = HashMap::new();
         extractions.insert(

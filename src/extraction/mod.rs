@@ -38,7 +38,3 @@ pub mod utils;
 
 // Re-export commonly used types from results module
 pub use results::{AllKeyUsages, ResolvedKeyUsage, UnresolvedKeyReason, UnresolvedKeyUsage};
-
-// Used in tests
-#[allow(unused_imports)]
-pub use results::FileKeyUsages;
