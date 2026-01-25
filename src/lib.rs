@@ -40,6 +40,7 @@ pub(crate) mod json_editor;
 pub(crate) mod json_writer;
 pub mod mcp;
 pub(crate) mod parsers;
+pub mod report;
 pub mod reporter;
 pub(crate) mod rules;
 pub mod types;

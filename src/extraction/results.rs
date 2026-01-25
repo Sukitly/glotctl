@@ -4,10 +4,7 @@
 //!
 //! The main types are:
 //! - `AllKeyUsages`: map of file path to key usages
-//! - `ResolvedKeyUsage`: a successfully resolved translation key
 //! - `UnresolvedKeyUsage`: a key that could not be statically resolved
 
 // Re-export the key usage types
-pub use crate::types::key_usage::{
-    AllKeyUsages, ResolvedKeyUsage, UnresolvedKeyReason, UnresolvedKeyUsage,
-};
+pub use crate::types::key_usage::{AllKeyUsages, UnresolvedKeyReason, UnresolvedKeyUsage};

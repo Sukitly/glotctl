@@ -1,45 +1,63 @@
 //! Rule implementations for glot.
 //!
-//! This module contains the concrete checker implementations that detect
-//! various i18n issues in the codebase.
+//! This module contains pure functions that check for various i18n issues.
+//! Each function takes only the specific inputs it needs (not a full Context)
+//! and returns a specific issue type.
+//!
+//! ## Module Structure
+//!
+//! - `helpers`: Shared types and utility functions (KeyUsageMap, KeyDisableMap, etc.)
+//! - `hardcoded`: Hardcoded text detection
+//! - `missing_key`: Missing translation key detection
+//! - `unresolved_key`: Unresolved (dynamic) key detection
+//! - `replica_lag`: Keys missing in non-primary locales
+//! - `unused_key`: Defined but unused keys
+//! - `orphan_key`: Keys in non-primary locales but not in primary
+//! - `untranslated`: Identical values across locales
+//! - `type_mismatch`: Type mismatches between locales
 
 pub mod hardcoded;
-pub mod missing;
-pub mod orphan;
+pub mod helpers;
+pub mod missing_key;
+pub mod orphan_key;
+pub mod replica_lag;
 pub mod type_mismatch;
+pub mod unresolved_key;
 pub mod untranslated;
+pub mod unused_key;
 
-use anyhow::Result;
+// Re-export all check functions for convenient access
+pub use hardcoded::check_hardcoded;
+pub use helpers::{build_key_disable_map, build_key_usage_map};
+pub use missing_key::check_missing_key;
+pub use orphan_key::check_orphan_key;
+pub use replica_lag::check_replica_lag;
+pub use type_mismatch::check_type_mismatch;
+pub use unresolved_key::check_unresolved_key;
+pub use untranslated::check_untranslated;
+pub use unused_key::check_unused_key;
+
+// ============================================================
+// DEPRECATED: Legacy Checker trait for backward compatibility
+// TODO: Remove after migrating baseline.rs, fix.rs, clean.rs
+// ============================================================
 
 use crate::{commands::context::CheckContext, issue::Issue};
+use anyhow::Result;
 
 /// Trait for implementing a check rule.
 ///
-/// Checkers are the core units of logic in glot. Each checker:
-/// 1. Declares its dependencies (registries, messages) via `needs_*` methods.
-/// 2. Implements the `check` method to inspect the code/project and return issues.
+/// DEPRECATED: Use the pure `check_*` functions directly instead.
+/// This trait is kept temporarily for backward compatibility with
+/// baseline.rs, fix.rs, and clean.rs.
+#[deprecated(note = "Use check_* functions directly instead")]
 pub trait Checker {
-    /// Unique identifier for the checker (e.g., "hardcoded", "missing-keys").
     fn name(&self) -> &str;
-
-    /// Whether this checker needs registries (schemas, key objects) loaded.
-    /// Default: false
     fn needs_registries(&self) -> bool {
         false
     }
-
-    /// Whether this checker needs locale messages loaded.
-    /// Default: false
     fn needs_messages(&self) -> bool {
         false
     }
-
-    /// Execute the check logic using the provided context.
-    ///
-    /// # Arguments
-    /// * `ctx` - The CheckContext containing configuration and cached data.
-    ///
-    /// # Returns
-    /// A vector of found issues, or an error if the check failed to execute.
     fn check(&self, ctx: &CheckContext) -> Result<Vec<Issue>>;
 }
