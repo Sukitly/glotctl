@@ -54,7 +54,7 @@ impl crate::rules::Checker for UntranslatedRule {
         ctx.ensure_extractions()?;
 
         let messages = ctx.messages().expect("messages must be loaded");
-        let extractions = ctx.extractions().expect("extractions must be loaded");
+        let extractions = ctx.all_key_usages().expect("extractions must be loaded");
         let primary_locale = &ctx.config.primary_locale;
 
         let Some(primary_messages) = &messages.primary_messages else {

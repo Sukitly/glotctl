@@ -30,6 +30,7 @@ pub struct RunResult {
     pub locale_files_checked: usize,
 }
 
+pub mod actions;
 pub mod args;
 pub(crate) mod commands;
 pub(crate) mod config;

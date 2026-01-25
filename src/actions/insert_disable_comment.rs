@@ -3,7 +3,8 @@
 //! Inserts `glot-disable-next-line` comments to suppress warnings.
 //! Used by the `glot baseline` command.
 
-use crate::types::{CommentStyle, HardcodedIssue, Rule, UntranslatedIssue};
+use crate::types::context::CommentStyle;
+use crate::types::issue::{HardcodedIssue, Rule, UntranslatedIssue};
 
 use super::operation::Operation;
 use super::traits::Action;
@@ -55,7 +56,7 @@ impl Action<UntranslatedIssue> for InsertDisableComment {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{MessageContext, MessageLocation, SourceContext, SourceLocation};
+    use crate::types::context::{MessageContext, MessageLocation, SourceContext, SourceLocation};
 
     #[test]
     fn test_format_comment_js() {

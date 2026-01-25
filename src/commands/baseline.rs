@@ -124,7 +124,10 @@ impl BaselineRunner {
             // Ensure file analysis (extractions + hardcoded) is loaded
             self.ctx.ensure_extractions()?;
             self.ctx.ensure_hardcoded_issues()?;
-            let extractions = self.ctx.extractions().expect("extractions must be loaded");
+            let extractions = self
+                .ctx
+                .all_key_usages()
+                .expect("extractions must be loaded");
             let all_hardcoded_issues = self
                 .ctx
                 .hardcoded_issues()

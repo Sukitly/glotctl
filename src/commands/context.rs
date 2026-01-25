@@ -5,17 +5,26 @@ use std::{
 };
 
 use anyhow::{Context as _, Result, anyhow};
+use swc_ecma_visit::VisitWith;
 
 use crate::{
     args::CommonArgs,
-    commands::shared,
-    config::Config,
-    config::load_config,
+    config::{Config, load_config},
+    extraction::{
+        collect::{
+            AllFileComments, CommentCollector, FileImports, RegistryCollector, TranslationFnCall,
+            TranslationProp, make_registry_key, make_translation_fn_call_key,
+            make_translation_prop_key, resolve_import_path,
+        },
+        extract::FileAnalyzer,
+        resolve::resolve_translation_calls,
+    },
     file_scanner::scan_files,
     issue::{HardcodedIssue, Issue, ParseErrorIssue},
-    parsers::json::MessageMap,
-    parsers::json::scan_message_files,
-    parsers::jsx::{ParsedJSX, parse_jsx_source},
+    parsers::{
+        json::{MessageMap, scan_message_files},
+        jsx::{ParsedJSX, parse_jsx_source},
+    },
 };
 
 use std::collections::HashMap;
@@ -66,6 +75,7 @@ pub struct CheckContext {
     extractions: OnceCell<AllKeyUsages>,
     hardcoded_issues: OnceCell<AllHardcodedIssues>,
     used_keys: OnceCell<HashSet<String>>,
+    file_comments: OnceCell<AllFileComments>,
 }
 
 impl CheckContext {
@@ -120,6 +130,7 @@ impl CheckContext {
             extractions: OnceCell::new(),
             hardcoded_issues: OnceCell::new(),
             used_keys: OnceCell::new(),
+            file_comments: OnceCell::new(),
         })
     }
 
@@ -135,7 +146,6 @@ impl CheckContext {
         self.registries.get()
     }
 
-    #[cfg(test)]
     pub fn file_imports(&self) -> Option<&AllFileImports> {
         self.file_imports.get()
     }
@@ -144,7 +154,7 @@ impl CheckContext {
         self.messages.get()
     }
 
-    pub fn extractions(&self) -> Option<&AllKeyUsages> {
+    pub fn all_key_usages(&self) -> Option<&AllKeyUsages> {
         self.extractions.get()
     }
 
@@ -154,6 +164,10 @@ impl CheckContext {
 
     pub fn used_keys(&self) -> Option<&HashSet<String>> {
         self.used_keys.get()
+    }
+
+    pub fn file_comments(&self) -> Option<&AllFileComments> {
+        self.file_comments.get()
     }
 
     // ============================================================
@@ -184,7 +198,7 @@ impl CheckContext {
         debug_assert!(result.is_ok(), "messages already initialized");
     }
 
-    pub fn set_extractions(&self, data: AllKeyUsages) {
+    pub fn set_all_key_usages(&self, data: AllKeyUsages) {
         let result = self.extractions.set(data);
         debug_assert!(result.is_ok(), "extractions already initialized");
     }
@@ -192,6 +206,11 @@ impl CheckContext {
     pub fn set_used_keys(&self, data: HashSet<String>) {
         let result = self.used_keys.set(data);
         debug_assert!(result.is_ok(), "used_keys already initialized");
+    }
+
+    pub fn set_file_comments(&self, data: AllFileComments) {
+        let result = self.file_comments.set(data);
+        debug_assert!(result.is_ok(), "file_comments already initialized");
     }
 
     // ============================================================
@@ -256,9 +275,21 @@ impl CheckContext {
         // Ensure files are parsed first
         let errors = self.ensure_parsed_files();
 
-        let (registries, file_imports) = shared::build_registries(self);
+        let available_keys = self
+            .messages()
+            .and_then(|m| m.primary_messages.as_ref())
+            .map(|m| m.keys().cloned().collect())
+            .unwrap_or_default();
+        let parsed_files = self
+            .parsed_files()
+            .expect("parsed_files must be loaded before build_file_analysis");
+
+        // Phase 1: Collect registries AND comments (Biome-style: comments collected first)
+        let (registries, file_imports, file_comments) =
+            collect_registries_and_comments(parsed_files, &available_keys);
         self.set_registries(registries);
         self.set_file_imports(file_imports);
+        self.set_file_comments(file_comments);
         Ok(errors)
     }
 
@@ -298,9 +329,39 @@ impl CheckContext {
         // Messages are optional - needed for extraction but not for hardcoded detection
         let _ = self.ensure_messages();
 
+        let parsed_files = self
+            .parsed_files()
+            .expect("parsed_files must be loaded before build_file_analysis");
+
+        let available_keys = self
+            .messages()
+            .and_then(|m| m.primary_messages.as_ref())
+            .map(|m| m.keys().cloned().collect())
+            .unwrap_or_default();
+
+        let registries = self
+            .registries()
+            .expect("registries must be loaded before build_file_analysis");
+        let file_imports = self
+            .file_imports()
+            .expect("file_imports must be loaded before build_file_analysis");
+        let file_comments = self
+            .file_comments()
+            .expect("file_comments must be loaded before build_file_analysis");
+
+        let (key_usages, hardcoded_issues) = extract_from_files(
+            &self.files,
+            parsed_files,
+            registries,
+            file_imports,
+            file_comments,
+            &self.config.checked_attributes,
+            &self.ignore_texts,
+            &available_keys,
+        );
+
         // Single traversal produces both results
-        let (extractions, hardcoded_issues) = shared::build_file_analysis(self);
-        self.set_extractions(extractions);
+        self.set_all_key_usages(key_usages);
         self.set_hardcoded_issues(hardcoded_issues);
         Ok(())
     }
@@ -324,7 +385,7 @@ impl CheckContext {
         // used_keys depends on extractions
         self.ensure_extractions()?;
 
-        let used_keys = shared::collect_used_keys(self);
+        let used_keys = self.collect_used_keys();
         self.set_used_keys(used_keys);
         Ok(())
     }
@@ -354,6 +415,213 @@ impl CheckContext {
             }
         }
     }
+
+    pub fn collect_used_keys(&self) -> HashSet<String> {
+        let mut used_keys = HashSet::new();
+        let extractions = self.all_key_usages().expect("extractions must be loaded");
+        for file_usages in extractions.values() {
+            for resolved in &file_usages.resolved {
+                used_keys.insert(resolved.key.as_str().to_string());
+            }
+        }
+        used_keys
+    }
+}
+fn collect_registries_and_comments(
+    parsed_files: &HashMap<String, ParsedJSX>,
+    _available_keys: &std::collections::HashSet<String>,
+) -> (Registries, AllFileImports, AllFileComments) {
+    let mut schema = HashMap::new();
+    let mut key_object = HashMap::new();
+    let mut key_array = HashMap::new();
+    let mut string_array = HashMap::new();
+    let mut translation_prop = HashMap::new();
+    let mut translation_fn_call = HashMap::new();
+    let mut default_exports = HashMap::new();
+    let mut file_imports: AllFileImports = HashMap::new();
+    let mut file_comments: AllFileComments = HashMap::new();
+    let mut translation_props_by_file: Vec<(String, Vec<TranslationProp>)> = Vec::new();
+
+    for (file_path, parsed) in parsed_files {
+        // Collect registries
+        let mut collector = RegistryCollector::new(file_path);
+        parsed.module.visit_with(&mut collector);
+
+        // Collect comments (Biome-style: in same phase as registries)
+        let comments = CommentCollector::collect(&parsed.comments, &parsed.source_map);
+        file_comments.insert(file_path.clone(), comments);
+
+        // Schema functions
+        for func in collector.schema_functions {
+            if !schema.contains_key(&func.name) {
+                schema.insert(func.name.clone(), func);
+            }
+        }
+
+        // Imports
+        file_imports.insert(file_path.clone(), collector.imports);
+
+        // Key objects
+        for obj in collector.objects {
+            let key = make_registry_key(&obj.file_path, &obj.name);
+            key_object.insert(key, obj);
+        }
+
+        // Key arrays
+        for arr in collector.arrays {
+            let key = make_registry_key(&arr.file_path, &arr.name);
+            key_array.insert(key, arr);
+        }
+
+        // String arrays
+        for str_arr in collector.string_arrays {
+            let key = make_registry_key(&str_arr.file_path, &str_arr.name);
+            string_array.insert(key, str_arr);
+        }
+
+        translation_props_by_file.push((file_path.clone(), collector.translation_props));
+
+        // Translation function calls
+        for fn_call in collector.translation_fn_calls {
+            let key = make_translation_fn_call_key(
+                &fn_call.fn_file_path,
+                &fn_call.fn_name,
+                fn_call.arg_index,
+            );
+            translation_fn_call
+                .entry(key)
+                .and_modify(|existing: &mut TranslationFnCall| {
+                    for ns in &fn_call.namespaces {
+                        if !existing.namespaces.contains(ns) {
+                            existing.namespaces.push(ns.clone());
+                        }
+                    }
+                })
+                .or_insert(fn_call);
+        }
+
+        // Default exports
+        if let Some(name) = collector.default_export_name {
+            default_exports.insert(file_path.clone(), name);
+        }
+    }
+
+    // Resolve translation props
+    for (file_path, props) in translation_props_by_file {
+        let imports = file_imports.get(&file_path).cloned().unwrap_or_default();
+        for mut prop in props {
+            let resolved_component_name = resolve_component_name_for_prop(
+                &file_path,
+                &prop.component_name,
+                &imports,
+                &default_exports,
+            );
+            prop.component_name = resolved_component_name;
+            let key = make_translation_prop_key(&prop.component_name, &prop.prop_name);
+            translation_prop
+                .entry(key)
+                .and_modify(|existing: &mut TranslationProp| {
+                    for ns in &prop.namespaces {
+                        if !existing.namespaces.contains(ns) {
+                            existing.namespaces.push(ns.clone());
+                        }
+                    }
+                })
+                .or_insert(prop);
+        }
+    }
+
+    let registries = crate::commands::context::Registries {
+        schema,
+        key_object,
+        key_array,
+        string_array,
+        translation_prop,
+        translation_fn_call,
+        default_exports,
+    };
+
+    (registries, file_imports, file_comments)
+}
+
+fn resolve_component_name_for_prop(
+    file_path: &str,
+    component_name: &str,
+    imports: &FileImports,
+    default_exports: &HashMap<String, String>,
+) -> String {
+    let Some(import) = imports
+        .iter()
+        .find(|i| i.local_name == component_name && i.imported_name == "default")
+    else {
+        return component_name.to_string();
+    };
+
+    let Some(target_path) = resolve_import_path(Path::new(file_path), &import.module_path) else {
+        return component_name.to_string();
+    };
+
+    default_exports
+        .get(&target_path)
+        .cloned()
+        .unwrap_or_else(|| component_name.to_string())
+}
+
+/// Phase 2 & 3: Extract and resolve translation keys from all files.
+///
+/// - Phase 2: Collect raw translation calls and hardcoded issues
+/// - Phase 3: Resolve raw calls to ResolvedKeyUsage/UnresolvedKeyUsage
+#[allow(clippy::too_many_arguments)]
+fn extract_from_files(
+    files: &std::collections::HashSet<String>,
+    parsed_files: &HashMap<String, ParsedJSX>,
+    registries: &Registries,
+    file_imports: &AllFileImports,
+    file_comments: &AllFileComments,
+    checked_attributes: &[String],
+    ignore_texts: &std::collections::HashSet<String>,
+    available_keys: &std::collections::HashSet<String>,
+) -> (AllKeyUsages, AllHardcodedIssues) {
+    let mut key_usages = HashMap::new();
+    let mut hardcoded_issues = HashMap::new();
+
+    for file_path in files {
+        let Some(parsed) = parsed_files.get(file_path) else {
+            continue;
+        };
+
+        let imports = file_imports.get(file_path).cloned().unwrap_or_default();
+        let comments = file_comments
+            .get(file_path)
+            .expect("comments should be collected in Phase 1");
+
+        // Phase 2: Collect raw translation calls and hardcoded text
+        let analyzer = FileAnalyzer::new(
+            file_path,
+            &parsed.source_map,
+            comments,
+            checked_attributes,
+            ignore_texts,
+            registries,
+            &imports,
+        );
+        let result = analyzer.analyze(&parsed.module);
+
+        // Phase 3: Resolve raw calls and schema calls to key usages
+        let file_key_usages = resolve_translation_calls(
+            &result.raw_calls,
+            &result.schema_calls,
+            file_path,
+            comments,
+            registries,
+            available_keys,
+        );
+
+        key_usages.insert(file_path.clone(), file_key_usages);
+        hardcoded_issues.insert(file_path.clone(), result.hardcoded_issues);
+    }
+
+    (key_usages, hardcoded_issues)
 }
 
 #[cfg(test)]
@@ -379,6 +647,7 @@ mod tests {
             extractions: OnceCell::new(),
             hardcoded_issues: OnceCell::new(),
             used_keys: OnceCell::new(),
+            file_comments: OnceCell::new(),
         }
     }
 
@@ -421,7 +690,7 @@ mod tests {
         assert!(ctx.registries().is_none());
         assert!(ctx.file_imports().is_none());
         assert!(ctx.messages().is_none());
-        assert!(ctx.extractions().is_none());
+        assert!(ctx.all_key_usages().is_none());
         assert!(ctx.used_keys().is_none());
     }
 

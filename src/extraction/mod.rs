@@ -30,7 +30,6 @@
 
 pub mod collect;
 pub mod extract;
-pub mod pipeline;
 pub mod resolve;
 pub mod results;
 pub mod schema;

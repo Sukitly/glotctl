@@ -151,7 +151,7 @@ impl FixRunner {
         let mut fixable = Vec::new();
         let mut unfixable = Vec::new();
 
-        let extractions = match self.ctx.extractions() {
+        let extractions = match self.ctx.all_key_usages() {
             Some(e) => e,
             None => return (fixable, unfixable),
         };

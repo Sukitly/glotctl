@@ -10,7 +10,6 @@ use crate::{
     commands::{
         check::{find_orphan_keys, find_unused_keys},
         context::{CheckContext, MessageData},
-        shared,
     },
     extraction::UnresolvedKeyReason,
     issue::{
@@ -89,10 +88,7 @@ impl CleanRunner {
         // Parse all source files first
         let mut issues: Vec<Issue> = self.ctx.ensure_parsed_files();
 
-        // Load registries
-        let (registries, file_imports) = shared::build_registries(&self.ctx);
-        self.ctx.set_registries(registries);
-        self.ctx.set_file_imports(file_imports);
+        self.ctx.ensure_registries()?;
 
         // Load messages
         let (messages, message_warnings) = self.load_messages()?;
@@ -128,11 +124,11 @@ impl CleanRunner {
         self.ctx.ensure_extractions()?;
 
         // Collect used keys
-        let used_keys = shared::collect_used_keys(&self.ctx);
+        let used_keys = self.ctx.collect_used_keys();
         self.ctx.set_used_keys(used_keys);
 
         // Collect unresolved key issues
-        let extractions = self.ctx.extractions().unwrap();
+        let extractions = self.ctx.all_key_usages().unwrap();
         for file_usages in extractions.values() {
             for unresolved in &file_usages.unresolved {
                 // Skip UnknownNamespace - those become UntrackedNamespace issues

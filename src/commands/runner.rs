@@ -156,7 +156,7 @@ impl CheckRunner {
             if self.ctx.verbose {
                 eprintln!("Running check: missing");
             }
-            let extractions = self.ctx.extractions().expect("extractions must be loaded");
+            let extractions = self.ctx.all_key_usages().expect("extractions must be loaded");
             let messages = self.ctx.messages().expect("messages must be loaded");
             let registries = self.ctx.registries().expect("registries must be loaded");
             let primary_messages = messages
@@ -281,7 +281,7 @@ impl CheckRunner {
             if self.ctx.verbose {
                 eprintln!("Running check: untranslated");
             }
-            let extractions = self.ctx.extractions().expect("extractions must be loaded");
+            let extractions = self.ctx.all_key_usages().expect("extractions must be loaded");
             let messages = self.ctx.messages().expect("messages must be loaded");
             let primary_messages = messages
                 .primary_messages
@@ -334,7 +334,7 @@ impl CheckRunner {
             if self.ctx.verbose {
                 eprintln!("Running check: type_mismatch");
             }
-            let extractions = self.ctx.extractions().expect("extractions must be loaded");
+            let extractions = self.ctx.all_key_usages().expect("extractions must be loaded");
             let messages = self.ctx.messages().expect("messages must be loaded");
             let primary_messages = messages
                 .primary_messages
