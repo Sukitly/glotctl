@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use crate::{
     commands::context::CheckContext,
     parsers::json::MessageMap,
-    rules::helpers::{KeyUsageMap, MAX_KEY_USAGES, build_key_usage_map, get_usages_for_key},
+    rules::helpers::{KeyUsageMap, build_key_usage_map, get_usages_for_key},
     types::{
         context::{MessageContext, MessageLocation},
         issue::ReplicaLagIssue,
@@ -57,7 +57,7 @@ pub fn check_replica_lags(
             if missing_in.is_empty() {
                 None
             } else {
-                let (usages, _total) = get_usages_for_key(key_usages, key, MAX_KEY_USAGES);
+                let usages = get_usages_for_key(key_usages, key);
 
                 Some(ReplicaLagIssue {
                     context: MessageContext::new(

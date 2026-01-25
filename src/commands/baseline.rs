@@ -91,7 +91,7 @@ pub fn baseline(cmd: BaselineCommand) -> Result<RunResult> {
         }
         for issue in &untranslated_issues {
             for usage in &issue.usages {
-                files.insert(usage.file_path());
+                files.insert(usage.context.file_path());
             }
         }
 

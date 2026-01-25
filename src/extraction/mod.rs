@@ -36,4 +36,4 @@ pub mod schema;
 pub mod utils;
 
 // Re-export commonly used types from results module
-pub use results::{AllKeyUsages, UnresolvedKeyReason, UnresolvedKeyUsage};
+pub use results::AllKeyUsages;

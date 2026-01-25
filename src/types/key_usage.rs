@@ -76,7 +76,7 @@ pub struct SchemaSource {
 ///
 /// This represents a single `t("key")` or dynamic key call that was
 /// successfully resolved to one or more translation keys.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedKeyUsage {
     /// The resolved full key.
     pub key: FullKey,

@@ -9,7 +9,10 @@ use enum_dispatch::enum_dispatch;
 
 use crate::types::context::ValueType;
 
-use super::context::{LocaleTypeMismatch, MessageContext, SourceContext};
+use super::{
+    context::{LocaleTypeMismatch, MessageContext, SourceContext},
+    key_usage::ResolvedKeyUsage,
+};
 
 // ============================================================
 // Severity and Rule
@@ -201,7 +204,7 @@ pub struct ReplicaLagIssue {
     /// Locales where this key is missing.
     pub missing_in: Vec<String>,
     /// Locations where this key is used in code.
-    pub usages: Vec<SourceContext>,
+    pub usages: Vec<ResolvedKeyUsage>,
 }
 
 impl ReplicaLagIssue {
@@ -223,7 +226,7 @@ pub struct UntranslatedIssue {
     /// Locales where the value is identical to primary.
     pub identical_in: Vec<String>,
     /// Locations where this key is used in code.
-    pub usages: Vec<SourceContext>,
+    pub usages: Vec<ResolvedKeyUsage>,
 }
 
 impl UntranslatedIssue {
@@ -247,7 +250,7 @@ pub struct TypeMismatchIssue {
     /// Locales with mismatched types.
     pub mismatched_in: Vec<LocaleTypeMismatch>,
     /// Locations where this key is used in code.
-    pub usages: Vec<SourceContext>,
+    pub usages: Vec<ResolvedKeyUsage>,
 }
 
 impl TypeMismatchIssue {
@@ -374,7 +377,7 @@ pub trait Report {
     }
 
     /// Usage locations (for replica-lag, untranslated, type-mismatch).
-    fn usages(&self) -> &[SourceContext] {
+    fn usages(&self) -> &[ResolvedKeyUsage] {
         &[]
     }
 }
@@ -516,7 +519,7 @@ impl Report for ReplicaLagIssue {
         ))
     }
 
-    fn usages(&self) -> &[SourceContext] {
+    fn usages(&self) -> &[ResolvedKeyUsage] {
         &self.usages
     }
 }
@@ -546,7 +549,7 @@ impl Report for UntranslatedIssue {
         ))
     }
 
-    fn usages(&self) -> &[SourceContext] {
+    fn usages(&self) -> &[ResolvedKeyUsage] {
         &self.usages
     }
 }
@@ -581,7 +584,7 @@ impl Report for TypeMismatchIssue {
         ))
     }
 
-    fn usages(&self) -> &[SourceContext] {
+    fn usages(&self) -> &[ResolvedKeyUsage] {
         &self.usages
     }
 }
@@ -781,17 +784,26 @@ mod tests {
 
     #[test]
     fn test_replica_lag_issue() {
+        use super::super::key_usage::FullKey;
+        use std::collections::HashSet;
+
         let loc = MessageLocation::new("./messages/en.json", 5, 3);
         let ctx = MessageContext::new(loc, "Common.submit", "Submit");
 
         let usage_loc = SourceLocation::new("./src/Button.tsx", 25, 10);
         let usage_ctx = SourceContext::new(usage_loc, "{t('Common.submit')}", CommentStyle::Jsx);
+        let usage = ResolvedKeyUsage {
+            key: FullKey::new("Common.submit"),
+            context: usage_ctx,
+            suppressed_rules: HashSet::new(),
+            from_schema: None,
+        };
 
         let issue = ReplicaLagIssue {
             context: ctx,
             primary_locale: "en".to_string(),
             missing_in: vec!["zh".to_string(), "ja".to_string()],
-            usages: vec![usage_ctx],
+            usages: vec![usage],
         };
 
         assert_eq!(ReplicaLagIssue::severity(), Severity::Error);

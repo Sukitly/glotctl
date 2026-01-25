@@ -12,14 +12,13 @@ use std::collections::HashMap;
 
 use crate::{
     commands::context::CheckContext,
+    extraction::collect::SuppressibleRule,
     parsers::json::MessageMap,
-    rules::{
-        build_key_disable_map, build_key_usage_map,
-        helpers::{KeyDisableMap, KeyUsageMap, MAX_KEY_USAGES, get_usages_for_key},
-    },
+    rules::{build_key_usage_map, helpers::KeyUsageMap},
     types::{
         context::{MessageContext, MessageLocation},
         issue::UntranslatedIssue,
+        key_usage::ResolvedKeyUsage,
     },
     utils::contains_alphabetic,
 };
@@ -30,13 +29,11 @@ pub fn check_untranslated_issues(ctx: &CheckContext) -> Vec<UntranslatedIssue> {
     let all_messages = &ctx.messages().all_messages;
     let key_usages = ctx.all_key_usages();
     let key_usages_map = build_key_usage_map(key_usages);
-    let key_disable_map = build_key_disable_map(key_usages);
     check_untranslated(
         primary_locale,
         primary_messages,
         all_messages,
         &key_usages_map,
-        &key_disable_map,
     )
 }
 
@@ -50,7 +47,6 @@ pub fn check_untranslated_issues(ctx: &CheckContext) -> Vec<UntranslatedIssue> {
 /// * `primary_messages` - Messages from the primary locale
 /// * `all_messages` - All messages from all locales
 /// * `key_usages` - Map of key to usage locations (for showing where keys are used)
-/// * `key_disable_map` - Map of key to disable stats (for checking if rule is suppressed)
 ///
 /// # Returns
 /// Vector of UntranslatedIssue for keys with identical values across locales
@@ -59,7 +55,6 @@ pub fn check_untranslated(
     primary_messages: &MessageMap,
     all_messages: &HashMap<String, MessageMap>,
     key_usages: &KeyUsageMap,
-    key_disable_map: &KeyDisableMap,
 ) -> Vec<UntranslatedIssue> {
     let mut issues = Vec::new();
 
@@ -69,11 +64,17 @@ pub fn check_untranslated(
             continue;
         }
 
+        // Get all usages and filter out those with untranslated rule suppressed
+        let all_usages = key_usages.get(key).map(|v| v.as_slice()).unwrap_or(&[]);
+        let non_suppressed: Vec<ResolvedKeyUsage> = all_usages
+            .iter()
+            .filter(|u| !u.suppressed_rules.contains(&SuppressibleRule::Untranslated))
+            .cloned()
+            .collect();
+
         // Skip if all usages have untranslated rule disabled
         // (one-vote-veto: if ANY usage is not disabled, report the issue)
-        if let Some(stats) = key_disable_map.get(key)
-            && stats.all_disabled()
-        {
+        if non_suppressed.is_empty() && !all_usages.is_empty() {
             continue;
         }
 
@@ -89,7 +90,7 @@ pub fn check_untranslated(
         identical_in.sort();
 
         if !identical_in.is_empty() {
-            let (usages, _total) = get_usages_for_key(key_usages, key, MAX_KEY_USAGES);
+            let usages: Vec<ResolvedKeyUsage> = non_suppressed.into_iter().collect();
 
             issues.push(UntranslatedIssue {
                 context: MessageContext::new(
@@ -119,8 +120,16 @@ pub fn check_untranslated(
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use super::*;
-    use crate::parsers::json::{MessageEntry, ValueType};
+    use crate::{
+        parsers::json::{MessageEntry, ValueType},
+        types::{
+            context::{CommentStyle, SourceContext, SourceLocation},
+            key_usage::FullKey,
+        },
+    };
 
     fn create_message_map(file: &str, entries: &[(&str, &str)]) -> MessageMap {
         entries
@@ -140,6 +149,32 @@ mod tests {
             .collect()
     }
 
+    fn make_usage(key: &str, file: &str, line: usize) -> ResolvedKeyUsage {
+        ResolvedKeyUsage {
+            key: FullKey::new(key),
+            context: SourceContext::new(
+                SourceLocation::new(file, line, 1),
+                format!("t('{}')", key),
+                CommentStyle::Jsx,
+            ),
+            suppressed_rules: HashSet::new(),
+            from_schema: None,
+        }
+    }
+
+    fn make_suppressed_usage(key: &str, file: &str, line: usize) -> ResolvedKeyUsage {
+        ResolvedKeyUsage {
+            key: FullKey::new(key),
+            context: SourceContext::new(
+                SourceLocation::new(file, line, 1),
+                format!("t('{}')", key),
+                CommentStyle::Jsx,
+            ),
+            suppressed_rules: [SuppressibleRule::Untranslated].into_iter().collect(),
+            from_schema: None,
+        }
+    }
+
     #[test]
     fn test_check_untranslated_none() {
         let primary_messages = create_message_map("en.json", &[("Common.submit", "Submit")]);
@@ -151,15 +186,8 @@ mod tests {
         );
 
         let key_usages = KeyUsageMap::new();
-        let key_disable_map = KeyDisableMap::new();
 
-        let issues = check_untranslated(
-            "en",
-            &primary_messages,
-            &all_messages,
-            &key_usages,
-            &key_disable_map,
-        );
+        let issues = check_untranslated("en", &primary_messages, &all_messages, &key_usages);
         assert!(issues.is_empty());
     }
 
@@ -174,15 +202,8 @@ mod tests {
         );
 
         let key_usages = KeyUsageMap::new();
-        let key_disable_map = KeyDisableMap::new();
 
-        let issues = check_untranslated(
-            "en",
-            &primary_messages,
-            &all_messages,
-            &key_usages,
-            &key_disable_map,
-        );
+        let issues = check_untranslated("en", &primary_messages, &all_messages, &key_usages);
         assert_eq!(issues.len(), 1);
         assert_eq!(issues[0].context.key, "Common.ok");
         assert_eq!(issues[0].identical_in, vec!["zh"]);
@@ -203,15 +224,8 @@ mod tests {
         );
 
         let key_usages = KeyUsageMap::new();
-        let key_disable_map = KeyDisableMap::new();
 
-        let issues = check_untranslated(
-            "en",
-            &primary_messages,
-            &all_messages,
-            &key_usages,
-            &key_disable_map,
-        );
+        let issues = check_untranslated("en", &primary_messages, &all_messages, &key_usages);
         assert_eq!(issues.len(), 1);
         assert_eq!(issues[0].identical_in, vec!["ja", "zh"]); // Sorted
     }
@@ -227,23 +241,14 @@ mod tests {
         );
 
         let key_usages = KeyUsageMap::new();
-        let key_disable_map = KeyDisableMap::new();
 
-        let issues = check_untranslated(
-            "en",
-            &primary_messages,
-            &all_messages,
-            &key_usages,
-            &key_disable_map,
-        );
+        let issues = check_untranslated("en", &primary_messages, &all_messages, &key_usages);
         // Should skip because value has no alphabetic characters
         assert!(issues.is_empty());
     }
 
     #[test]
-    fn test_check_untranslated_skips_disabled() {
-        use crate::rules::helpers::KeyDisableStats;
-
+    fn test_check_untranslated_skips_all_suppressed() {
         let primary_messages = create_message_map("en.json", &[("Common.ok", "OK")]);
         let mut all_messages = HashMap::new();
         all_messages.insert("en".to_string(), primary_messages.clone());
@@ -252,31 +257,22 @@ mod tests {
             create_message_map("zh.json", &[("Common.ok", "OK")]),
         );
 
-        let key_usages = KeyUsageMap::new();
-        let mut key_disable_map = KeyDisableMap::new();
-        key_disable_map.insert(
+        let mut key_usages = KeyUsageMap::new();
+        key_usages.insert(
             "Common.ok".to_string(),
-            KeyDisableStats {
-                total_usages: 2,
-                disabled_usages: 2, // All disabled
-            },
+            vec![
+                make_suppressed_usage("Common.ok", "a.tsx", 10),
+                make_suppressed_usage("Common.ok", "b.tsx", 20),
+            ],
         );
 
-        let issues = check_untranslated(
-            "en",
-            &primary_messages,
-            &all_messages,
-            &key_usages,
-            &key_disable_map,
-        );
-        // Should skip because all usages are disabled
+        let issues = check_untranslated("en", &primary_messages, &all_messages, &key_usages);
+        // Should skip because all usages are suppressed
         assert!(issues.is_empty());
     }
 
     #[test]
-    fn test_check_untranslated_reports_if_some_not_disabled() {
-        use crate::rules::helpers::KeyDisableStats;
-
+    fn test_check_untranslated_reports_non_suppressed_usages() {
         let primary_messages = create_message_map("en.json", &[("Common.ok", "OK")]);
         let mut all_messages = HashMap::new();
         all_messages.insert("en".to_string(), primary_messages.clone());
@@ -285,24 +281,21 @@ mod tests {
             create_message_map("zh.json", &[("Common.ok", "OK")]),
         );
 
-        let key_usages = KeyUsageMap::new();
-        let mut key_disable_map = KeyDisableMap::new();
-        key_disable_map.insert(
+        let mut key_usages = KeyUsageMap::new();
+        key_usages.insert(
             "Common.ok".to_string(),
-            KeyDisableStats {
-                total_usages: 3,
-                disabled_usages: 2, // Not all disabled
-            },
+            vec![
+                make_suppressed_usage("Common.ok", "a.tsx", 10), // suppressed
+                make_usage("Common.ok", "b.tsx", 20),            // not suppressed
+                make_suppressed_usage("Common.ok", "c.tsx", 30), // suppressed
+            ],
         );
 
-        let issues = check_untranslated(
-            "en",
-            &primary_messages,
-            &all_messages,
-            &key_usages,
-            &key_disable_map,
-        );
-        // Should report because not all usages are disabled
+        let issues = check_untranslated("en", &primary_messages, &all_messages, &key_usages);
+        // Should report because some usages are not suppressed
         assert_eq!(issues.len(), 1);
+        // Should only include the non-suppressed usage
+        assert_eq!(issues[0].usages.len(), 1);
+        assert_eq!(issues[0].usages[0].context.file_path(), "b.tsx");
     }
 }

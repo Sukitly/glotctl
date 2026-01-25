@@ -44,9 +44,9 @@ impl Action<UntranslatedIssue> for InsertDisableComment {
         issues
             .iter()
             .flat_map(|issue| {
-                issue.usages.iter().map(|ctx| Operation::InsertComment {
-                    context: ctx.clone(),
-                    comment: Self::format_comment(Rule::Untranslated, ctx.comment_style),
+                issue.usages.iter().map(|usage| Operation::InsertComment {
+                    context: usage.context.clone(),
+                    comment: Self::format_comment(Rule::Untranslated, usage.context.comment_style),
                 })
             })
             .collect()
@@ -55,8 +55,32 @@ impl Action<UntranslatedIssue> for InsertDisableComment {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use super::*;
-    use crate::types::context::{MessageContext, MessageLocation, SourceContext, SourceLocation};
+    use crate::types::{
+        context::{MessageContext, MessageLocation, SourceContext, SourceLocation},
+        key_usage::{FullKey, ResolvedKeyUsage},
+    };
+
+    fn make_usage(
+        key: &str,
+        file: &str,
+        line: usize,
+        col: usize,
+        style: CommentStyle,
+    ) -> ResolvedKeyUsage {
+        ResolvedKeyUsage {
+            key: FullKey::new(key),
+            context: SourceContext::new(
+                SourceLocation::new(file, line, col),
+                format!("t('{}')", key),
+                style,
+            ),
+            suppressed_rules: HashSet::new(),
+            from_schema: None,
+        }
+    }
 
     #[test]
     fn test_format_comment_js() {
@@ -96,17 +120,14 @@ mod tests {
         let msg_loc = MessageLocation::new("./messages/en.json", 5, 3);
         let msg_ctx = MessageContext::new(msg_loc, "Common.ok", "OK");
 
-        let usage1_loc = SourceLocation::new("./src/a.tsx", 10, 5);
-        let usage1_ctx = SourceContext::new(usage1_loc, "{t('Common.ok')}", CommentStyle::Jsx);
-
-        let usage2_loc = SourceLocation::new("./src/b.tsx", 20, 3);
-        let usage2_ctx = SourceContext::new(usage2_loc, "t('Common.ok')", CommentStyle::Js);
+        let usage1 = make_usage("Common.ok", "./src/a.tsx", 10, 5, CommentStyle::Jsx);
+        let usage2 = make_usage("Common.ok", "./src/b.tsx", 20, 3, CommentStyle::Js);
 
         let issue = UntranslatedIssue {
             context: msg_ctx,
             primary_locale: "en".to_string(),
             identical_in: vec!["zh".to_string()],
-            usages: vec![usage1_ctx, usage2_ctx],
+            usages: vec![usage1, usage2],
         };
 
         let ops = InsertDisableComment::to_operations(&[issue]);

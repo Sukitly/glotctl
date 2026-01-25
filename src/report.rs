@@ -9,8 +9,8 @@ use colored::Colorize;
 use unicode_width::UnicodeWidthStr;
 
 use crate::types::{
-    context::SourceContext,
     issue::{Issue, Report, ReportLocation, Severity},
+    key_usage::ResolvedKeyUsage,
 };
 
 /// Success mark for consistent output formatting.
@@ -231,7 +231,7 @@ fn print_issue<W: Write>(issue: &Issue, writer: &mut W, max_line_width: usize) {
     let _ = writeln!(writer); // Empty line between issues
 }
 
-fn print_usages<W: Write>(usages: &[SourceContext], writer: &mut W, max_line_width: usize) {
+fn print_usages<W: Write>(usages: &[ResolvedKeyUsage], writer: &mut W, max_line_width: usize) {
     let total = usages.len();
     let display_count = total.min(MAX_USAGES_DISPLAY);
 
@@ -250,9 +250,9 @@ fn print_usages<W: Write>(usages: &[SourceContext], writer: &mut W, max_line_wid
             "",
             "=".blue(),
             "used:".bold(),
-            usage.file_path(),
-            usage.line(),
-            usage.col(),
+            usage.context.file_path(),
+            usage.context.line(),
+            usage.context.col(),
             suffix,
             width = max_line_width
         );
@@ -338,16 +338,19 @@ fn compare_issues(a: &Issue, b: &Issue) -> std::cmp::Ordering {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use super::*;
     use crate::types::context::{
-        CommentStyle, LocaleTypeMismatch, MessageContext, MessageLocation, SourceLocation,
-        ValueType,
+        CommentStyle, LocaleTypeMismatch, MessageContext, MessageLocation, SourceContext,
+        SourceLocation, ValueType,
     };
     use crate::types::issue::{
         HardcodedIssue, MissingKeyIssue, OrphanKeyIssue, ParseErrorIssue, ReplicaLagIssue,
         TypeMismatchIssue, UnresolvedKeyIssue, UnresolvedKeyReason, UntranslatedIssue,
         UnusedKeyIssue,
     };
+    use crate::types::key_usage::FullKey;
 
     fn strip_ansi(s: &str) -> String {
         // Simple ANSI escape code stripper for testing
@@ -446,12 +449,18 @@ mod tests {
 
         let usage_loc = SourceLocation::new("./src/Button.tsx", 25, 10);
         let usage_ctx = SourceContext::new(usage_loc, "{t('Common.submit')}", CommentStyle::Jsx);
+        let usage = ResolvedKeyUsage {
+            key: FullKey::new("Common.submit"),
+            context: usage_ctx,
+            suppressed_rules: HashSet::new(),
+            from_schema: None,
+        };
 
         let issue = Issue::ReplicaLag(ReplicaLagIssue {
             context: msg_ctx,
             primary_locale: "en".to_string(),
             missing_in: vec!["zh".to_string(), "ja".to_string()],
-            usages: vec![usage_ctx],
+            usages: vec![usage],
         });
 
         let mut output = Vec::new();
@@ -654,10 +663,16 @@ mod tests {
         let msg_ctx = MessageContext::new(msg_loc, "Common.key", "Value");
 
         // Create 5 usages (more than MAX_USAGES_DISPLAY = 3)
-        let usages: Vec<SourceContext> = (1..=5)
+        let usages: Vec<ResolvedKeyUsage> = (1..=5)
             .map(|i| {
                 let loc = SourceLocation::new(format!("./src/file{}.tsx", i), i * 10, 5);
-                SourceContext::new(loc, "t('Common.key')", CommentStyle::Js)
+                let ctx = SourceContext::new(loc, "t('Common.key')", CommentStyle::Js);
+                ResolvedKeyUsage {
+                    key: FullKey::new("Common.key"),
+                    context: ctx,
+                    suppressed_rules: HashSet::new(),
+                    from_schema: None,
+                }
             })
             .collect();
 

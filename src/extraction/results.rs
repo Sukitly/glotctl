@@ -7,4 +7,4 @@
 //! - `UnresolvedKeyUsage`: a key that could not be statically resolved
 
 // Re-export the key usage types
-pub use crate::types::key_usage::{AllKeyUsages, UnresolvedKeyReason, UnresolvedKeyUsage};
+pub use crate::types::key_usage::AllKeyUsages;

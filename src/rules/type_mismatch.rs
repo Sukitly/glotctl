@@ -18,7 +18,7 @@ use crate::{
     parsers::json::MessageMap,
     rules::{
         build_key_usage_map,
-        helpers::{KeyUsageMap, MAX_KEY_USAGES, get_usages_for_key},
+        helpers::{KeyUsageMap, get_usages_for_key},
     },
     types::{
         context::{LocaleTypeMismatch, MessageContext, MessageLocation, ValueType},
@@ -87,7 +87,7 @@ pub fn check_type_mismatch(
         mismatched_in.sort();
 
         if !mismatched_in.is_empty() {
-            let (usages, _total) = get_usages_for_key(key_usages, key, MAX_KEY_USAGES);
+            let usages = get_usages_for_key(key_usages, key);
 
             issues.push(TypeMismatchIssue {
                 context: MessageContext::new(

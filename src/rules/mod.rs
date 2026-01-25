@@ -6,7 +6,7 @@
 //!
 //! ## Module Structure
 //!
-//! - `helpers`: Shared types and utility functions (KeyUsageMap, KeyDisableMap, etc.)
+//! - `helpers`: Shared types and utility functions (KeyUsageMap, etc.)
 //! - `hardcoded`: Hardcoded text detection
 //! - `missing_key`: Missing translation key detection
 //! - `unresolved_key`: Unresolved (dynamic) key detection
@@ -27,4 +27,4 @@ pub mod untranslated;
 pub mod unused;
 
 // Re-export all check functions for convenient access
-pub use helpers::{build_key_disable_map, build_key_usage_map};
+pub use helpers::build_key_usage_map;
