@@ -6,13 +6,22 @@
 use std::collections::HashMap;
 
 use crate::{
+    commands::context::CheckContext,
     parsers::json::MessageMap,
-    rules::helpers::{get_usages_for_key, KeyUsageMap, MAX_KEY_USAGES},
+    rules::helpers::{KeyUsageMap, MAX_KEY_USAGES, build_key_usage_map, get_usages_for_key},
     types::{
         context::{MessageContext, MessageLocation},
         issue::ReplicaLagIssue,
     },
 };
+
+pub fn check_replica_lag_issues(ctx: &CheckContext) -> Vec<ReplicaLagIssue> {
+    let primary_locale = &ctx.config.primary_locale;
+    let all_messages = &ctx.messages().all_messages;
+    let key_usages = ctx.all_key_usages();
+    let key_usages = build_key_usage_map(key_usages);
+    check_replica_lags(primary_locale, all_messages, &key_usages)
+}
 
 /// Check for replica lag issues.
 ///
@@ -25,7 +34,7 @@ use crate::{
 ///
 /// # Returns
 /// Vector of ReplicaLagIssue for keys missing in other locales
-pub fn check_replica_lag(
+pub fn check_replica_lags(
     primary_locale: &str,
     all_messages: &HashMap<String, MessageMap>,
     key_usages: &KeyUsageMap,
@@ -113,7 +122,7 @@ mod tests {
         );
 
         let key_usages = KeyUsageMap::new();
-        let issues = check_replica_lag("en", &all_messages, &key_usages);
+        let issues = check_replica_lags("en", &all_messages, &key_usages);
         assert!(issues.is_empty());
     }
 
@@ -130,7 +139,7 @@ mod tests {
         );
 
         let key_usages = KeyUsageMap::new();
-        let issues = check_replica_lag("en", &all_messages, &key_usages);
+        let issues = check_replica_lags("en", &all_messages, &key_usages);
 
         assert_eq!(issues.len(), 1);
         assert_eq!(issues[0].context.key, "Common.cancel");
@@ -148,7 +157,7 @@ mod tests {
         all_messages.insert("ja".to_string(), create_message_map(&[]));
 
         let key_usages = KeyUsageMap::new();
-        let issues = check_replica_lag("en", &all_messages, &key_usages);
+        let issues = check_replica_lags("en", &all_messages, &key_usages);
 
         assert_eq!(issues.len(), 1);
         assert_eq!(issues[0].context.key, "Common.submit");
@@ -165,7 +174,7 @@ mod tests {
         );
 
         let key_usages = KeyUsageMap::new();
-        let issues = check_replica_lag("en", &all_messages, &key_usages);
+        let issues = check_replica_lags("en", &all_messages, &key_usages);
         assert!(issues.is_empty());
     }
 
@@ -178,7 +187,7 @@ mod tests {
         );
 
         let key_usages = KeyUsageMap::new();
-        let issues = check_replica_lag("en", &all_messages, &key_usages);
+        let issues = check_replica_lags("en", &all_messages, &key_usages);
         assert!(issues.is_empty());
     }
 
@@ -196,7 +205,7 @@ mod tests {
         all_messages.insert("zh".to_string(), create_message_map(&[]));
 
         let key_usages = KeyUsageMap::new();
-        let issues = check_replica_lag("en", &all_messages, &key_usages);
+        let issues = check_replica_lags("en", &all_messages, &key_usages);
 
         assert_eq!(issues.len(), 3);
         // Should be sorted by line number (which corresponds to order in create_message_map)

@@ -22,8 +22,8 @@ use swc_ecma_ast::{
 use swc_ecma_visit::{Visit, VisitWith};
 
 use crate::extraction::collect::SuppressibleRule;
-use crate::issue::{HardcodedIssue, SourceLocation};
-use crate::types::context::{CommentStyle, SourceContext, SourceLocation as TypesSourceLocation};
+use crate::types::context::{CommentStyle, SourceContext, SourceLocation};
+use crate::types::issue::HardcodedIssue;
 use crate::utils::contains_alphabetic;
 
 use super::{
@@ -201,11 +201,16 @@ impl<'a> FileAnalyzer<'a> {
         let use_jsx_comment = self.should_use_jsx_comment(&source_line);
 
         self.hardcoded_issues.push(HardcodedIssue {
-            location: SourceLocation::new(self.file_path, loc.line)
-                .with_col(loc.col_display + 1)
-                .with_jsx_context(use_jsx_comment),
+            context: SourceContext::new(
+                SourceLocation::new(self.file_path, loc.line, loc.col_display + 1),
+                source_line,
+                if use_jsx_comment {
+                    CommentStyle::Jsx
+                } else {
+                    CommentStyle::Js
+                },
+            ),
             text: value.to_owned(),
-            source_line: Some(source_line),
         });
     }
 
@@ -273,7 +278,7 @@ impl<'a> FileAnalyzer<'a> {
         let comment_style = self.compute_comment_style(&source_line);
 
         SourceContext::new(
-            TypesSourceLocation::new(self.file_path, loc.line, loc.col_display + 1),
+            SourceLocation::new(self.file_path, loc.line, loc.col_display + 1),
             source_line,
             comment_style,
         )

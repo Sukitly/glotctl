@@ -20,11 +20,11 @@ use crate::{
         resolve::resolve_translation_calls,
     },
     file_scanner::scan_files,
-    issue::{HardcodedIssue, Issue, ParseErrorIssue},
     parsers::{
         json::{MessageMap, scan_message_files},
         jsx::{ParsedJSX, parse_jsx_source},
     },
+    types::issue::{HardcodedIssue, ParseErrorIssue},
 };
 
 use std::collections::HashMap;
@@ -39,26 +39,20 @@ pub type AllHardcodedIssues = HashMap<String, Vec<HardcodedIssue>>;
 /// Aggregated message data from all locale files.
 pub struct MessageData {
     pub all_messages: HashMap<String, MessageMap>,
-    pub primary_messages: Option<MessageMap>,
+    pub primary_messages: MessageMap,
 }
 
-/// Pure data container for check operations.
-///
-/// # Responsibility Separation
-///
-/// This struct follows a clear separation of concerns:
-/// - **CheckContext**: Data container - holds configuration and cached data
-/// - **CheckRunner/CleanRunner**: Orchestrators - load data and coordinate checks
-/// - **shared module**: Data loading - build_registries, build_extractions, etc.
-///
-/// # Usage Pattern
-///
-/// 1. Create with `CheckContext::new(&args)`
-/// 2. Runner calls `shared::build_*` functions to load data
-/// 3. Runner calls `ctx.set_*` to store data in OnceCell fields
-/// 4. Runner calls `ctx.get_*` to retrieve data for checks
-///
-/// Data is loaded lazily and cached - once set, it cannot be changed.
+pub struct SourceMetadata {
+    pub registries: Registries,
+    pub file_imports: AllFileImports,
+    pub file_comments: AllFileComments,
+}
+
+pub struct ResolvedData {
+    pub key_usages: AllKeyUsages,
+    pub hardcoded_issues: AllHardcodedIssues,
+}
+
 pub struct CheckContext {
     // Basic data (set at initialization)
     pub config: Config,
@@ -67,15 +61,12 @@ pub struct CheckContext {
     pub ignore_texts: HashSet<String>,
     pub verbose: bool,
 
-    // Lazy-loaded data (set by CheckRunner when needed)
     parsed_files: OnceCell<HashMap<String, ParsedJSX>>,
-    registries: OnceCell<Registries>,
-    file_imports: OnceCell<AllFileImports>,
+    parsed_files_errors: OnceCell<Vec<ParseErrorIssue>>,
+    source_metadata: OnceCell<SourceMetadata>,
+    resolved_data: OnceCell<ResolvedData>,
     messages: OnceCell<MessageData>,
-    extractions: OnceCell<AllKeyUsages>,
-    hardcoded_issues: OnceCell<AllHardcodedIssues>,
     used_keys: OnceCell<HashSet<String>>,
-    file_comments: OnceCell<AllFileComments>,
 }
 
 impl CheckContext {
@@ -124,270 +115,158 @@ impl CheckContext {
             ignore_texts,
             verbose: args.verbose,
             parsed_files: OnceCell::new(),
-            registries: OnceCell::new(),
-            file_imports: OnceCell::new(),
+            parsed_files_errors: OnceCell::new(),
+            source_metadata: OnceCell::new(),
+            resolved_data: OnceCell::new(),
             messages: OnceCell::new(),
-            extractions: OnceCell::new(),
-            hardcoded_issues: OnceCell::new(),
             used_keys: OnceCell::new(),
-            file_comments: OnceCell::new(),
         })
     }
 
-    // ============================================================
-    // Getters - return Option to indicate whether data is loaded
-    // ============================================================
+    pub fn parsed_files(&self) -> &HashMap<String, ParsedJSX> {
+        self.parsed_files.get_or_init(|| {
+            let mut parsed = HashMap::new();
+            let mut errors = Vec::new();
 
-    pub fn parsed_files(&self) -> Option<&HashMap<String, ParsedJSX>> {
-        self.parsed_files.get()
-    }
-
-    pub fn registries(&self) -> Option<&Registries> {
-        self.registries.get()
-    }
-
-    pub fn file_imports(&self) -> Option<&AllFileImports> {
-        self.file_imports.get()
-    }
-
-    pub fn messages(&self) -> Option<&MessageData> {
-        self.messages.get()
-    }
-
-    pub fn all_key_usages(&self) -> Option<&AllKeyUsages> {
-        self.extractions.get()
-    }
-
-    pub fn hardcoded_issues(&self) -> Option<&AllHardcodedIssues> {
-        self.hardcoded_issues.get()
-    }
-
-    pub fn used_keys(&self) -> Option<&HashSet<String>> {
-        self.used_keys.get()
-    }
-
-    pub fn file_comments(&self) -> Option<&AllFileComments> {
-        self.file_comments.get()
-    }
-
-    // ============================================================
-    // Setters - called by CheckRunner to populate data
-    // ============================================================
-
-    pub(crate) fn set_hardcoded_issues(&self, data: AllHardcodedIssues) {
-        let _ = self.hardcoded_issues.set(data);
-    }
-
-    pub fn set_parsed_files(&self, data: HashMap<String, ParsedJSX>) {
-        let result = self.parsed_files.set(data);
-        debug_assert!(result.is_ok(), "parsed_files already initialized");
-    }
-
-    pub fn set_registries(&self, data: Registries) {
-        let result = self.registries.set(data);
-        debug_assert!(result.is_ok(), "registries already initialized");
-    }
-
-    pub fn set_file_imports(&self, data: AllFileImports) {
-        let result = self.file_imports.set(data);
-        debug_assert!(result.is_ok(), "file_imports already initialized");
-    }
-
-    pub fn set_messages(&self, data: MessageData) {
-        let result = self.messages.set(data);
-        debug_assert!(result.is_ok(), "messages already initialized");
-    }
-
-    pub fn set_all_key_usages(&self, data: AllKeyUsages) {
-        let result = self.extractions.set(data);
-        debug_assert!(result.is_ok(), "extractions already initialized");
-    }
-
-    pub fn set_used_keys(&self, data: HashSet<String>) {
-        let result = self.used_keys.set(data);
-        debug_assert!(result.is_ok(), "used_keys already initialized");
-    }
-
-    pub fn set_file_comments(&self, data: AllFileComments) {
-        let result = self.file_comments.set(data);
-        debug_assert!(result.is_ok(), "file_comments already initialized");
-    }
-
-    // ============================================================
-    // Data Loading Logic (Self-Populating)
-    // ============================================================
-
-    /// Ensure all source files are parsed and cached.
-    ///
-    /// This is the primary entry point for parsing. All other operations
-    /// that need AST access should call this first, then use `get_parsed()`.
-    ///
-    /// Returns parse errors as Issues (if any files failed to parse).
-    pub fn ensure_parsed_files(&self) -> Vec<Issue> {
-        if self.parsed_files.get().is_some() {
-            return Vec::new();
-        }
-
-        let mut parsed = HashMap::new();
-        let mut errors = Vec::new();
-
-        for file_path in &self.files {
-            match std::fs::read_to_string(file_path) {
-                Ok(code) => match parse_jsx_source(code, file_path) {
-                    Ok(p) => {
-                        parsed.insert(file_path.clone(), p);
-                    }
+            for file_path in &self.files {
+                match std::fs::read_to_string(file_path) {
+                    Ok(code) => match parse_jsx_source(code, file_path) {
+                        Ok(p) => {
+                            parsed.insert(file_path.clone(), p);
+                        }
+                        Err(e) => {
+                            if self.verbose {
+                                eprintln!("Warning: {} - {}", file_path, e);
+                            }
+                            errors.push(ParseErrorIssue {
+                                file_path: file_path.clone(),
+                                error: e.to_string(),
+                            });
+                        }
+                    },
                     Err(e) => {
                         if self.verbose {
                             eprintln!("Warning: {} - {}", file_path, e);
                         }
-                        errors.push(Issue::ParseError(ParseErrorIssue {
+                        errors.push(ParseErrorIssue {
                             file_path: file_path.clone(),
-                            error: e.to_string(),
-                        }));
+                            error: format!("Failed to read file: {}", e),
+                        });
                     }
-                },
-                Err(e) => {
-                    if self.verbose {
-                        eprintln!("Warning: {} - {}", file_path, e);
-                    }
-                    errors.push(Issue::ParseError(ParseErrorIssue {
-                        file_path: file_path.clone(),
-                        error: format!("Failed to read file: {}", e),
-                    }));
                 }
             }
-        }
 
-        self.set_parsed_files(parsed);
-        errors
+            self.parsed_files_errors.set(errors);
+            parsed
+        })
     }
 
-    /// Ensure registries and file_imports are loaded.
-    ///
-    /// Returns parse errors as Issues (if any files failed to parse).
-    pub fn ensure_registries(&self) -> Result<Vec<Issue>> {
-        // Check both registries and file_imports together (they are always set as a pair)
-        if self.registries.get().is_some() && self.file_imports.get().is_some() {
-            return Ok(Vec::new());
-        }
-
-        // Ensure files are parsed first
-        let errors = self.ensure_parsed_files();
-
-        let available_keys = self
-            .messages()
-            .and_then(|m| m.primary_messages.as_ref())
-            .map(|m| m.keys().cloned().collect())
-            .unwrap_or_default();
-        let parsed_files = self
-            .parsed_files()
-            .expect("parsed_files must be loaded before build_file_analysis");
-
-        // Phase 1: Collect registries AND comments (Biome-style: comments collected first)
-        let (registries, file_imports, file_comments) =
-            collect_registries_and_comments(parsed_files, &available_keys);
-        self.set_registries(registries);
-        self.set_file_imports(file_imports);
-        self.set_file_comments(file_comments);
-        Ok(errors)
+    pub fn parsed_files_errors(&self) -> &Vec<ParseErrorIssue> {
+        &self.parsed_files_errors.get_or_init(|| Vec::new())
     }
 
-    /// Ensure messages are loaded.
-    pub fn ensure_messages(&self) -> Result<()> {
-        if self.messages.get().is_some() {
-            return Ok(());
-        }
-
-        let message_dir = self.resolved_messages_dir();
-        let scan_results = scan_message_files(&message_dir)?;
-
-        let primary_messages = scan_results
-            .messages
-            .get(&self.config.primary_locale)
-            .cloned();
-
-        let data = MessageData {
-            all_messages: scan_results.messages,
-            primary_messages,
-        };
-
-        self.set_messages(data);
-        Ok(())
+    pub fn registries(&self) -> &Registries {
+        &self.source_metadata().registries
     }
 
-    /// Internal: Ensure both extractions and hardcoded_issues are loaded.
-    /// This performs a single AST traversal to generate both results.
-    fn ensure_file_analysis(&self) -> Result<()> {
-        // If both are already loaded, nothing to do
-        if self.extractions.get().is_some() && self.hardcoded_issues.get().is_some() {
-            return Ok(());
-        }
-
-        // Dependencies
-        self.ensure_registries()?;
-        // Messages are optional - needed for extraction but not for hardcoded detection
-        let _ = self.ensure_messages();
-
-        let parsed_files = self
-            .parsed_files()
-            .expect("parsed_files must be loaded before build_file_analysis");
-
-        let available_keys = self
-            .messages()
-            .and_then(|m| m.primary_messages.as_ref())
-            .map(|m| m.keys().cloned().collect())
-            .unwrap_or_default();
-
-        let registries = self
-            .registries()
-            .expect("registries must be loaded before build_file_analysis");
-        let file_imports = self
-            .file_imports()
-            .expect("file_imports must be loaded before build_file_analysis");
-        let file_comments = self
-            .file_comments()
-            .expect("file_comments must be loaded before build_file_analysis");
-
-        let (key_usages, hardcoded_issues) = extract_from_files(
-            &self.files,
-            parsed_files,
-            registries,
-            file_imports,
-            file_comments,
-            &self.config.checked_attributes,
-            &self.ignore_texts,
-            &available_keys,
-        );
-
-        // Single traversal produces both results
-        self.set_all_key_usages(key_usages);
-        self.set_hardcoded_issues(hardcoded_issues);
-        Ok(())
+    pub fn file_imports(&self) -> &AllFileImports {
+        &self.source_metadata().file_imports
     }
 
-    /// Ensure extractions are loaded for all files.
-    pub fn ensure_extractions(&self) -> Result<()> {
-        self.ensure_file_analysis()
+    pub fn file_comments(&self) -> &AllFileComments {
+        &self.source_metadata().file_comments
     }
 
-    /// Ensure hardcoded issues are loaded for all files.
-    pub fn ensure_hardcoded_issues(&self) -> Result<()> {
-        self.ensure_file_analysis()
+    pub fn messages(&self) -> &MessageData {
+        &self.messages.get_or_init(|| {
+            let message_dir = self.resolved_messages_dir();
+            let scan_results = scan_message_files(&message_dir).expect("Failed to scan messages");
+
+            let primary_messages = scan_results
+                .messages
+                .get(&self.config.primary_locale)
+                .expect("Primary locale messages not found")
+                .clone();
+
+            let data = MessageData {
+                all_messages: scan_results.messages,
+                primary_messages,
+            };
+            data
+        })
     }
 
-    /// Ensure used_keys are collected.
-    pub fn ensure_used_keys(&self) -> Result<()> {
-        if self.used_keys.get().is_some() {
-            return Ok(());
-        }
+    pub fn all_key_usages(&self) -> &AllKeyUsages {
+        &self.resolved_data().key_usages
+    }
 
-        // used_keys depends on extractions
-        self.ensure_extractions()?;
+    pub fn hardcoded_issues(&self) -> &AllHardcodedIssues {
+        &self.resolved_data().hardcoded_issues
+    }
 
-        let used_keys = self.collect_used_keys();
-        self.set_used_keys(used_keys);
-        Ok(())
+    pub fn used_keys(&self) -> &HashSet<String> {
+        self.used_keys.get_or_init(|| {
+            let mut used_keys = HashSet::new();
+            let extractions = self.all_key_usages();
+            for file_usages in extractions.values() {
+                for resolved in &file_usages.resolved {
+                    used_keys.insert(resolved.key.as_str().to_string());
+                }
+            }
+            used_keys
+        })
+    }
+
+    pub fn available_keys(&self) -> HashSet<String> {
+        self.messages().primary_messages.keys().cloned().collect()
+    }
+
+    pub fn source_metadata(&self) -> &SourceMetadata {
+        self.source_metadata.get_or_init(|| {
+            let available_keys = self.available_keys();
+
+            let parsed_files = self.parsed_files();
+
+            // Phase 1: Collect registries AND comments (Biome-style: comments collected first)
+            let (registries, file_imports, file_comments) =
+                collect_registries_and_comments(parsed_files, &available_keys);
+
+            let source_metadata = SourceMetadata {
+                registries,
+                file_imports,
+                file_comments,
+            };
+            source_metadata
+        })
+    }
+
+    fn resolved_data(&self) -> &ResolvedData {
+        self.resolved_data.get_or_init(|| {
+            let parsed_files = self.parsed_files();
+
+            let available_keys = self.available_keys();
+
+            let registries = self.registries();
+            let file_imports = self.file_imports();
+            let file_comments = self.file_comments();
+
+            let (key_usages, hardcoded_issues) = extract_from_files(
+                &self.files,
+                parsed_files,
+                registries,
+                file_imports,
+                file_comments,
+                &self.config.checked_attributes,
+                &self.ignore_texts,
+                &available_keys,
+            );
+
+            let resolved_data = ResolvedData {
+                key_usages,
+                hardcoded_issues,
+            };
+            resolved_data
+        })
     }
 
     // ============================================================
@@ -415,18 +294,8 @@ impl CheckContext {
             }
         }
     }
-
-    pub fn collect_used_keys(&self) -> HashSet<String> {
-        let mut used_keys = HashSet::new();
-        let extractions = self.all_key_usages().expect("extractions must be loaded");
-        for file_usages in extractions.values() {
-            for resolved in &file_usages.resolved {
-                used_keys.insert(resolved.key.as_str().to_string());
-            }
-        }
-        used_keys
-    }
 }
+
 fn collect_registries_and_comments(
     parsed_files: &HashMap<String, ParsedJSX>,
     _available_keys: &std::collections::HashSet<String>,
@@ -627,7 +496,6 @@ fn extract_from_files(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
 
     /// Create a minimal CheckContext for testing without file system dependencies.
     fn create_test_context(root_dir: &str, messages_dir: &str) -> CheckContext {
@@ -641,13 +509,11 @@ mod tests {
             ignore_texts: HashSet::new(),
             verbose: false,
             parsed_files: OnceCell::new(),
-            registries: OnceCell::new(),
-            file_imports: OnceCell::new(),
+            parsed_files_errors: OnceCell::new(),
+            source_metadata: OnceCell::new(),
             messages: OnceCell::new(),
-            extractions: OnceCell::new(),
-            hardcoded_issues: OnceCell::new(),
             used_keys: OnceCell::new(),
-            file_comments: OnceCell::new(),
+            resolved_data: OnceCell::new(),
         }
     }
 
@@ -682,49 +548,5 @@ mod tests {
             ctx.resolved_messages_dir(),
             PathBuf::from("/project/locales")
         );
-    }
-
-    #[test]
-    fn test_oncecell_getters_return_none_initially() {
-        let ctx = create_test_context(".", "./messages");
-        assert!(ctx.registries().is_none());
-        assert!(ctx.file_imports().is_none());
-        assert!(ctx.messages().is_none());
-        assert!(ctx.all_key_usages().is_none());
-        assert!(ctx.used_keys().is_none());
-    }
-
-    #[test]
-    fn test_oncecell_setters_and_getters() {
-        let ctx = create_test_context(".", "./messages");
-
-        // Set and get file_imports
-        let file_imports: AllFileImports = HashMap::new();
-        ctx.set_file_imports(file_imports);
-        assert!(ctx.file_imports().is_some());
-        assert!(ctx.file_imports().unwrap().is_empty());
-
-        // Set and get used_keys
-        let mut used_keys = HashSet::new();
-        used_keys.insert("test.key".to_string());
-        ctx.set_used_keys(used_keys);
-        assert!(ctx.used_keys().is_some());
-        assert!(ctx.used_keys().unwrap().contains("test.key"));
-    }
-
-    #[test]
-    fn test_oncecell_messages_data() {
-        let ctx = create_test_context(".", "./messages");
-
-        let message_data = MessageData {
-            all_messages: HashMap::new(),
-            primary_messages: None,
-        };
-        ctx.set_messages(message_data);
-
-        assert!(ctx.messages().is_some());
-        let messages = ctx.messages().unwrap();
-        assert!(messages.all_messages.is_empty());
-        assert!(messages.primary_messages.is_none());
     }
 }

@@ -10,13 +10,13 @@
 
 use std::collections::HashMap;
 
-use anyhow::Result;
-
 use crate::{
     commands::context::CheckContext,
-    issue::Issue,
     parsers::json::MessageMap,
-    rules::helpers::{KeyDisableMap, KeyUsageMap, MAX_KEY_USAGES, get_usages_for_key},
+    rules::{
+        build_key_disable_map, build_key_usage_map,
+        helpers::{KeyDisableMap, KeyUsageMap, MAX_KEY_USAGES, get_usages_for_key},
+    },
     types::{
         context::{MessageContext, MessageLocation},
         issue::UntranslatedIssue,
@@ -24,95 +24,21 @@ use crate::{
     utils::contains_alphabetic,
 };
 
-// ============================================================
-// DEPRECATED: Legacy Checker trait implementation
-// TODO: Remove after migrating baseline.rs
-// ============================================================
-
-/// Untranslated rule using the Checker trait.
-///
-/// DEPRECATED: Use `check_untranslated()` function directly instead.
-#[allow(deprecated)]
-pub struct UntranslatedRule;
-
-#[allow(deprecated)]
-impl crate::rules::Checker for UntranslatedRule {
-    fn name(&self) -> &str {
-        "untranslated"
-    }
-
-    fn needs_registries(&self) -> bool {
-        true
-    }
-
-    fn needs_messages(&self) -> bool {
-        true
-    }
-
-    fn check(&self, ctx: &CheckContext) -> Result<Vec<Issue>> {
-        ctx.ensure_messages()?;
-        ctx.ensure_extractions()?;
-
-        let messages = ctx.messages().expect("messages must be loaded");
-        let extractions = ctx.all_key_usages().expect("extractions must be loaded");
-        let primary_locale = &ctx.config.primary_locale;
-
-        let Some(primary_messages) = &messages.primary_messages else {
-            return Ok(Vec::new());
-        };
-
-        let key_usages = crate::rules::build_key_usage_map(extractions);
-        let key_disable = crate::rules::build_key_disable_map(extractions);
-
-        let new_issues = check_untranslated(
-            primary_locale,
-            primary_messages,
-            &messages.all_messages,
-            &key_usages,
-            &key_disable,
-        );
-
-        // Convert new issues to old format
-        let issues = new_issues
-            .into_iter()
-            .map(|i| {
-                let usages = i
-                    .usages
-                    .iter()
-                    .map(|u| {
-                        crate::issue::KeyUsage::new(
-                            crate::issue::SourceLocation::new(
-                                &u.location.file_path,
-                                u.location.line,
-                            )
-                            .with_col(u.location.col)
-                            .with_jsx_context(u.comment_style.is_jsx()),
-                        )
-                    })
-                    .collect::<Vec<_>>();
-                let total_usages = usages.len();
-                Issue::Untranslated(crate::issue::UntranslatedIssue {
-                    location: crate::issue::MessageLocation::new(
-                        &i.context.location.file_path,
-                        i.context.location.line,
-                    ),
-                    key: i.context.key,
-                    value: i.context.value,
-                    primary_locale: i.primary_locale,
-                    identical_in: i.identical_in,
-                    usages,
-                    total_usages,
-                })
-            })
-            .collect();
-
-        Ok(issues)
-    }
+pub fn check_untranslated_issues(ctx: &CheckContext) -> Vec<UntranslatedIssue> {
+    let primary_locale = &ctx.config.primary_locale;
+    let primary_messages = &ctx.messages().primary_messages;
+    let all_messages = &ctx.messages().all_messages;
+    let key_usages = ctx.all_key_usages();
+    let key_usages_map = build_key_usage_map(key_usages);
+    let key_disable_map = build_key_disable_map(key_usages);
+    check_untranslated(
+        primary_locale,
+        primary_messages,
+        all_messages,
+        &key_usages_map,
+        &key_disable_map,
+    )
 }
-
-// ============================================================
-// Pure function implementation (new API)
-// ============================================================
 
 /// Check for untranslated values.
 ///

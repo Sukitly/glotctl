@@ -6,12 +6,19 @@
 use std::collections::HashMap;
 
 use crate::{
+    commands::context::CheckContext,
     parsers::json::MessageMap,
     types::{
         context::{MessageContext, MessageLocation},
         issue::OrphanKeyIssue,
     },
 };
+
+pub fn check_orphan_keys_issues(ctx: &CheckContext) -> Vec<OrphanKeyIssue> {
+    let primary_locale = &ctx.config.primary_locale;
+    let all_messages = &ctx.messages().all_messages;
+    check_orphan_keys(primary_locale, all_messages)
+}
 
 /// Check for orphan translation keys.
 ///
@@ -25,7 +32,7 @@ use crate::{
 ///
 /// # Returns
 /// Vector of OrphanKeyIssue for keys missing in primary locale
-pub fn check_orphan_key(
+pub fn check_orphan_keys(
     primary_locale: &str,
     all_messages: &HashMap<String, MessageMap>,
 ) -> Vec<OrphanKeyIssue> {
@@ -99,7 +106,7 @@ mod tests {
             create_message_map("zh.json", &[("Common.submit", "提交")]),
         );
 
-        let issues = check_orphan_key("en", &all_messages);
+        let issues = check_orphan_keys("en", &all_messages);
         assert!(issues.is_empty());
     }
 
@@ -118,7 +125,7 @@ mod tests {
             ),
         );
 
-        let issues = check_orphan_key("en", &all_messages);
+        let issues = check_orphan_keys("en", &all_messages);
         assert_eq!(issues.len(), 1);
         assert_eq!(issues[0].context.key, "Common.orphan");
         assert_eq!(issues[0].locale, "zh");
@@ -146,7 +153,7 @@ mod tests {
             ),
         );
 
-        let issues = check_orphan_key("en", &all_messages);
+        let issues = check_orphan_keys("en", &all_messages);
         assert_eq!(issues.len(), 2);
 
         let keys: Vec<_> = issues.iter().map(|i| i.context.key.as_str()).collect();
@@ -162,7 +169,7 @@ mod tests {
             create_message_map("zh.json", &[("Common.submit", "提交")]),
         );
 
-        let issues = check_orphan_key("en", &all_messages);
+        let issues = check_orphan_keys("en", &all_messages);
         assert!(issues.is_empty());
     }
 
@@ -174,7 +181,7 @@ mod tests {
             create_message_map("en.json", &[("Common.submit", "Submit")]),
         );
 
-        let issues = check_orphan_key("en", &all_messages);
+        let issues = check_orphan_keys("en", &all_messages);
         assert!(issues.is_empty());
     }
 }

@@ -4,13 +4,12 @@ use std::path::Path;
 use anyhow::{Result, bail};
 use colored::Colorize;
 
+use crate::issue::OrphanKeyIssue;
+use crate::parsers::json::MessageMap;
 use crate::{
     RunResult,
     args::CleanArgs,
-    commands::{
-        check::{find_orphan_keys, find_unused_keys},
-        context::{CheckContext, MessageData},
-    },
+    commands::context::{CheckContext, MessageData},
     extraction::UnresolvedKeyReason,
     issue::{
         Issue, IssueReport, MessageLocation, ParseErrorIssue, Rule, SourceLocation,
@@ -20,6 +19,68 @@ use crate::{
     parsers::json::scan_message_files,
     reporter::{FAILURE_MARK, SUCCESS_MARK},
 };
+
+/// Finds translation keys that are defined but never used in the codebase.
+///
+/// # Arguments
+/// * `all_used_keys` - Set of all translation keys found in source code
+/// * `messages` - Map of translation keys to their values
+///
+/// # Returns
+/// Vector of unused keys sorted alphabetically
+pub fn find_unused_keys(all_used_keys: &HashSet<String>, messages: &MessageMap) -> Vec<Issue> {
+    let mut unused: Vec<_> = messages
+        .iter()
+        .filter(|(key, _)| !all_used_keys.contains(*key))
+        .map(|(key, entry)| {
+            Issue::UnusedKey(UnusedKeyIssue {
+                location: MessageLocation::new(&entry.file_path, entry.line),
+                key: key.clone(),
+                value: entry.value.clone(),
+            })
+        })
+        .collect();
+    unused.sort();
+    unused
+}
+
+/// Finds translation keys that are defined in other locales but not in the primary locale.
+///
+/// # Arguments
+/// * `primary_locale` - The primary locale to compare against
+/// * `all_messages` - Map of all translation keys to their values
+///
+/// # Returns
+/// Vector of orphan keys sorted alphabetically
+pub fn find_orphan_keys(
+    primary_locale: &str,
+    all_messages: &HashMap<String, MessageMap>,
+) -> Vec<Issue> {
+    let Some(primary_messages) = all_messages.get(primary_locale) else {
+        return Vec::new();
+    };
+
+    let mut orphans: Vec<Issue> = all_messages
+        .iter()
+        .filter(|(locale, _)| *locale != primary_locale)
+        .flat_map(|(locale, messages)| {
+            messages
+                .iter()
+                .filter(|(key, _)| !primary_messages.contains_key(*key))
+                .map(|(key, entry)| {
+                    Issue::OrphanKey(OrphanKeyIssue {
+                        location: MessageLocation::new(&entry.file_path, entry.line),
+                        key: key.clone(),
+                        value: entry.value.clone(),
+                        locale: locale.clone(),
+                    })
+                })
+        })
+        .collect();
+
+    orphans.sort();
+    orphans
+}
 
 /// Runner for the clean command.
 ///
@@ -88,7 +149,7 @@ impl CleanRunner {
         // Parse all source files first
         let mut issues: Vec<Issue> = self.ctx.ensure_parsed_files();
 
-        self.ctx.ensure_registries()?;
+        self.ctx.get_registries()?;
 
         // Load messages
         let (messages, message_warnings) = self.load_messages()?;

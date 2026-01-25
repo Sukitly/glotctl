@@ -14,13 +14,31 @@
 use std::collections::HashMap;
 
 use crate::{
+    commands::context::CheckContext,
     parsers::json::MessageMap,
-    rules::helpers::{get_usages_for_key, KeyUsageMap, MAX_KEY_USAGES},
+    rules::{
+        build_key_usage_map,
+        helpers::{KeyUsageMap, MAX_KEY_USAGES, get_usages_for_key},
+    },
     types::{
         context::{LocaleTypeMismatch, MessageContext, MessageLocation, ValueType},
         issue::TypeMismatchIssue,
     },
 };
+
+pub fn check_type_mismatch_issues(ctx: &CheckContext) -> Vec<TypeMismatchIssue> {
+    let primary_locale = &ctx.config.primary_locale;
+    let primary_messages = &ctx.messages().primary_messages;
+    let all_messages = &ctx.messages().all_messages;
+    let key_usages = ctx.all_key_usages();
+    let key_usages_map = build_key_usage_map(key_usages);
+    check_type_mismatch(
+        primary_locale,
+        primary_messages,
+        all_messages,
+        &key_usages_map,
+    )
+}
 
 /// Check for type mismatches between locales.
 ///

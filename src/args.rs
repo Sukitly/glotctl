@@ -1,6 +1,6 @@
 use clap::{Args, CommandFactory, Parser, Subcommand};
 
-use crate::commands::runner::CheckType;
+use crate::commands::check::CheckRule;
 use crate::extraction::collect::SuppressibleRule;
 
 #[derive(Debug, Parser)]
@@ -25,9 +25,9 @@ impl Arguments {
     pub fn verbose(&self) -> bool {
         match &self.command {
             Some(Command::Check(cmd)) => cmd.args.common.verbose,
-            Some(Command::Clean(cmd)) => cmd.args.common.verbose,
+            // Some(Command::Clean(cmd)) => cmd.args.common.verbose,
             Some(Command::Baseline(cmd)) => cmd.args.common.verbose,
-            Some(Command::Fix(cmd)) => cmd.args.common.verbose,
+            // Some(Command::Fix(cmd)) => cmd.args.common.verbose,
             Some(Command::Init) | Some(Command::Serve) | None => false,
         }
     }
@@ -54,7 +54,7 @@ pub struct CheckArgs {
 #[derive(Debug, Args)]
 pub struct CheckCommand {
     #[arg(value_enum)]
-    pub checks: Vec<CheckType>,
+    pub checks: Vec<CheckRule>,
     #[command(flatten)]
     pub args: CheckArgs,
 }
@@ -95,7 +95,7 @@ pub struct BaselineArgs {
     /// Rules to add disable comments for (default: all)
     /// Can be specified multiple times: --rule hardcoded --rule untranslated
     #[arg(long, value_enum)]
-    pub rule: Vec<SuppressibleRule>,
+    pub rules: Vec<SuppressibleRule>,
 }
 
 #[derive(Debug, Args)]
@@ -125,11 +125,11 @@ pub enum Command {
     /// Check for i18n issues (hardcoded text, missing keys, orphan keys, untranslated values)
     Check(CheckCommand),
     /// Remove unused or orphan translation keys from JSON files
-    Clean(CleanCommand),
+    // Clean(CleanCommand),
     /// Insert glot-disable-next-line comments to suppress hardcoded text warnings
     Baseline(BaselineCommand),
     /// Insert glot-message-keys comments for dynamic translation keys
-    Fix(FixCommand),
+    // Fix(FixCommand),
     /// Initialize a new .glotrc.json configuration file
     Init,
     /// Start MCP server for AI coding agents

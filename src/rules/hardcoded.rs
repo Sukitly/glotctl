@@ -2,7 +2,15 @@
 //!
 //! Detects untranslated text in JSX/TSX files that should use i18n translation functions.
 
-use crate::{commands::context::AllHardcodedIssues, types::issue::HardcodedIssue};
+use crate::{
+    commands::context::{AllHardcodedIssues, CheckContext},
+    types::issue::HardcodedIssue,
+};
+
+pub fn check_hardcoded_issues(ctx: &CheckContext) -> Vec<HardcodedIssue> {
+    let hardcoded_issues = ctx.hardcoded_issues();
+    check_hardcoded(hardcoded_issues)
+}
 
 /// Check for hardcoded text issues.
 ///
@@ -15,37 +23,13 @@ use crate::{commands::context::AllHardcodedIssues, types::issue::HardcodedIssue}
 /// # Returns
 /// Vector of HardcodedIssue for reporting
 pub fn check_hardcoded(hardcoded_issues: &AllHardcodedIssues) -> Vec<HardcodedIssue> {
-    let mut issues = Vec::new();
-
-    for file_issues in hardcoded_issues.values() {
-        for issue in file_issues {
-            // Convert from old issue type to new issue type
-            issues.push(HardcodedIssue {
-                context: crate::types::context::SourceContext::new(
-                    crate::types::context::SourceLocation::new(
-                        &issue.location.file_path,
-                        issue.location.line,
-                        issue.location.col.unwrap_or(1),
-                    ),
-                    issue.source_line.clone().unwrap_or_default(),
-                    if issue.location.in_jsx_context {
-                        crate::types::context::CommentStyle::Jsx
-                    } else {
-                        crate::types::context::CommentStyle::Js
-                    },
-                ),
-                text: issue.text.clone(),
-            });
-        }
-    }
-
-    issues
+    hardcoded_issues.values().flatten().cloned().collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::issue::{HardcodedIssue as OldHardcodedIssue, SourceLocation as OldSourceLocation};
+    use crate::types::context::{CommentStyle, SourceContext, SourceLocation};
     use std::collections::HashMap;
 
     fn create_old_hardcoded_issue(
@@ -54,13 +38,18 @@ mod tests {
         col: usize,
         text: &str,
         in_jsx: bool,
-    ) -> OldHardcodedIssue {
-        OldHardcodedIssue {
-            location: OldSourceLocation::new(file, line)
-                .with_col(col)
-                .with_jsx_context(in_jsx),
+    ) -> HardcodedIssue {
+        HardcodedIssue {
+            context: SourceContext::new(
+                SourceLocation::new(file, line, col),
+                text.to_string(),
+                if in_jsx {
+                    CommentStyle::Jsx
+                } else {
+                    CommentStyle::Js
+                },
+            ),
             text: text.to_string(),
-            source_line: Some(format!("// {}", text)),
         }
     }
 

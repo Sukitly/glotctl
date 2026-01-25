@@ -93,7 +93,7 @@ impl CheckRunner {
 
         // 2. Load registries if needed (for extractions)
         if needs_extractions {
-            self.ctx.ensure_registries()?;
+            self.ctx.get_registries()?;
         }
 
         // 3. Load messages if needed
@@ -156,7 +156,10 @@ impl CheckRunner {
             if self.ctx.verbose {
                 eprintln!("Running check: missing");
             }
-            let extractions = self.ctx.all_key_usages().expect("extractions must be loaded");
+            let extractions = self
+                .ctx
+                .all_key_usages()
+                .expect("extractions must be loaded");
             let messages = self.ctx.messages().expect("messages must be loaded");
             let registries = self.ctx.registries().expect("registries must be loaded");
             let primary_messages = messages
@@ -166,7 +169,7 @@ impl CheckRunner {
 
             // Check missing keys
             let missing_issues =
-                rules::check_missing_key(extractions, primary_messages, registries);
+                rules::check_missing_keys(extractions, primary_messages, registries);
             all_issues.extend(missing_issues.into_iter().map(|i| {
                 Issue::MissingKey(crate::issue::MissingKeyIssue {
                     location: crate::issue::SourceLocation::new(
@@ -181,7 +184,7 @@ impl CheckRunner {
             }));
 
             // Check unresolved keys
-            let unresolved_issues = rules::check_unresolved_key(extractions);
+            let unresolved_issues = rules::check_unresolved_keys(extractions);
             all_issues.extend(unresolved_issues.into_iter().map(|i| {
                 Issue::UnresolvedKey(crate::issue::UnresolvedKeyIssue {
                     location: crate::issue::SourceLocation::new(
@@ -198,7 +201,7 @@ impl CheckRunner {
 
             // Check replica lag
             let key_usages = rules::build_key_usage_map(extractions);
-            let replica_lag_issues = rules::check_replica_lag(
+            let replica_lag_issues = rules::check_replica_lags(
                 &self.ctx.config.primary_locale,
                 &messages.all_messages,
                 &key_usages,
@@ -248,7 +251,7 @@ impl CheckRunner {
                 .expect("primary_messages must exist");
 
             // Check unused keys
-            let unused_issues = rules::check_unused_key(used_keys, primary_messages);
+            let unused_issues = rules::check_unused_keys(used_keys, primary_messages);
             all_issues.extend(unused_issues.into_iter().map(|i| {
                 Issue::UnusedKey(crate::issue::UnusedKeyIssue {
                     location: crate::issue::MessageLocation::new(
@@ -262,7 +265,7 @@ impl CheckRunner {
 
             // Check orphan keys
             let orphan_issues =
-                rules::check_orphan_key(&self.ctx.config.primary_locale, &messages.all_messages);
+                rules::check_orphan_keys(&self.ctx.config.primary_locale, &messages.all_messages);
             all_issues.extend(orphan_issues.into_iter().map(|i| {
                 Issue::OrphanKey(crate::issue::OrphanKeyIssue {
                     location: crate::issue::MessageLocation::new(
@@ -281,7 +284,10 @@ impl CheckRunner {
             if self.ctx.verbose {
                 eprintln!("Running check: untranslated");
             }
-            let extractions = self.ctx.all_key_usages().expect("extractions must be loaded");
+            let extractions = self
+                .ctx
+                .all_key_usages()
+                .expect("extractions must be loaded");
             let messages = self.ctx.messages().expect("messages must be loaded");
             let primary_messages = messages
                 .primary_messages
@@ -334,7 +340,10 @@ impl CheckRunner {
             if self.ctx.verbose {
                 eprintln!("Running check: type_mismatch");
             }
-            let extractions = self.ctx.all_key_usages().expect("extractions must be loaded");
+            let extractions = self
+                .ctx
+                .all_key_usages()
+                .expect("extractions must be loaded");
             let messages = self.ctx.messages().expect("messages must be loaded");
             let primary_messages = messages
                 .primary_messages

@@ -3,10 +3,18 @@
 //! Detects translation keys used in code but not defined in the primary locale.
 
 use crate::{
+    commands::context::CheckContext,
     extraction::collect::Registries,
     parsers::json::MessageMap,
     types::{context::SourceContext, issue::MissingKeyIssue, key_usage::AllKeyUsages},
 };
+
+pub fn check_missing_keys_issues(ctx: &CheckContext) -> Vec<MissingKeyIssue> {
+    let all_key_usages = ctx.all_key_usages();
+    let primary_messages = &ctx.messages().primary_messages;
+    let registries = ctx.registries();
+    check_missing_keys(all_key_usages, primary_messages, registries)
+}
 
 /// Check for missing translation keys.
 ///
@@ -19,14 +27,14 @@ use crate::{
 ///
 /// # Returns
 /// Vector of MissingKeyIssue for keys used but not defined
-pub fn check_missing_key(
-    extractions: &AllKeyUsages,
+pub fn check_missing_keys(
+    all_key_usages: &AllKeyUsages,
     primary_messages: &MessageMap,
     registries: &Registries,
 ) -> Vec<MissingKeyIssue> {
     let mut issues = Vec::new();
 
-    for file_usages in extractions.values() {
+    for file_usages in all_key_usages.values() {
         for resolved in &file_usages.resolved {
             let key = resolved.key.as_str();
             if !primary_messages.contains_key(key) {
@@ -123,7 +131,7 @@ mod tests {
         let primary_messages = create_message_map(&[("Common.submit", "Submit")]);
         let registries = empty_registries();
 
-        let issues = check_missing_key(&extractions, &primary_messages, &registries);
+        let issues = check_missing_keys(&extractions, &primary_messages, &registries);
         assert!(issues.is_empty());
     }
 
@@ -144,7 +152,7 @@ mod tests {
         let primary_messages = create_message_map(&[("Common.submit", "Submit")]);
         let registries = empty_registries();
 
-        let issues = check_missing_key(&extractions, &primary_messages, &registries);
+        let issues = check_missing_keys(&extractions, &primary_messages, &registries);
         assert_eq!(issues.len(), 1);
         assert_eq!(issues[0].key, "Common.missing");
         assert_eq!(issues[0].context.location.line, 20);
@@ -171,7 +179,7 @@ mod tests {
         let primary_messages = create_message_map(&[]);
         let registries = empty_registries();
 
-        let issues = check_missing_key(&extractions, &primary_messages, &registries);
+        let issues = check_missing_keys(&extractions, &primary_messages, &registries);
         assert_eq!(issues.len(), 2);
     }
 
@@ -212,7 +220,7 @@ mod tests {
             },
         );
 
-        let issues = check_missing_key(&extractions, &primary_messages, &registries);
+        let issues = check_missing_keys(&extractions, &primary_messages, &registries);
         assert_eq!(issues.len(), 1);
         assert_eq!(issues[0].key, "Form.email");
         assert!(issues[0].from_schema.is_some());
@@ -227,7 +235,7 @@ mod tests {
         let primary_messages = create_message_map(&[("Common.submit", "Submit")]);
         let registries = empty_registries();
 
-        let issues = check_missing_key(&extractions, &primary_messages, &registries);
+        let issues = check_missing_keys(&extractions, &primary_messages, &registries);
         assert!(issues.is_empty());
     }
 }

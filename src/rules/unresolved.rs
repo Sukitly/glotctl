@@ -5,11 +5,19 @@
 //! - Template literals with expressions: `t(\`prefix.${suffix}\`)`
 //! - Unknown namespace for schema-derived keys
 
-use crate::types::{
-    context::SourceContext,
-    issue::{UnresolvedKeyIssue, UnresolvedKeyReason},
-    key_usage::{AllKeyUsages, UnresolvedKeyReason as ExtractedReason},
+use crate::{
+    commands::context::CheckContext,
+    types::{
+        context::SourceContext,
+        issue::{UnresolvedKeyIssue, UnresolvedKeyReason},
+        key_usage::{AllKeyUsages, UnresolvedKeyReason as ExtractedReason},
+    },
 };
+
+pub fn check_unresolved_keys_issues(ctx: &CheckContext) -> Vec<UnresolvedKeyIssue> {
+    let key_usages = ctx.all_key_usages();
+    check_unresolved_keys(key_usages)
+}
 
 /// Check for unresolved translation keys.
 ///
@@ -24,7 +32,7 @@ use crate::types::{
 ///
 /// # Returns
 /// Vector of UnresolvedKeyIssue for keys that cannot be statically resolved
-pub fn check_unresolved_key(extractions: &AllKeyUsages) -> Vec<UnresolvedKeyIssue> {
+pub fn check_unresolved_keys(extractions: &AllKeyUsages) -> Vec<UnresolvedKeyIssue> {
     let mut issues = Vec::new();
 
     for file_usages in extractions.values() {
@@ -89,7 +97,7 @@ mod tests {
     #[test]
     fn test_check_unresolved_key_empty() {
         let extractions: AllKeyUsages = HashMap::new();
-        let issues = check_unresolved_key(&extractions);
+        let issues = check_unresolved_keys(&extractions);
         assert!(issues.is_empty());
     }
 
@@ -108,7 +116,7 @@ mod tests {
             },
         );
 
-        let issues = check_unresolved_key(&extractions);
+        let issues = check_unresolved_keys(&extractions);
         assert_eq!(issues.len(), 1);
         assert_eq!(issues[0].reason, UnresolvedKeyReason::VariableKey);
     }
@@ -128,7 +136,7 @@ mod tests {
             },
         );
 
-        let issues = check_unresolved_key(&extractions);
+        let issues = check_unresolved_keys(&extractions);
         assert_eq!(issues.len(), 1);
         assert_eq!(issues[0].reason, UnresolvedKeyReason::TemplateWithExpr);
     }
@@ -151,7 +159,7 @@ mod tests {
             },
         );
 
-        let issues = check_unresolved_key(&extractions);
+        let issues = check_unresolved_keys(&extractions);
         assert_eq!(issues.len(), 1);
         match &issues[0].reason {
             UnresolvedKeyReason::UnknownNamespace { schema_name } => {
@@ -181,7 +189,7 @@ mod tests {
             },
         );
 
-        let issues = check_unresolved_key(&extractions);
+        let issues = check_unresolved_keys(&extractions);
         assert_eq!(issues.len(), 1);
         assert_eq!(
             issues[0].hint,
@@ -216,7 +224,7 @@ mod tests {
             },
         );
 
-        let issues = check_unresolved_key(&extractions);
+        let issues = check_unresolved_keys(&extractions);
         assert_eq!(issues.len(), 2);
     }
 }

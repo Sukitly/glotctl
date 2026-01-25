@@ -6,12 +6,19 @@
 use std::collections::HashSet;
 
 use crate::{
+    commands::context::CheckContext,
     parsers::json::MessageMap,
     types::{
         context::{MessageContext, MessageLocation},
         issue::UnusedKeyIssue,
     },
 };
+
+pub fn check_unused_keys_issues(ctx: &CheckContext) -> Vec<UnusedKeyIssue> {
+    let used_keys = ctx.used_keys();
+    let primary_messages = &ctx.messages().primary_messages;
+    check_unused_keys(used_keys, primary_messages)
+}
 
 /// Check for unused translation keys.
 ///
@@ -23,7 +30,7 @@ use crate::{
 ///
 /// # Returns
 /// Vector of UnusedKeyIssue for keys defined but not used
-pub fn check_unused_key(
+pub fn check_unused_keys(
     used_keys: &HashSet<String>,
     primary_messages: &MessageMap,
 ) -> Vec<UnusedKeyIssue> {
@@ -80,7 +87,7 @@ mod tests {
         let primary_messages = create_message_map(&[("Common.submit", "Submit")]);
         let used_keys: HashSet<String> = ["Common.submit".to_string()].into_iter().collect();
 
-        let issues = check_unused_key(&used_keys, &primary_messages);
+        let issues = check_unused_keys(&used_keys, &primary_messages);
         assert!(issues.is_empty());
     }
 
@@ -90,7 +97,7 @@ mod tests {
             create_message_map(&[("Common.submit", "Submit"), ("Common.unused", "Unused")]);
         let used_keys: HashSet<String> = ["Common.submit".to_string()].into_iter().collect();
 
-        let issues = check_unused_key(&used_keys, &primary_messages);
+        let issues = check_unused_keys(&used_keys, &primary_messages);
         assert_eq!(issues.len(), 1);
         assert_eq!(issues[0].context.key, "Common.unused");
         assert_eq!(issues[0].context.value, "Unused");
@@ -102,7 +109,7 @@ mod tests {
             create_message_map(&[("Common.a", "A"), ("Common.b", "B"), ("Common.c", "C")]);
         let used_keys: HashSet<String> = HashSet::new();
 
-        let issues = check_unused_key(&used_keys, &primary_messages);
+        let issues = check_unused_keys(&used_keys, &primary_messages);
         assert_eq!(issues.len(), 3);
     }
 
@@ -111,7 +118,7 @@ mod tests {
         let primary_messages = create_message_map(&[]);
         let used_keys: HashSet<String> = ["Common.submit".to_string()].into_iter().collect();
 
-        let issues = check_unused_key(&used_keys, &primary_messages);
+        let issues = check_unused_keys(&used_keys, &primary_messages);
         assert!(issues.is_empty());
     }
 
@@ -124,7 +131,7 @@ mod tests {
         ]);
         let used_keys: HashSet<String> = HashSet::new();
 
-        let issues = check_unused_key(&used_keys, &primary_messages);
+        let issues = check_unused_keys(&used_keys, &primary_messages);
         assert_eq!(issues.len(), 3);
         // Should be sorted by line number
         assert_eq!(issues[0].context.key, "Common.zebra");
