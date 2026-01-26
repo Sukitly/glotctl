@@ -5,7 +5,7 @@ info:
   args:
     - baseline
     - "--apply"
-    - "--rule"
+    - "--rules"
     - untranslated
   env:
     NO_COLOR: "1"

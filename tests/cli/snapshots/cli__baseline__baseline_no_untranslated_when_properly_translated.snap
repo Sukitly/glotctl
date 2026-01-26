@@ -4,7 +4,7 @@ info:
   program: glot
   args:
     - baseline
-    - "--rule"
+    - "--rules"
     - untranslated
   env:
     NO_COLOR: "1"

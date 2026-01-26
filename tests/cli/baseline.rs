@@ -1261,7 +1261,7 @@ export function App() {
 
     // Only process hardcoded rule
     let mut cmd = test.baseline_command();
-    cmd.args(["--apply", "--rule", "hardcoded"]);
+    cmd.args(["--apply", "--rules", "hardcoded"]);
     assert_cmd_snapshot!(cmd);
 
     let content = test.read_file("src/app.tsx")?;
@@ -1305,7 +1305,7 @@ export function App() {
 
     // Only process untranslated rule
     let mut cmd = test.baseline_command();
-    cmd.args(["--apply", "--rule", "untranslated"]);
+    cmd.args(["--apply", "--rules", "untranslated"]);
     assert_cmd_snapshot!(cmd);
 
     let content = test.read_file("src/app.tsx")?;
@@ -1379,7 +1379,7 @@ export function App() {
     test.write_file("messages/zh.json", r#"{"Common": {"greeting": "你好"}}"#)?;
 
     let mut cmd = test.baseline_command();
-    cmd.args(["--rule", "untranslated"]);
+    cmd.args(["--rules", "untranslated"]);
     assert_cmd_snapshot!(cmd);
     Ok(())
 }
