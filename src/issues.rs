@@ -48,7 +48,7 @@ impl std::fmt::Display for Rule {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             // Use short names for directive compatibility with v1
-            Rule::HardcodedText => write!(f, "hardcoded-text"),
+            Rule::HardcodedText => write!(f, "hardcoded"),
             Rule::MissingKey => write!(f, "missing-key"),
             Rule::UnresolvedKey => write!(f, "unresolved-key"),
             Rule::ReplicaLag => write!(f, "replica-lag"),
