@@ -14,12 +14,6 @@ use crate::{
 use anyhow::{Ok, Result};
 use colored::Colorize;
 
-impl SuppressibleRule {
-    pub fn default() -> Vec<SuppressibleRule> {
-        vec![SuppressibleRule::Hardcoded, SuppressibleRule::Untranslated]
-    }
-}
-
 pub fn baseline(cmd: BaselineCommand) -> Result<RunResult> {
     let args = &cmd.args;
     let rules = &cmd.args.rules;
@@ -27,9 +21,9 @@ pub fn baseline(cmd: BaselineCommand) -> Result<RunResult> {
     let apply = args.apply;
 
     let rules = if rules.is_empty() {
-        SuppressibleRule::default()
+        SuppressibleRule::all()
     } else {
-        rules.clone()
+        rules.clone().into_iter().collect()
     };
 
     let mut hardcoded_issues: Vec<HardcodedIssue> = Vec::new();

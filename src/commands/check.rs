@@ -2,7 +2,6 @@ use anyhow::{Ok, Result};
 use clap::ValueEnum;
 
 use crate::{
-    RunResult,
     args::CheckCommand,
     commands::{context::CheckContext, helper::finish},
     report::report,
@@ -13,6 +12,7 @@ use crate::{
         untranslated::check_untranslated_issues, unused::check_unused_keys_issues,
     },
     types::issue::Issue,
+    RunResult,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, ValueEnum)]

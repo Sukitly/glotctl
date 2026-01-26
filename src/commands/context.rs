@@ -4,25 +4,25 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
-use anyhow::{Context as _, Result, anyhow};
+use anyhow::{anyhow, Context as _, Result};
 use swc_ecma_visit::VisitWith;
 
 use crate::{
     args::CommonArgs,
-    config::{Config, load_config},
+    config::{load_config, Config},
     extraction::{
         collect::{
-            AllFileComments, CommentCollector, FileImports, RegistryCollector, TranslationFnCall,
-            TranslationProp, make_registry_key, make_translation_fn_call_key,
-            make_translation_prop_key, resolve_import_path,
+            make_registry_key, make_translation_fn_call_key, make_translation_prop_key,
+            resolve_import_path, AllFileComments, CommentCollector, FileImports, RegistryCollector,
+            TranslationFnCall, TranslationProp,
         },
         extract::FileAnalyzer,
         resolve::resolve_translation_calls,
     },
     file_scanner::scan_files,
     parsers::{
-        json::{MessageMap, scan_message_files},
-        jsx::{ParsedJSX, parse_jsx_source},
+        json::{scan_message_files, MessageMap},
+        jsx::{parse_jsx_source, ParsedJSX},
     },
     types::issue::{HardcodedIssue, ParseErrorIssue},
 };
@@ -30,8 +30,8 @@ use crate::{
 use std::collections::HashMap;
 
 // Re-export types from extraction module for convenience
-pub use crate::extraction::AllKeyUsages;
 pub use crate::extraction::collect::{AllFileImports, Registries};
+pub use crate::extraction::AllKeyUsages;
 
 /// Type alias for all hardcoded issues (one vec per file).
 pub type AllHardcodedIssues = HashMap<String, Vec<HardcodedIssue>>;

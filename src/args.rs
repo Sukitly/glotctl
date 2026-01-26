@@ -1,4 +1,4 @@
-use clap::{Args, CommandFactory, Parser, Subcommand};
+use clap::{Args, CommandFactory, Parser, Subcommand, ValueEnum};
 
 use crate::commands::check::CheckRule;
 use crate::extraction::collect::SuppressibleRule;
@@ -25,7 +25,7 @@ impl Arguments {
     pub fn verbose(&self) -> bool {
         match &self.command {
             Some(Command::Check(cmd)) => cmd.args.common.verbose,
-            // Some(Command::Clean(cmd)) => cmd.args.common.verbose,
+            Some(Command::Clean(cmd)) => cmd.args.common.verbose,
             Some(Command::Baseline(cmd)) => cmd.args.common.verbose,
             // Some(Command::Fix(cmd)) => cmd.args.common.verbose,
             Some(Command::Init) | Some(Command::Serve) | None => false,
@@ -68,19 +68,22 @@ pub struct CleanArgs {
     #[arg(long)]
     pub apply: bool,
 
-    /// Only clean unused keys (defined but not used in code)
-    #[arg(long)]
-    pub unused: bool,
-
-    /// Only clean orphan keys (not in primary locale)
-    #[arg(long)]
-    pub orphan: bool,
+    /// Rules to clean (default: all)
+    /// Can be specified multiple times: --rules unused --rules orphan
+    #[arg(long, value_enum)]
+    pub rules: Vec<CleanRule>,
 }
 
 #[derive(Debug, Args)]
 pub struct CleanCommand {
     #[command(flatten)]
     pub args: CleanArgs,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, ValueEnum)]
+pub enum CleanRule {
+    Unused,
+    Orphan,
 }
 
 #[derive(Debug, Parser)]
@@ -125,7 +128,7 @@ pub enum Command {
     /// Check for i18n issues (hardcoded text, missing keys, orphan keys, untranslated values)
     Check(CheckCommand),
     /// Remove unused or orphan translation keys from JSON files
-    // Clean(CleanCommand),
+    Clean(CleanCommand),
     /// Insert glot-disable-next-line comments to suppress hardcoded text warnings
     Baseline(BaselineCommand),
     /// Insert glot-message-keys comments for dynamic translation keys
