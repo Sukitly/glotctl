@@ -417,12 +417,9 @@ fn print_fix(summary: &FixSummary) {
             println!(
                 "{} {} comment(s) in {} file(s):",
                 "Inserted".green().bold(),
-                summary.unresolved_count,
+                summary.inserted_count,
                 summary.file_count
             );
-            if summary.inserted_count > 0 {
-                println!("  - inserted: {} comment(s)", summary.inserted_count);
-            }
             if summary.skipped_count > 0 {
                 println!(
                     "  - skipped: {} issue(s) without pattern",
@@ -433,7 +430,7 @@ fn print_fix(summary: &FixSummary) {
             println!(
                 "{} {} comment(s) in {} file(s):",
                 "Would insert".yellow().bold(),
-                summary.unresolved_count,
+                summary.inserted_count,
                 summary.file_count
             );
             println!("Run with {} to insert these comments.", "--apply".cyan());
