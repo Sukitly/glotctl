@@ -49,15 +49,26 @@ pub fn clean(cmd: CleanCommand) -> Result<CommandResult> {
     let unused_count = unused_issues.len();
     let orphan_count = orphan_issues.len();
 
-    let file_count = if apply {
+    let (file_count, applied_unused_count, applied_orphan_count, applied_total_count) = if apply {
         let mut stats = ActionStats::default();
+        let mut unused_stats = ActionStats::default();
+        let mut orphan_stats = ActionStats::default();
+
         if !unused_issues.is_empty() {
-            stats += DeleteKey::run(&unused_issues)?;
+            unused_stats = DeleteKey::run(&unused_issues)?;
+            stats += unused_stats.clone();
         }
         if !orphan_issues.is_empty() {
-            stats += DeleteKey::run(&orphan_issues)?;
+            orphan_stats = DeleteKey::run(&orphan_issues)?;
+            stats += orphan_stats.clone();
         }
-        stats.files_modified
+
+        (
+            stats.files_modified,
+            unused_stats.changes_applied,
+            orphan_stats.changes_applied,
+            unused_stats.changes_applied + orphan_stats.changes_applied,
+        )
     } else {
         let mut files: HashSet<&str> = HashSet::new();
         for issue in &unused_issues {
@@ -66,7 +77,7 @@ pub fn clean(cmd: CleanCommand) -> Result<CommandResult> {
         for issue in &orphan_issues {
             files.insert(issue.context.file_path());
         }
-        files.len()
+        (files.len(), 0, 0, 0)
     };
 
     let unused_issues_summary = unused_issues.clone();
@@ -82,6 +93,9 @@ pub fn clean(cmd: CleanCommand) -> Result<CommandResult> {
         CommandSummary::Clean(CleanSummary {
             unused_count,
             orphan_count,
+            applied_unused_count,
+            applied_orphan_count,
+            applied_total_count,
             file_count,
             is_apply: apply,
             unused_issues: unused_issues_summary,

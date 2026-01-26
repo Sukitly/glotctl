@@ -381,18 +381,24 @@ fn print_baseline(summary: &BaselineSummary) {
     if total > 0 {
         if summary.is_apply {
             println!(
-                "{} {} comment(s) in {} file(s):",
+                "{} {} comment(s) in {} file(s) (processed {} item(s)):",
                 "Inserted".green().bold(),
-                total,
-                summary.file_count
+                summary.applied_total_count,
+                summary.file_count,
+                total
             );
             if summary.hardcoded_count > 0 {
-                println!("  - hardcoded: {} comment(s)", summary.hardcoded_count);
+                println!(
+                    "  - hardcoded: {} comment(s) (from {} issue(s))",
+                    summary.applied_hardcoded_count, summary.hardcoded_count
+                );
             }
             if summary.untranslated_usage_count > 0 {
                 println!(
-                    "  - untranslated: {} comment(s), {} key(s)",
-                    summary.untranslated_usage_count, summary.untranslated_key_count
+                    "  - untranslated: {} comment(s), {} key(s) (from {} usage(s))",
+                    summary.applied_untranslated_count,
+                    summary.untranslated_key_count,
+                    summary.untranslated_usage_count
                 );
             }
         } else {
@@ -422,7 +428,7 @@ fn print_fix(summary: &FixSummary) {
         .iter()
         .filter(|issue| issue.pattern.is_none())
         .collect();
-    let has_fixable = summary.inserted_count > 0;
+    let has_fixable = summary.processed_count > 0;
     let has_unfixable = !unfixable_issues.is_empty();
 
     if has_unfixable {
@@ -437,10 +443,11 @@ fn print_fix(summary: &FixSummary) {
         if summary.is_apply {
             if has_fixable {
                 println!(
-                    "{} {} comment(s) in {} file(s).",
+                    "{} {} comment(s) in {} file(s) (processed {} issue(s)).",
                     "Inserted".green().bold(),
-                    summary.inserted_count,
-                    summary.file_count
+                    summary.applied_count,
+                    summary.file_count,
+                    summary.processed_count
                 );
                 if summary.skipped_count > 0 {
                     println!(
@@ -453,7 +460,7 @@ fn print_fix(summary: &FixSummary) {
             println!(
                 "{} {} comment(s) in {} file(s).",
                 "Would insert".yellow().bold(),
-                summary.inserted_count,
+                summary.processed_count,
                 summary.file_count
             );
             println!("Run with {} to insert these comments.", "--apply".cyan());
@@ -524,16 +531,23 @@ fn print_clean(summary: &CleanSummary) {
     if total > 0 {
         if summary.is_apply {
             println!(
-                "{} {} key(s) in {} file(s).",
+                "{} {} key(s) in {} file(s) (processed {} key(s)).",
                 "Deleted".green().bold(),
-                total,
-                summary.file_count
+                summary.applied_total_count,
+                summary.file_count,
+                total
             );
             if summary.unused_count > 0 {
-                println!("  - unused: {} key(s)", summary.unused_count);
+                println!(
+                    "  - unused: {} key(s) (from {} issue(s))",
+                    summary.applied_unused_count, summary.unused_count
+                );
             }
             if summary.orphan_count > 0 {
-                println!("  - orphan: {} key(s)", summary.orphan_count);
+                println!(
+                    "  - orphan: {} key(s) (from {} issue(s))",
+                    summary.applied_orphan_count, summary.orphan_count
+                );
             }
         } else {
             println!(

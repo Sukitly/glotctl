@@ -30,14 +30,17 @@ impl JsonEditor {
     ///
     /// This method parses the JSON, removes the specified keys,
     /// removes empty parent objects, and re-serializes with 2-space indentation.
-    pub fn delete_keys(&mut self, key_paths: &[&str]) -> Result<()> {
+    pub fn delete_keys(&mut self, key_paths: &[&str]) -> Result<usize> {
         // Parse the content as JSON
         let mut value: Value =
             serde_json::from_str(&self.content).with_context(|| "Failed to parse JSON")?;
 
         // Delete each key path
+        let mut deleted = 0;
         for key_path in key_paths {
-            delete_key_path(&mut value, key_path);
+            if delete_key_path(&mut value, key_path) {
+                deleted += 1;
+            }
         }
 
         // Remove empty objects
@@ -47,7 +50,7 @@ impl JsonEditor {
         self.content =
             serde_json::to_string_pretty(&value).with_context(|| "Failed to serialize JSON")?;
 
-        Ok(())
+        Ok(deleted)
     }
 
     /// Save the modified content back to the file.
@@ -73,10 +76,10 @@ impl JsonEditor {
 }
 
 /// Delete a key path from a JSON value (e.g., "Common.submit").
-fn delete_key_path(value: &mut Value, key_path: &str) {
+fn delete_key_path(value: &mut Value, key_path: &str) -> bool {
     let parts: Vec<&str> = key_path.split('.').collect();
     if parts.is_empty() {
-        return;
+        return false;
     }
 
     // Navigate to the parent object
@@ -87,18 +90,19 @@ fn delete_key_path(value: &mut Value, key_path: &str) {
                 if let Some(child) = map.get_mut(*part) {
                     current = child;
                 } else {
-                    return; // Key path doesn't exist
+                    return false; // Key path doesn't exist
                 }
             }
-            _ => return, // Not an object
+            _ => return false, // Not an object
         }
     }
 
     // Delete the final key using shift_remove to preserve order
     if let Value::Object(map) = current {
         let final_key = parts[parts.len() - 1];
-        map.shift_remove(final_key);
+        return map.shift_remove(final_key).is_some();
     }
+    false
 }
 
 /// Recursively remove empty objects from a JSON value.

@@ -19,29 +19,32 @@ pub fn fix(cmd: FixCommand) -> Result<CommandResult> {
     let unresolved_issues: Vec<UnresolvedKeyIssue> = check_unresolved_keys_issues(&ctx);
     let unresolved_count = unresolved_issues.len();
 
-    let (inserted_count, skipped_count, file_count) = if apply {
+    let (processed_count, applied_count, skipped_count, file_count) = if apply {
         let stats = if unresolved_issues.is_empty() {
             ActionStats::default()
         } else {
             InsertMessageKeys::run(&unresolved_issues)?
         };
-        (stats.processed, stats.skipped, stats.files_modified)
+        (
+            stats.processed,
+            stats.changes_applied,
+            stats.skipped,
+            stats.files_modified,
+        )
     } else {
         let mut files: HashSet<&str> = HashSet::new();
         for issue in &unresolved_issues {
             files.insert(issue.context.file_path());
         }
-        (
-            unresolved_issues
-                .iter()
-                .filter(|issue| issue.pattern.is_some())
-                .count(),
-            unresolved_issues
-                .iter()
-                .filter(|issue| issue.pattern.is_none())
-                .count(),
-            files.len(),
-        )
+        let fixable = unresolved_issues
+            .iter()
+            .filter(|issue| issue.pattern.is_some())
+            .count();
+        let skipped = unresolved_issues
+            .iter()
+            .filter(|issue| issue.pattern.is_none())
+            .count();
+        (fixable, 0, skipped, files.len())
     };
 
     let unresolved_issues_summary = unresolved_issues.clone();
@@ -54,7 +57,8 @@ pub fn fix(cmd: FixCommand) -> Result<CommandResult> {
     Ok(finish(
         CommandSummary::Fix(FixSummary {
             unresolved_count,
-            inserted_count,
+            processed_count,
+            applied_count,
             skipped_count,
             file_count,
             is_apply: apply,

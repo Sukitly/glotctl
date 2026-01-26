@@ -31,9 +31,21 @@ pub enum Operation {
     DeleteJsonKey { context: MessageContext },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OperationResult {
+    Applied,
+    Noop,
+}
+
+impl OperationResult {
+    pub fn is_applied(self) -> bool {
+        matches!(self, OperationResult::Applied)
+    }
+}
+
 impl Operation {
     /// Execute this operation (modify files).
-    pub fn execute(&self) -> anyhow::Result<()> {
+    pub fn execute(&self) -> anyhow::Result<OperationResult> {
         match self {
             Operation::InsertComment { context, comment } => {
                 Self::execute_insert_comment(context, comment)
@@ -56,7 +68,10 @@ impl Operation {
 
     // ========== InsertComment implementation ==========
 
-    fn execute_insert_comment(context: &SourceContext, comment: &str) -> anyhow::Result<()> {
+    fn execute_insert_comment(
+        context: &SourceContext,
+        comment: &str,
+    ) -> anyhow::Result<OperationResult> {
         use std::fs;
 
         let file_path = context.file_path();
@@ -84,11 +99,18 @@ impl Operation {
             && let Some(merge_idx) = find_mergeable_comment_line(&lines, target_line_idx)
             && let Some(existing_directive) = parse_comment_directive(&lines[merge_idx])
             && let Some(merged_comment) = merge_directives(
+                &lines[merge_idx],
+                comment,
                 &existing_directive,
                 &new_directive,
                 detect_comment_style(&lines[merge_idx]).unwrap_or(context.comment_style),
             )
         {
+            let existing_trimmed = lines[merge_idx].trim();
+            if existing_trimmed == merged_comment.trim() {
+                return Ok(OperationResult::Noop);
+            }
+
             let merge_indentation: String = lines[merge_idx]
                 .chars()
                 .take_while(|c| c.is_whitespace())
@@ -101,7 +123,7 @@ impl Operation {
             }
 
             fs::write(file_path, new_content)?;
-            return Ok(());
+            return Ok(OperationResult::Applied);
         }
 
         // Insert comment above the target line
@@ -117,7 +139,7 @@ impl Operation {
         }
 
         fs::write(file_path, new_content)?;
-        Ok(())
+        Ok(OperationResult::Applied)
     }
 
     fn preview_insert_comment(context: &SourceContext, comment: &str) {
@@ -165,15 +187,18 @@ impl Operation {
 
     // ========== DeleteJsonKey implementation ==========
 
-    fn execute_delete_json_key(context: &MessageContext) -> anyhow::Result<()> {
+    fn execute_delete_json_key(context: &MessageContext) -> anyhow::Result<OperationResult> {
         let file_path = Path::new(context.file_path());
         let key = context.key.as_str();
 
         let mut editor = JsonEditor::open(file_path)?;
-        editor.delete_keys(&[key])?;
-        editor.save()?;
+        let deleted = editor.delete_keys(&[key])?;
+        if deleted > 0 {
+            editor.save()?;
+            return Ok(OperationResult::Applied);
+        }
 
-        Ok(())
+        Ok(OperationResult::Noop)
     }
 
     fn preview_delete_json_key(context: &MessageContext) {
@@ -247,6 +272,8 @@ fn looks_like_glot_comment(line: &str) -> bool {
 }
 
 fn merge_directives(
+    existing_comment: &str,
+    new_comment: &str,
     existing: &Directive,
     new: &Directive,
     comment_style: CommentStyle,
@@ -257,36 +284,61 @@ fn merge_directives(
             merged.extend(b.iter().copied());
             Some(format_disable_next_line(&merged, comment_style))
         }
-        (Directive::MessageKeys(a), Directive::MessageKeys(b)) => {
-            let merged = merge_message_key_patterns(a, b);
+        (Directive::MessageKeys(_), Directive::MessageKeys(_)) => {
+            let existing_patterns = extract_message_key_patterns(existing_comment)?;
+            let new_patterns = extract_message_key_patterns(new_comment)?;
+            let merged = merge_message_key_patterns(&existing_patterns, &new_patterns);
             Some(format_message_keys(&merged, comment_style))
         }
         _ => None,
     }
 }
 
-fn merge_message_key_patterns(
-    existing: &crate::core::collect::types::KeyDeclaration,
-    new: &crate::core::collect::types::KeyDeclaration,
-) -> Vec<String> {
+fn extract_message_key_patterns(comment: &str) -> Option<Vec<String>> {
+    let text = strip_comment_markers(comment)?;
+    if !text.trim_start().starts_with("glot-message-keys") {
+        return None;
+    }
+    let patterns = extract_quoted_strings(text);
+    if patterns.is_empty() {
+        return None;
+    }
+    Some(patterns)
+}
+
+fn extract_quoted_strings(text: &str) -> Vec<String> {
+    let mut patterns = Vec::new();
+    let mut in_quote = false;
+    let mut current = String::new();
+
+    for ch in text.chars() {
+        if in_quote {
+            if ch == '"' {
+                patterns.push(current.clone());
+                current.clear();
+                in_quote = false;
+            } else {
+                current.push(ch);
+            }
+        } else if ch == '"' {
+            in_quote = true;
+        }
+    }
+
+    patterns
+}
+
+fn merge_message_key_patterns(existing: &[String], new: &[String]) -> Vec<String> {
     let mut merged: Vec<String> = Vec::new();
     let mut seen = std::collections::HashSet::new();
 
-    for pattern in existing
-        .absolute_patterns
-        .iter()
-        .chain(existing.relative_patterns.iter())
-    {
+    for pattern in existing {
         if seen.insert(pattern.clone()) {
             merged.push(pattern.clone());
         }
     }
 
-    for pattern in new
-        .absolute_patterns
-        .iter()
-        .chain(new.relative_patterns.iter())
-    {
+    for pattern in new {
         if seen.insert(pattern.clone()) {
             merged.push(pattern.clone());
         }
@@ -374,7 +426,7 @@ mod tests {
             comment: "// glot-disable-next-line untranslated".to_string(),
         };
 
-        op.execute().unwrap();
+        let _ = op.execute().unwrap();
 
         let updated = fs::read_to_string(&file_path).unwrap();
         let expected = "// glot-disable-next-line hardcoded untranslated\nconst x = \"Hello\";\n";
@@ -395,7 +447,7 @@ mod tests {
             comment: "// glot-message-keys \"b\"".to_string(),
         };
 
-        op.execute().unwrap();
+        let _ = op.execute().unwrap();
 
         let updated = fs::read_to_string(&file_path).unwrap();
         let expected = "// glot-message-keys \"a\", \"b\"\nconst x = t(key);\n";
@@ -416,13 +468,13 @@ mod tests {
             context: ctx.clone(),
             comment: "// glot-disable-next-line hardcoded".to_string(),
         };
-        op1.execute().unwrap();
+        let _ = op1.execute().unwrap();
 
         let op2 = Operation::InsertComment {
             context: ctx,
             comment: "// glot-disable-next-line untranslated".to_string(),
         };
-        op2.execute().unwrap();
+        let _ = op2.execute().unwrap();
 
         let updated = fs::read_to_string(&file_path).unwrap();
         let expected = "// glot-disable-next-line hardcoded untranslated\nconst x = \"Hello\";\n";
@@ -443,7 +495,7 @@ mod tests {
             comment: "{/* glot-message-keys \"b\" */}".to_string(),
         };
 
-        op.execute().unwrap();
+        let _ = op.execute().unwrap();
 
         let updated = fs::read_to_string(&file_path).unwrap();
         let expected = "{/* glot-message-keys \"a\", \"b\" */}\nconst x = t(key);\n";

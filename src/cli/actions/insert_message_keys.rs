@@ -49,16 +49,21 @@ impl Action<UnresolvedKeyIssue> for InsertMessageKeys {
         let skipped = issues.len() - processed; // Issues without pattern
 
         let mut files_modified = std::collections::HashSet::new();
+        let mut changes_applied = 0;
         for op in &ops {
-            op.execute()?;
-            if let Operation::InsertComment { context, .. } = op {
-                files_modified.insert(context.file_path().to_string());
+            let result = op.execute()?;
+            if result.is_applied() {
+                changes_applied += 1;
+                if let Operation::InsertComment { context, .. } = op {
+                    files_modified.insert(context.file_path().to_string());
+                }
             }
         }
 
         Ok(ActionStats {
             processed,
             skipped,
+            changes_applied,
             files_modified: files_modified.len(),
         })
     }

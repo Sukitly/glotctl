@@ -14,6 +14,9 @@ pub struct BaselineSummary {
     pub hardcoded_count: usize,
     pub untranslated_usage_count: usize,
     pub untranslated_key_count: usize,
+    pub applied_hardcoded_count: usize,
+    pub applied_untranslated_count: usize,
+    pub applied_total_count: usize,
     pub file_count: usize,
     pub is_apply: bool,
     pub hardcoded_issues: Vec<crate::issues::HardcodedTextIssue>,
@@ -23,7 +26,8 @@ pub struct BaselineSummary {
 #[derive(Debug)]
 pub struct FixSummary {
     pub unresolved_count: usize,
-    pub inserted_count: usize,
+    pub processed_count: usize,
+    pub applied_count: usize,
     pub skipped_count: usize,
     pub file_count: usize,
     pub is_apply: bool,
@@ -34,6 +38,9 @@ pub struct FixSummary {
 pub struct CleanSummary {
     pub unused_count: usize,
     pub orphan_count: usize,
+    pub applied_unused_count: usize,
+    pub applied_orphan_count: usize,
+    pub applied_total_count: usize,
     pub file_count: usize,
     pub is_apply: bool,
     pub unused_issues: Vec<crate::issues::UnusedKeyIssue>,

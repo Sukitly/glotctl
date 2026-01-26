@@ -14,6 +14,8 @@ pub struct ActionStats {
     pub processed: usize,
     /// Number of issues skipped (e.g., missing required fields).
     pub skipped: usize,
+    /// Number of changes actually applied to files.
+    pub changes_applied: usize,
     /// Number of files modified.
     pub files_modified: usize,
 }
@@ -22,6 +24,7 @@ impl std::ops::AddAssign for ActionStats {
     fn add_assign(&mut self, other: Self) {
         self.processed += other.processed;
         self.skipped += other.skipped;
+        self.changes_applied += other.changes_applied;
         self.files_modified += other.files_modified;
     }
 }
@@ -56,17 +59,19 @@ pub trait Action<I> {
 
         // Track unique files modified
         let mut files_modified = std::collections::HashSet::new();
+        let mut changes_applied = 0;
 
         for op in &ops {
-            op.execute()?;
-
-            // Track file path
-            match op {
-                Operation::InsertComment { context, .. } => {
-                    files_modified.insert(context.file_path().to_string());
-                }
-                Operation::DeleteJsonKey { context } => {
-                    files_modified.insert(context.file_path().to_string());
+            let result = op.execute()?;
+            if result.is_applied() {
+                changes_applied += 1;
+                match op {
+                    Operation::InsertComment { context, .. } => {
+                        files_modified.insert(context.file_path().to_string());
+                    }
+                    Operation::DeleteJsonKey { context } => {
+                        files_modified.insert(context.file_path().to_string());
+                    }
                 }
             }
         }
@@ -74,6 +79,7 @@ pub trait Action<I> {
         Ok(ActionStats {
             processed: total,
             skipped: 0,
+            changes_applied,
             files_modified: files_modified.len(),
         })
     }
@@ -98,11 +104,13 @@ mod tests {
         let mut stats1 = ActionStats {
             processed: 5,
             skipped: 1,
+            changes_applied: 4,
             files_modified: 2,
         };
         let stats2 = ActionStats {
             processed: 3,
             skipped: 2,
+            changes_applied: 1,
             files_modified: 1,
         };
 
@@ -110,6 +118,7 @@ mod tests {
 
         assert_eq!(stats1.processed, 8);
         assert_eq!(stats1.skipped, 3);
+        assert_eq!(stats1.changes_applied, 5);
         assert_eq!(stats1.files_modified, 3);
     }
 
@@ -118,6 +127,7 @@ mod tests {
         let stats = ActionStats::default();
         assert_eq!(stats.processed, 0);
         assert_eq!(stats.skipped, 0);
+        assert_eq!(stats.changes_applied, 0);
         assert_eq!(stats.files_modified, 0);
     }
 }
