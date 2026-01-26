@@ -61,7 +61,6 @@ pub fn fix(cmd: FixCommand) -> Result<RunResult> {
             files.len(),
             false,
         );
-        println!("Run with {} to insert these comments.", "--apply".cyan());
     }
 
     let parse_errors = ctx.parsed_files_errors();
@@ -85,26 +84,28 @@ fn print_stats(
     file_count: usize,
     is_apply: bool,
 ) {
-    if is_apply {
-        println!(
-            "{} {} issue(s) in {} file(s):",
-            action.green().bold(),
-            unresolved,
-            file_count
-        );
-    } else {
-        println!(
-            "{} {} issue(s) in {} file(s):",
-            action.yellow().bold(),
-            unresolved,
-            file_count
-        );
-    }
-
-    if inserted > 0 {
-        println!("  - inserted: {} comment(s)", inserted);
-    }
-    if skipped > 0 {
-        println!("  - skipped: {} issue(s) without pattern", skipped);
+    if unresolved > 0 {
+        if is_apply {
+            println!(
+                "{} {} comment(s) in {} file(s):",
+                action.green().bold(),
+                unresolved,
+                file_count
+            );
+            if inserted > 0 {
+                println!("  - inserted: {} comment(s)", inserted);
+            }
+            if skipped > 0 {
+                println!("  - skipped: {} issue(s) without pattern", skipped);
+            }
+        } else {
+            println!(
+                "{} {} comment(s) in {} file(s):",
+                action.yellow().bold(),
+                unresolved,
+                file_count
+            );
+            println!("Run with {} to insert these comments.", "--apply".cyan());
+        }
     }
 }

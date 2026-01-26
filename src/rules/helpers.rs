@@ -134,7 +134,7 @@ mod tests {
         );
 
         let usages = get_usages_for_key(&map, "Common.submit");
-        assert_eq!(usages.len(), 2);
+        assert_eq!(usages.len(), 3);
     }
 
     #[test]

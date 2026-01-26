@@ -89,7 +89,6 @@ pub fn clean(cmd: CleanCommand) -> Result<RunResult> {
             files.len(),
             false,
         );
-        println!("Run with {} to delete these keys.", "--apply".cyan());
     }
 
     let parse_errors = ctx.parsed_files_errors();
@@ -108,26 +107,28 @@ pub fn clean(cmd: CleanCommand) -> Result<RunResult> {
 
 fn print_stats(action: &str, unused: usize, orphan: usize, file_count: usize, is_apply: bool) {
     let total = unused + orphan;
-    if is_apply {
-        println!(
-            "{} {} key(s) in {} file(s):",
-            action.green().bold(),
-            total,
-            file_count
-        );
-    } else {
-        println!(
-            "{} {} key(s) in {} file(s):",
-            action.yellow().bold(),
-            total,
-            file_count
-        );
-    }
-
-    if unused > 0 {
-        println!("  - unused: {} key(s)", unused);
-    }
-    if orphan > 0 {
-        println!("  - orphan: {} key(s)", orphan);
+    if total > 0 {
+        if is_apply {
+            println!(
+                "{} {} key(s) in {} file(s):",
+                action.green().bold(),
+                total,
+                file_count
+            );
+            if unused > 0 {
+                println!("  - unused: {} key(s)", unused);
+            }
+            if orphan > 0 {
+                println!("  - orphan: {} key(s)", orphan);
+            }
+        } else {
+            println!(
+                "{} {} key(s) in {} file(s):",
+                action.yellow().bold(),
+                total,
+                file_count
+            );
+            println!("Run with {} to delete these keys.", "--apply".cyan());
+        }
     }
 }

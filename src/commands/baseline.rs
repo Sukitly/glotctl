@@ -97,7 +97,6 @@ pub fn baseline(cmd: BaselineCommand) -> Result<RunResult> {
             files.len(),
             false,
         );
-        println!("Run with {} to insert these comments.", "--apply".cyan());
     }
 
     let parse_errors = ctx.parsed_files_errors();
@@ -123,28 +122,31 @@ fn print_stats(
     is_apply: bool,
 ) {
     let total = hardcoded + untranslated;
-    if is_apply {
-        println!(
-            "{} {} comment(s) in {} file(s):",
-            action.green().bold(),
-            total,
-            file_count
-        );
-    } else {
-        println!(
-            "{} {} comment(s) in {} file(s):",
-            action.yellow().bold(),
-            total,
-            file_count
-        );
-    }
-    if hardcoded > 0 {
-        println!("  - hardcoded: {} comment(s)", hardcoded);
-    }
-    if untranslated > 0 {
-        println!(
-            "  - untranslated: {} comment(s), {} key(s)",
-            untranslated, untranslated_keys
-        );
+    if total > 0 {
+        if is_apply {
+            println!(
+                "{} {} comment(s) in {} file(s):",
+                action.green().bold(),
+                total,
+                file_count
+            );
+            if hardcoded > 0 {
+                println!("  - hardcoded: {} comment(s)", hardcoded);
+            }
+            if untranslated > 0 {
+                println!(
+                    "  - untranslated: {} comment(s), {} key(s)",
+                    untranslated, untranslated_keys
+                );
+            }
+        } else {
+            println!(
+                "{} {} comment(s) in {} file(s):",
+                action.yellow().bold(),
+                total,
+                file_count
+            );
+            println!("Run with {} to insert these comments.", "--apply".cyan());
+        }
     }
 }
