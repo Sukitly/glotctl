@@ -1,10 +1,10 @@
 use std::collections::HashSet;
 
 use crate::{
-    actions::{Action, ActionStats, InsertMessageKeys},
-    args::FixCommand,
-    commands::helper::finish,
-    commands::{CommandKind, CommandResult, CommandSummary, FixSummary},
+    cli::actions::{Action, ActionStats, InsertMessageKeys},
+    cli::args::FixCommand,
+    cli::commands::helper::finish,
+    cli::commands::{CommandKind, CommandResult, CommandSummary, FixSummary},
     core::CheckContext,
     issues::{Issue, UnresolvedKeyIssue},
     rules::unresolved::check_unresolved_keys_issues,
@@ -13,7 +13,7 @@ use anyhow::{Ok, Result};
 
 pub fn fix(cmd: FixCommand) -> Result<CommandResult> {
     let args = &cmd.args;
-    let ctx = CheckContext::new(&args.common)?;
+    let ctx = CheckContext::new(&args.common.path, args.common.verbose)?;
     let apply = args.apply;
 
     let unresolved_issues: Vec<UnresolvedKeyIssue> = check_unresolved_keys_issues(&ctx);

@@ -11,10 +11,8 @@ use colored::Colorize;
 use std::path::Path;
 use unicode_width::UnicodeWidthStr;
 
-use crate::{
-    actions::json_editor::JsonEditor,
-    core::{MessageContext, SourceContext},
-};
+use super::json_editor::JsonEditor;
+use crate::core::{MessageContext, SourceContext};
 
 /// A low-level file operation.
 ///
@@ -178,7 +176,7 @@ impl Operation {
 
 #[cfg(test)]
 mod tests {
-    use crate::actions::operation::*;
+    use super::*;
     use crate::core::{CommentStyle, MessageLocation, SourceLocation};
 
     #[test]

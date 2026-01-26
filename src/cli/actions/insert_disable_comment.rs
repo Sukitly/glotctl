@@ -6,8 +6,8 @@
 use crate::core::CommentStyle;
 use crate::issues::{HardcodedTextIssue, Rule, UntranslatedIssue};
 
-use crate::actions::operation::Operation;
-use crate::actions::traits::Action;
+use super::operation::Operation;
+use super::traits::Action;
 
 /// Action to insert `glot-disable-next-line` comments.
 ///
@@ -57,7 +57,7 @@ impl Action<UntranslatedIssue> for InsertDisableComment {
 mod tests {
     use std::collections::HashSet;
 
-    use crate::actions::insert_disable_comment::*;
+    use super::*;
     use crate::core::{FullKey, ResolvedKeyUsage};
     use crate::core::{MessageContext, MessageLocation, SourceContext, SourceLocation};
 

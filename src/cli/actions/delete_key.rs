@@ -5,8 +5,8 @@
 
 use crate::issues::{OrphanKeyIssue, UnusedKeyIssue};
 
-use crate::actions::operation::Operation;
-use crate::actions::traits::Action;
+use super::operation::Operation;
+use super::traits::Action;
 
 /// Action to delete translation keys from JSON files.
 ///
@@ -39,7 +39,7 @@ impl Action<OrphanKeyIssue> for DeleteKey {
 
 #[cfg(test)]
 mod tests {
-    use crate::actions::delete_key::*;
+    use super::*;
     use crate::core::{MessageContext, MessageLocation};
 
     #[test]

@@ -38,9 +38,7 @@ mod json_editor;
 mod operation;
 mod traits;
 
-// Re-export public types
 pub use delete_key::DeleteKey;
 pub use insert_disable_comment::InsertDisableComment;
 pub use insert_message_keys::InsertMessageKeys;
-pub use operation::Operation;
 pub use traits::{Action, ActionStats};

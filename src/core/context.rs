@@ -8,7 +8,6 @@ use anyhow::{Context as _, Result, anyhow};
 use swc_ecma_visit::VisitWith;
 
 use crate::{
-    args::CommonArgs,
     config::{Config, load_config},
     core::{
         AllKeyUsages, AllLocaleMessages, LocaleMessages,
@@ -68,17 +67,16 @@ pub struct CheckContext {
 
 impl CheckContext {
     /// Create a new CheckContext with basic data from command line args.
-    pub fn new(args: &CommonArgs) -> Result<Self> {
-        let root_dir = args.path.clone();
-        let path = args
-            .path
+    pub fn new(path: &PathBuf, verbose: bool) -> Result<Self> {
+        let root_dir = path.clone();
+        let path = path
             .to_str()
-            .with_context(|| anyhow!("Invalid path: {:?}", args.path))?;
+            .with_context(|| anyhow!("Invalid path: {:?}", path))?;
 
         let config_result = load_config(Path::new(path))?;
 
         // In verbose mode, inform user if using default config
-        if args.verbose && !config_result.from_file {
+        if verbose && !config_result.from_file {
             eprintln!("Note: No .glotrc.json found, using default configuration");
         }
 
@@ -88,18 +86,14 @@ impl CheckContext {
             &config.includes,
             &config.ignores,
             config.ignore_test_files,
-            args.verbose,
+            verbose,
         );
 
         if scan_result.skipped_count > 0 {
             eprintln!(
                 "Warning: {} path(s) skipped due to access errors{}",
                 scan_result.skipped_count,
-                if args.verbose {
-                    ""
-                } else {
-                    " (use -v for details)"
-                }
+                if verbose { "" } else { " (use -v for details)" }
             );
         }
 
@@ -110,7 +104,7 @@ impl CheckContext {
             root_dir,
             files: scan_result.files,
             ignore_texts,
-            verbose: args.verbose,
+            verbose,
             parsed_files: OnceCell::new(),
             parsed_files_errors: OnceCell::new(),
             source_metadata: OnceCell::new(),

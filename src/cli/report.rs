@@ -8,9 +8,11 @@ use std::io::{self, Write};
 use colored::Colorize;
 use unicode_width::UnicodeWidthStr;
 
-use crate::actions::{Action, DeleteKey, InsertDisableComment, InsertMessageKeys};
-use crate::commands::{
-    BaselineSummary, CleanSummary, CommandResult, CommandSummary, FixSummary, InitSummary,
+use super::{
+    actions::{Action, DeleteKey, InsertDisableComment, InsertMessageKeys},
+    commands::{
+        BaselineSummary, CleanSummary, CommandResult, CommandSummary, FixSummary, InitSummary,
+    },
 };
 use crate::config::CONFIG_FILE_NAME;
 use crate::core::ResolvedKeyUsage;

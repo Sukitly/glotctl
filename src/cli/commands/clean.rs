@@ -1,10 +1,12 @@
 use std::collections::HashSet;
 
-use crate::{
+use super::super::{
     actions::{Action, ActionStats, DeleteKey},
     args::{CleanCommand, CleanRule},
-    commands::helper::finish,
-    commands::{CleanSummary, CommandKind, CommandResult, CommandSummary},
+};
+use super::helper::finish;
+use super::{CleanSummary, CommandKind, CommandResult, CommandSummary};
+use crate::{
     core::CheckContext,
     issues::{Issue, OrphanKeyIssue, UnusedKeyIssue},
     rules::{orphan::check_orphan_keys_issues, unused::check_unused_keys_issues},
@@ -19,7 +21,7 @@ impl CleanRule {
 
 pub fn clean(cmd: CleanCommand) -> Result<CommandResult> {
     let args = &cmd.args;
-    let ctx = CheckContext::new(&args.common)?;
+    let ctx = CheckContext::new(&args.common.path, args.common.verbose)?;
     let apply = args.apply;
 
     let rules = if args.rules.is_empty() {

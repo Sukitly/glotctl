@@ -6,8 +6,8 @@
 use crate::core::CommentStyle;
 use crate::issues::UnresolvedKeyIssue;
 
-use crate::actions::operation::Operation;
-use crate::actions::traits::{Action, ActionStats};
+use super::operation::Operation;
+use super::traits::{Action, ActionStats};
 
 /// Action to insert `glot-message-keys` comments.
 ///
@@ -66,7 +66,7 @@ impl Action<UnresolvedKeyIssue> for InsertMessageKeys {
 
 #[cfg(test)]
 mod tests {
-    use crate::actions::insert_message_keys::*;
+    use super::*;
     use crate::core::{SourceContext, SourceLocation};
     use crate::issues::IssueUnresolvedKeyReason;
 

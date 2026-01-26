@@ -1,10 +1,13 @@
 use anyhow::{Ok, Result};
 use clap::ValueEnum;
 
+use super::super::args::CheckCommand;
+use super::{
+    helper::finish,
+    {CommandKind, CommandResult, CommandSummary},
+};
+
 use crate::{
-    args::CheckCommand,
-    commands::helper::finish,
-    commands::{CommandKind, CommandResult, CommandSummary},
     core::CheckContext,
     issues::Issue,
     rules::{
@@ -45,7 +48,7 @@ impl CheckRule {
 pub fn check(cmd: CheckCommand) -> Result<CommandResult> {
     let args = &cmd.args;
     let checks = &cmd.checks;
-    let ctx = CheckContext::new(&args.common)?;
+    let ctx = CheckContext::new(&args.common.path, args.common.verbose)?;
 
     let checks = if checks.is_empty() {
         CheckRule::all()

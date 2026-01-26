@@ -1,5 +1,5 @@
 use clap::Parser;
-use glot::args::Arguments;
+use glot::cli::Arguments;
 
 fn main() {
     let args = Arguments::parse();

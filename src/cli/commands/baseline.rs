@@ -1,12 +1,12 @@
 use std::collections::HashSet;
 
-use crate::{
+use super::super::{
     actions::{Action, ActionStats, InsertDisableComment},
     args::BaselineCommand,
-    commands::helper::finish,
-    commands::{BaselineSummary, CommandKind, CommandResult, CommandSummary},
-    core::CheckContext,
-    core::collect::SuppressibleRule,
+};
+use super::{BaselineSummary, CommandKind, CommandResult, CommandSummary, helper::finish};
+use crate::{
+    core::{CheckContext, collect::SuppressibleRule},
     issues::{HardcodedTextIssue, Issue, UntranslatedIssue},
     rules::{hardcoded::check_hardcoded_text_issues, untranslated::check_untranslated_issues},
 };
@@ -15,7 +15,7 @@ use anyhow::{Ok, Result};
 pub fn baseline(cmd: BaselineCommand) -> Result<CommandResult> {
     let args = &cmd.args;
     let rules = &cmd.args.rules;
-    let ctx = CheckContext::new(&args.common)?;
+    let ctx = CheckContext::new(&args.common.path, args.common.verbose)?;
     let apply = args.apply;
 
     let rules = if rules.is_empty() {

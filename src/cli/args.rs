@@ -1,6 +1,8 @@
+use std::path::PathBuf;
+
 use clap::{Args, CommandFactory, Parser, Subcommand, ValueEnum};
 
-use crate::commands::check::CheckRule;
+use super::commands::check::CheckRule;
 use crate::core::collect::SuppressibleRule;
 
 #[derive(Debug, Parser)]
@@ -38,7 +40,7 @@ impl Arguments {
 pub struct CommonArgs {
     /// Path to check (default: current directory)
     #[arg(long, default_value = ".")]
-    pub path: std::path::PathBuf,
+    pub path: PathBuf,
 
     /// Enable verbose output
     #[arg(short, long)]

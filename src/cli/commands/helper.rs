@@ -1,7 +1,5 @@
-use crate::{
-    commands::{CommandKind, CommandResult, CommandSummary},
-    issues::{Issue, Severity},
-};
+use super::{CommandKind, CommandResult, CommandSummary};
+use crate::issues::{Issue, Severity};
 
 pub fn finish(
     kind: CommandKind,

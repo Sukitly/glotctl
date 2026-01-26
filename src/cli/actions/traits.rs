@@ -5,7 +5,7 @@
 
 use anyhow::Result;
 
-use crate::actions::operation::Operation;
+use super::operation::Operation;
 
 /// Statistics from running an action.
 #[derive(Debug, Clone, Default)]
@@ -91,7 +91,7 @@ pub trait Action<I> {
 
 #[cfg(test)]
 mod tests {
-    use crate::actions::traits::*;
+    use super::*;
 
     #[test]
     fn test_action_stats_add_assign() {
