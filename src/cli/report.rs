@@ -16,7 +16,7 @@ use super::{
 };
 use crate::config::CONFIG_FILE_NAME;
 use crate::core::ResolvedKeyUsage;
-use crate::issues::{Issue, Report, ReportLocation, Severity};
+use crate::issues::{Issue, Report, ReportLocation, Severity, UnresolvedKeyIssue};
 
 /// Success mark for consistent output formatting.
 pub const SUCCESS_MARK: &str = "\u{2713}"; // ✓
@@ -381,7 +381,7 @@ fn print_baseline(summary: &BaselineSummary) {
     if total > 0 {
         if summary.is_apply {
             println!(
-                "{} {} comment(s) in {} file(s):",
+                "{} {} comment(s) in {} file(s).",
                 "Inserted".green().bold(),
                 total,
                 summary.file_count
@@ -397,7 +397,7 @@ fn print_baseline(summary: &BaselineSummary) {
             }
         } else {
             println!(
-                "{} {} comment(s) in {} file(s):",
+                "{} {} comment(s) in {} file(s).",
                 "Would insert".yellow().bold(),
                 total,
                 summary.file_count
@@ -408,33 +408,96 @@ fn print_baseline(summary: &BaselineSummary) {
 }
 
 fn print_fix(summary: &FixSummary) {
+    let unfixable_issues: Vec<&UnresolvedKeyIssue> = summary
+        .unresolved_issues
+        .iter()
+        .filter(|issue| issue.pattern.is_none())
+        .collect();
+    let has_fixable = summary.inserted_count > 0;
+    let has_unfixable = !unfixable_issues.is_empty();
+
+    if has_unfixable {
+        print_unfixable_keys(&unfixable_issues);
+    }
+
     if !summary.is_apply && !summary.unresolved_issues.is_empty() {
         InsertMessageKeys::preview(&summary.unresolved_issues);
     }
 
     if summary.unresolved_count > 0 {
         if summary.is_apply {
-            println!(
-                "{} {} comment(s) in {} file(s):",
-                "Inserted".green().bold(),
-                summary.inserted_count,
-                summary.file_count
-            );
-            if summary.skipped_count > 0 {
+            if has_fixable {
                 println!(
-                    "  - skipped: {} issue(s) without pattern",
-                    summary.skipped_count
+                    "{} {} comment(s) in {} file(s).",
+                    "Inserted".green().bold(),
+                    summary.inserted_count,
+                    summary.file_count
                 );
+                if summary.skipped_count > 0 {
+                    println!(
+                        "  - skipped: {} issue(s) without pattern",
+                        summary.skipped_count
+                    );
+                }
             }
-        } else {
+        } else if has_fixable {
             println!(
-                "{} {} comment(s) in {} file(s):",
+                "{} {} comment(s) in {} file(s).",
                 "Would insert".yellow().bold(),
                 summary.inserted_count,
                 summary.file_count
             );
             println!("Run with {} to insert these comments.", "--apply".cyan());
         }
+
+        if has_unfixable && !summary.is_apply {
+            if has_fixable {
+                println!(
+                    "Note: {} dynamic key(s) cannot be fixed (variable keys).",
+                    summary.skipped_count
+                );
+            } else {
+                println!();
+                println!("Note: No fixable dynamic keys (all are variable keys without hints).");
+            }
+        }
+    }
+}
+
+fn print_unfixable_keys(issues: &[&UnresolvedKeyIssue]) {
+    println!(
+        "{} Cannot fix {} unresolved key(s) (variable keys without pattern hints):",
+        FAILURE_MARK.red(),
+        issues.len()
+    );
+    println!();
+
+    for issue in issues {
+        let ctx = &issue.context;
+        let line = ctx.line();
+        let col = ctx.col();
+        let source_line = &ctx.source_line;
+
+        println!("  {} {}:{}:{}", "-->".blue(), ctx.file_path(), line, col);
+        println!("     {}", "|".blue());
+        println!(
+            " {:>3} {} {}",
+            line.to_string().blue(),
+            "|".blue(),
+            source_line
+        );
+
+        let prefix: String = source_line.chars().take(col.saturating_sub(1)).collect();
+        let caret_padding = UnicodeWidthStr::width(prefix.as_str());
+        println!(
+            "     {} {:>padding$}{}",
+            "|".blue(),
+            "",
+            "^".red(),
+            padding = caret_padding
+        );
+        println!("   {} reason: {}", "=".blue(), issue.reason);
+        println!();
     }
 }
 
@@ -452,7 +515,7 @@ fn print_clean(summary: &CleanSummary) {
     if total > 0 {
         if summary.is_apply {
             println!(
-                "{} {} key(s) in {} file(s):",
+                "{} {} key(s) in {} file(s).",
                 "Deleted".green().bold(),
                 total,
                 summary.file_count
@@ -465,7 +528,7 @@ fn print_clean(summary: &CleanSummary) {
             }
         } else {
             println!(
-                "{} {} key(s) in {} file(s):",
+                "{} {} key(s) in {} file(s).",
                 "Would delete".yellow().bold(),
                 total,
                 summary.file_count
