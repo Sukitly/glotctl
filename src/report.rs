@@ -8,7 +8,7 @@ use std::io::{self, Write};
 use colored::Colorize;
 use unicode_width::UnicodeWidthStr;
 
-use crate::extraction::ResolvedKeyUsage;
+use crate::analysis::ResolvedKeyUsage;
 use crate::issues::{Issue, Report, ReportLocation, Severity};
 
 /// Success mark for consistent output formatting.
@@ -338,11 +338,11 @@ fn compare_issues(a: &Issue, b: &Issue) -> std::cmp::Ordering {
 mod tests {
     use std::collections::HashSet;
 
+    use crate::analysis::FullKey;
     use crate::analysis::{
         CommentStyle, LocaleTypeMismatch, MessageContext, MessageLocation, SourceContext,
         SourceLocation, ValueType,
     };
-    use crate::extraction::FullKey;
     use crate::issues::{
         HardcodedIssue, IssueUnresolvedKeyReason, MissingKeyIssue, OrphanKeyIssue, ParseErrorIssue,
         ReplicaLagIssue, TypeMismatchIssue, UnresolvedKeyIssue, UntranslatedIssue, UnusedKeyIssue,

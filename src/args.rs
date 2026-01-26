@@ -1,7 +1,7 @@
 use clap::{Args, CommandFactory, Parser, Subcommand, ValueEnum};
 
+use crate::analysis::collect::SuppressibleRule;
 use crate::commands::check::CheckRule;
-use crate::extraction::collect::SuppressibleRule;
 
 #[derive(Debug, Parser)]
 #[command(author, version, about, long_about = None)]

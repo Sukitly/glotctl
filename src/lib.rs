@@ -15,15 +15,14 @@ pub mod actions;
 pub mod analysis;
 pub mod args;
 pub mod commands;
-pub(crate) mod config;
-pub(crate) mod extraction;
-pub(crate) mod file_scanner;
+pub mod config;
+pub mod file_scanner;
 pub mod issues;
-pub(crate) mod json_editor;
+pub mod json_editor;
 pub mod messages;
-pub(crate) mod parsers;
+pub mod parsers;
 pub mod report;
-pub(crate) mod rules;
+pub mod rules;
 pub mod utils;
 
 /// Main entry point for the glot CLI.

@@ -4,14 +4,14 @@ use std::collections::{HashMap, HashSet};
 use swc_common::{comments::SingleThreadedComments, FileName};
 use swc_ecma_parser::{Parser, StringInput, Syntax, TsSyntax};
 
-use crate::extraction::collect::types::{
+use crate::analysis::collect::types::{
     make_registry_key, make_translation_fn_call_key, make_translation_prop_key, FileImports,
     KeyArrayRegistry, KeyObject, KeyObjectRegistry, StringArrayRegistry, TranslationFnCall,
     TranslationFnCallRegistry, TranslationProp, TranslationPropRegistry,
 };
-use crate::extraction::collect::Registries;
-use crate::extraction::extract::*;
-use crate::extraction::schema::SchemaRegistry;
+use crate::analysis::collect::Registries;
+use crate::analysis::extract::*;
+use crate::analysis::schema::SchemaRegistry;
 
 fn create_empty_registries() -> Registries {
     Registries {
@@ -38,7 +38,7 @@ fn create_registries_with_key_objects(key_object: KeyObjectRegistry) -> Registri
 }
 
 fn parse_and_extract(code: &str) -> KeyExtractionResult {
-    use crate::extraction::extract::FileAnalyzer;
+    use crate::analysis::extract::FileAnalyzer;
 
     let source_map = Box::leak(Box::new(swc_common::SourceMap::default()));
     let source_file =
@@ -357,7 +357,7 @@ fn parse_and_extract_with_registries(
     code: &str,
     registries: &'static Registries,
 ) -> KeyExtractionResult {
-    use crate::extraction::extract::FileAnalyzer;
+    use crate::analysis::extract::FileAnalyzer;
 
     let source_map = Box::leak(Box::new(swc_common::SourceMap::default()));
     let source_file =
@@ -394,7 +394,7 @@ fn parse_and_extract_with_registries(
 
 #[test]
 fn test_resolvable_dynamic_key_local_object() {
-    use crate::extraction::extract::ValueSource;
+    use crate::analysis::extract::ValueSource;
 
     let mut key_object = KeyObjectRegistry::new();
     key_object.insert(
@@ -998,12 +998,12 @@ fn test_used_key_jsx_disable_comment_style() {
 // ============================================================
 
 mod value_source_tests {
-    use crate::extraction::collect::RegistryCollector;
-    use crate::extraction::extract::*;
+    use crate::analysis::collect::RegistryCollector;
+    use crate::analysis::extract::*;
     use swc_ecma_visit::VisitWith;
 
     fn parse_and_extract_with_collected_registries(code: &str) -> KeyExtractionResult {
-        use crate::extraction::extract::FileAnalyzer;
+        use crate::analysis::extract::FileAnalyzer;
 
         let source_map = Box::leak(Box::new(swc_common::SourceMap::default()));
         let source_file =
@@ -1223,7 +1223,7 @@ mod value_source_tests {
             .find(|k| {
                 matches!(
                     &k.source,
-                    crate::extraction::extract::ValueSource::ObjectAccess { .. }
+                    crate::analysis::extract::ValueSource::ObjectAccess { .. }
                 )
             })
             .expect("Should have ObjectAccess resolved key");

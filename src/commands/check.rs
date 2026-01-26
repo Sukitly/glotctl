@@ -2,9 +2,10 @@ use anyhow::{Ok, Result};
 use clap::ValueEnum;
 
 use crate::{
+    analysis::CheckContext,
     args::CheckCommand,
     commands::RunResult,
-    commands::{context::CheckContext, helper::finish},
+    commands::helper::finish,
     issues::Issue,
     report::report,
     rules::{
@@ -28,7 +29,7 @@ pub enum CheckRule {
 }
 
 impl CheckRule {
-    pub fn default() -> Vec<CheckRule> {
+    pub fn all() -> Vec<CheckRule> {
         vec![
             CheckRule::Hardcoded,
             CheckRule::Missing,
@@ -48,7 +49,7 @@ pub fn check(cmd: CheckCommand) -> Result<RunResult> {
     let ctx = CheckContext::new(&args.common)?;
 
     let checks = if checks.is_empty() {
-        CheckRule::default()
+        CheckRule::all()
     } else {
         checks.clone()
     };

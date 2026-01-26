@@ -11,13 +11,13 @@ use swc_ecma_ast::{
     JSXAttrValue, JSXElement, JSXElementName, JSXExpr, ModuleExportName, VarDecl,
 };
 
-use crate::extraction::utils::{extract_namespace_from_call, is_translation_hook};
+use crate::analysis::utils::{extract_namespace_from_call, is_translation_hook};
 
-use crate::extraction::collect::registry::helpers::{
+use crate::analysis::collect::registry::helpers::{
     extract_array_properties, extract_jsx_member_name, extract_string_array, extract_string_value,
     unwrap_ts_expr,
 };
-use crate::extraction::collect::types::{
+use crate::analysis::collect::types::{
     FileImports, ImportInfo, KeyArray, KeyObject, StringArray, TranslationBindingValue,
     TranslationFnCall, TranslationProp, resolve_import_path,
 };

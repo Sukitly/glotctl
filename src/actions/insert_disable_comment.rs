@@ -58,8 +58,8 @@ mod tests {
     use std::collections::HashSet;
 
     use crate::actions::insert_disable_comment::*;
+    use crate::analysis::{FullKey, ResolvedKeyUsage};
     use crate::analysis::{MessageContext, MessageLocation, SourceContext, SourceLocation};
-    use crate::extraction::{FullKey, ResolvedKeyUsage};
 
     fn make_usage(
         key: &str,

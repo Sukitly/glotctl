@@ -8,7 +8,7 @@ use std::{collections::HashMap, path::Path};
 
 use swc_ecma_ast::{BinExpr, BinaryOp, CondExpr, Expr, Ident, Lit, MemberExpr, MemberProp, Tpl};
 
-use crate::extraction::{
+use crate::analysis::{
     collect::types::{
         FileImports, KeyArrayRegistry, KeyObjectRegistry, StringArrayRegistry, make_registry_key,
         resolve_import_path,
@@ -154,7 +154,7 @@ impl<'a> ValueAnalyzer<'a> {
 
     /// Main entry point: analyze an expression and return its ValueSource.
     pub fn analyze_expr(&self, expr: &Expr) -> ValueSource {
-        match crate::extraction::utils::unwrap_paren(expr) {
+        match crate::analysis::utils::unwrap_paren(expr) {
             // Static string: "key"
             Expr::Lit(Lit::Str(s)) => match s.value.as_str() {
                 Some(v) => ValueSource::Literal(v.to_string()),
@@ -507,8 +507,8 @@ impl<'a> ValueAnalyzer<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::extraction::collect::types::{ImportInfo, KeyArray, KeyObject, StringArray};
-    use crate::extraction::extract::value_analyzer::*;
+    use crate::analysis::collect::types::{ImportInfo, KeyArray, KeyObject, StringArray};
+    use crate::analysis::extract::value_analyzer::*;
 
     fn create_empty_analyzer<'a>(
         file_path: &'a str,

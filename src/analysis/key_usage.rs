@@ -5,7 +5,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::extraction::collect::SuppressibleRule;
+use crate::analysis::collect::SuppressibleRule;
 
 use crate::analysis::SourceContext;
 
@@ -138,8 +138,8 @@ pub struct HardcodedText {
 
 #[cfg(test)]
 mod tests {
+    use crate::analysis::key_usage::*;
     use crate::analysis::{CommentStyle, SourceLocation};
-    use crate::extraction::key_usage::*;
 
     #[test]
     fn test_full_key() {

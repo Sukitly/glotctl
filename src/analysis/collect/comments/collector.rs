@@ -5,10 +5,10 @@
 //! passed to FileAnalyzer in Phase 2 for immediate use, avoiding re-parsing.
 
 use std::collections::HashMap;
-use swc_common::{SourceMap, comments::SingleThreadedComments};
+use swc_common::{comments::SingleThreadedComments, SourceMap};
 
-use crate::extraction::collect::comments::directive::Directive;
-use crate::extraction::collect::types::{
+use crate::analysis::collect::comments::directive::Directive;
+use crate::analysis::collect::types::{
     Declarations, DisabledRange, FileComments, SuppressibleRule, Suppressions,
 };
 
@@ -104,7 +104,7 @@ impl CommentCollector {
 
 #[cfg(test)]
 mod tests {
-    use crate::extraction::collect::comments::collector::*;
+    use crate::analysis::collect::comments::collector::*;
     use crate::parsers::jsx::parse_jsx_source;
 
     /// Helper to parse source and collect comments
@@ -352,16 +352,12 @@ t(`${dynamicKey}`);
         let comments = parse_and_collect(source);
 
         // Check suppression
-        assert!(
-            comments
-                .suppressions
-                .is_suppressed(3, SuppressibleRule::Hardcoded)
-        );
-        assert!(
-            !comments
-                .suppressions
-                .is_suppressed(3, SuppressibleRule::Untranslated)
-        );
+        assert!(comments
+            .suppressions
+            .is_suppressed(3, SuppressibleRule::Hardcoded));
+        assert!(!comments
+            .suppressions
+            .is_suppressed(3, SuppressibleRule::Untranslated));
 
         // Check declaration
         assert_eq!(comments.declarations.entries.len(), 1);
@@ -386,10 +382,8 @@ t(`${dynamicKey}`);
         assert!(comments.declarations.entries.contains_key(&3));
 
         // Suppression for line 8 (next line after line 7)
-        assert!(
-            comments
-                .suppressions
-                .is_suppressed(8, SuppressibleRule::Hardcoded)
-        );
+        assert!(comments
+            .suppressions
+            .is_suppressed(8, SuppressibleRule::Hardcoded));
     }
 }

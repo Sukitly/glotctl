@@ -209,7 +209,7 @@ pub enum SuppressibleRule {
 
 /// Range representing disabled lines [start, end] inclusive.
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct DisabledRange {
+pub struct DisabledRange {
     pub start: usize,
     pub end: usize, // usize::MAX for open-ended
 }
@@ -218,10 +218,10 @@ pub(crate) struct DisabledRange {
 #[derive(Debug, Default)]
 pub struct Suppressions {
     /// Single-line suppressions: rule -> set of line numbers
-    pub(crate) disabled_lines:
+    pub disabled_lines:
         std::collections::HashMap<SuppressibleRule, std::collections::HashSet<usize>>,
     /// Range-based suppressions: rule -> list of ranges
-    pub(crate) disabled_ranges: std::collections::HashMap<SuppressibleRule, Vec<DisabledRange>>,
+    pub disabled_ranges: std::collections::HashMap<SuppressibleRule, Vec<DisabledRange>>,
 }
 
 /// Key declaration for a single line.
@@ -239,7 +239,7 @@ pub struct KeyDeclaration {
 #[derive(Debug, Default)]
 pub struct Declarations {
     /// Line number -> key declaration
-    pub(crate) entries: std::collections::HashMap<usize, KeyDeclaration>,
+    pub entries: std::collections::HashMap<usize, KeyDeclaration>,
 }
 
 /// All glot comments collected from a single file.
@@ -266,7 +266,7 @@ pub type AllFileComments = std::collections::HashMap<String, FileComments>;
 /// This struct aggregates all cross-file dependencies collected during Phase 1.
 /// Does NOT contain file_imports - that's stored separately in AllFileImports.
 pub struct Registries {
-    pub schema: crate::extraction::schema::SchemaRegistry,
+    pub schema: crate::analysis::schema::SchemaRegistry,
     pub key_object: KeyObjectRegistry,
     pub key_array: KeyArrayRegistry,
     pub string_array: StringArrayRegistry,
@@ -284,7 +284,7 @@ pub type AllFileImports = std::collections::HashMap<String, FileImports>;
 
 #[cfg(test)]
 mod tests {
-    use crate::extraction::collect::RegistryCollector;
+    use crate::analysis::collect::RegistryCollector;
     use swc_common::FileName;
     use swc_ecma_parser::{Parser, StringInput, Syntax, TsSyntax};
     use swc_ecma_visit::VisitWith;

@@ -101,7 +101,7 @@ fn segment_matches(pattern: &str, text: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use crate::extraction::utils::glob_matcher::*;
+    use crate::analysis::utils::glob_matcher::*;
 
     fn make_keys(keys: &[&str]) -> HashSet<String> {
         keys.iter().map(|s| s.to_string()).collect()

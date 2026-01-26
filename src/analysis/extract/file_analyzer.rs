@@ -9,7 +9,7 @@
 //! from 3-4 to just 1, significantly improving performance.
 //!
 //! The actual resolution of translation calls to UsedKey/DynamicKeyWarning happens
-//! in the resolve phase (see `crate::extraction::resolve`).
+//! in the resolve phase (see `crate::analysis::resolve`).
 
 use std::collections::HashSet;
 
@@ -22,16 +22,16 @@ use swc_ecma_ast::{
 use swc_ecma_visit::{Visit, VisitWith};
 
 use crate::analysis::{CommentStyle, SourceContext, SourceLocation};
-use crate::extraction::collect::SuppressibleRule;
+use crate::analysis::collect::SuppressibleRule;
 use crate::issues::HardcodedIssue;
 use crate::utils::contains_alphabetic;
 
-use crate::extraction::collect::Registries;
-use crate::extraction::extract::{
+use crate::analysis::collect::Registries;
+use crate::analysis::extract::{
     BindingContext, RawTranslationCall, TranslationCallKind, TranslationSource, ValueAnalyzer,
     ValueSource,
 };
-use crate::extraction::{
+use crate::analysis::{
     collect::types::{
         FileComments, FileImports, extract_binding_names, make_translation_fn_call_key,
     },
@@ -374,7 +374,7 @@ impl<'a> FileAnalyzer<'a> {
         prop_name: &str,
         binding_name: &str,
     ) {
-        use crate::extraction::collect::make_translation_prop_key;
+        use crate::analysis::collect::make_translation_prop_key;
 
         let key = make_translation_prop_key(component_name, prop_name);
 

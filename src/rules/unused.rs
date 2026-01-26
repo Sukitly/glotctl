@@ -6,8 +6,8 @@
 use std::collections::HashSet;
 
 use crate::{
+    analysis::CheckContext,
     analysis::{MessageContext, MessageLocation},
-    commands::context::CheckContext,
     issues::UnusedKeyIssue,
     parsers::json::MessageMap,
 };

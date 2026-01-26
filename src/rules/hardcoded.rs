@@ -3,7 +3,7 @@
 //! Detects untranslated text in JSX/TSX files that should use i18n translation functions.
 
 use crate::{
-    commands::context::{AllHardcodedIssues, CheckContext},
+    analysis::{AllHardcodedIssues, CheckContext},
     issues::HardcodedIssue,
 };
 

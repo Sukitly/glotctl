@@ -2,10 +2,11 @@ use std::collections::HashSet;
 
 use crate::{
     actions::{Action, ActionStats, InsertDisableComment, Operation},
+    analysis::collect::SuppressibleRule,
+    analysis::CheckContext,
     args::BaselineCommand,
+    commands::helper::finish,
     commands::RunResult,
-    commands::{context::CheckContext, helper::finish},
-    extraction::collect::SuppressibleRule,
     issues::{HardcodedIssue, Issue, UntranslatedIssue},
     rules::{hardcoded::check_hardcoded_issues, untranslated::check_untranslated_issues},
 };

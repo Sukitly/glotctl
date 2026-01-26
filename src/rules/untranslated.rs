@@ -11,10 +11,10 @@
 use std::collections::HashMap;
 
 use crate::{
+    analysis::collect::SuppressibleRule,
+    analysis::CheckContext,
+    analysis::ResolvedKeyUsage,
     analysis::{MessageContext, MessageLocation},
-    commands::context::CheckContext,
-    extraction::ResolvedKeyUsage,
-    extraction::collect::SuppressibleRule,
     issues::UntranslatedIssue,
     parsers::json::MessageMap,
     rules::{build_key_usage_map, helpers::KeyUsageMap},
@@ -122,8 +122,8 @@ mod tests {
 
     use crate::rules::untranslated::*;
     use crate::{
+        analysis::FullKey,
         analysis::{CommentStyle, SourceContext, SourceLocation},
-        extraction::FullKey,
         parsers::json::{MessageEntry, ValueType},
     };
 

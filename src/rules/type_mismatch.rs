@@ -14,13 +14,13 @@
 use std::collections::HashMap;
 
 use crate::{
+    analysis::CheckContext,
     analysis::{LocaleTypeMismatch, MessageContext, MessageLocation, ValueType},
-    commands::context::CheckContext,
     issues::TypeMismatchIssue,
     parsers::json::MessageMap,
     rules::{
         build_key_usage_map,
-        helpers::{KeyUsageMap, get_usages_for_key},
+        helpers::{get_usages_for_key, KeyUsageMap},
     },
 };
 

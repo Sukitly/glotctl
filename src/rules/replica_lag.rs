@@ -6,11 +6,11 @@
 use std::collections::HashMap;
 
 use crate::{
+    analysis::CheckContext,
     analysis::{MessageContext, MessageLocation},
-    commands::context::CheckContext,
     issues::ReplicaLagIssue,
     parsers::json::MessageMap,
-    rules::helpers::{KeyUsageMap, build_key_usage_map, get_usages_for_key},
+    rules::helpers::{build_key_usage_map, get_usages_for_key, KeyUsageMap},
 };
 
 pub fn check_replica_lag_issues(ctx: &CheckContext) -> Vec<ReplicaLagIssue> {

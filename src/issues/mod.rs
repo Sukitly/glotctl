@@ -7,8 +7,8 @@
 
 use enum_dispatch::enum_dispatch;
 
+use crate::analysis::ResolvedKeyUsage;
 use crate::analysis::{LocaleTypeMismatch, MessageContext, SourceContext, ValueType};
-use crate::extraction::ResolvedKeyUsage;
 
 // ============================================================
 // Severity and Rule
@@ -783,7 +783,7 @@ mod tests {
 
     #[test]
     fn test_replica_lag_issue() {
-        use crate::extraction::FullKey;
+        use crate::analysis::FullKey;
         use std::collections::HashSet;
 
         let loc = MessageLocation::new("./messages/en.json", 5, 3);

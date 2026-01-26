@@ -3,8 +3,8 @@
 //! Detects translation keys used in code but not defined in the primary locale.
 
 use crate::{
-    analysis::SourceContext, commands::context::CheckContext, extraction::AllKeyUsages,
-    extraction::collect::Registries, issues::MissingKeyIssue, parsers::json::MessageMap,
+    analysis::collect::Registries, analysis::AllKeyUsages, analysis::CheckContext,
+    analysis::SourceContext, issues::MissingKeyIssue, parsers::json::MessageMap,
 };
 
 pub fn check_missing_keys_issues(ctx: &CheckContext) -> Vec<MissingKeyIssue> {
@@ -66,7 +66,7 @@ mod tests {
     use crate::rules::missing::*;
     use crate::{
         analysis::{CommentStyle, SourceLocation},
-        extraction::{FileKeyUsages, FullKey, ResolvedKeyUsage, SchemaSource},
+        analysis::{FileKeyUsages, FullKey, ResolvedKeyUsage, SchemaSource},
         parsers::json::{MessageEntry, ValueType},
     };
     use std::collections::{HashMap, HashSet};
@@ -181,7 +181,7 @@ mod tests {
 
     #[test]
     fn test_check_missing_key_from_schema() {
-        use crate::extraction::schema::SchemaFunction;
+        use crate::analysis::schema::SchemaFunction;
 
         let mut extractions: AllKeyUsages = HashMap::new();
         extractions.insert(
