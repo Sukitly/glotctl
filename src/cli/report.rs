@@ -381,7 +381,7 @@ fn print_baseline(summary: &BaselineSummary) {
     if total > 0 {
         if summary.is_apply {
             println!(
-                "{} {} comment(s) in {} file(s) (processed {} item(s)):",
+                "{} {} comment(s) in {} file(s) (processed {} issue(s)):",
                 "Inserted".green().bold(),
                 summary.applied_total_count,
                 summary.file_count,
