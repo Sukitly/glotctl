@@ -32,7 +32,9 @@ pub mod collect;
 pub mod context;
 mod data;
 pub mod extract;
+mod file_scanner;
 pub mod key_usage;
+pub mod parsers;
 pub mod resolve;
 pub mod schema;
 pub mod utils;
@@ -43,8 +45,8 @@ pub use key_usage::{
 };
 
 pub use data::{
-    CommentStyle, LocaleTypeMismatch, MessageContext, MessageLocation, SourceContext,
-    SourceLocation, ValueType,
+    AllLocaleMessages, CommentStyle, LocaleMessages, LocaleTypeMismatch, MessageContext,
+    MessageEntry, MessageLocation, SourceContext, SourceLocation, ValueType,
 };
 
 pub use context::{

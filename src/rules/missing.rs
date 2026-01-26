@@ -3,8 +3,8 @@
 //! Detects translation keys used in code but not defined in the primary locale.
 
 use crate::{
-    analysis::collect::Registries, analysis::AllKeyUsages, analysis::CheckContext,
-    analysis::SourceContext, issues::MissingKeyIssue, parsers::json::MessageMap,
+    analysis::AllKeyUsages, analysis::CheckContext, analysis::LocaleMessages,
+    analysis::SourceContext, analysis::collect::Registries, issues::MissingKeyIssue,
 };
 
 pub fn check_missing_keys_issues(ctx: &CheckContext) -> Vec<MissingKeyIssue> {
@@ -27,7 +27,7 @@ pub fn check_missing_keys_issues(ctx: &CheckContext) -> Vec<MissingKeyIssue> {
 /// Vector of MissingKeyIssue for keys used but not defined
 pub fn check_missing_keys(
     all_key_usages: &AllKeyUsages,
-    primary_messages: &MessageMap,
+    primary_messages: &LocaleMessages,
     registries: &Registries,
 ) -> Vec<MissingKeyIssue> {
     let mut issues = Vec::new();
@@ -65,27 +65,28 @@ pub fn check_missing_keys(
 mod tests {
     use crate::rules::missing::*;
     use crate::{
-        analysis::{CommentStyle, SourceLocation},
+        analysis::{CommentStyle, LocaleMessages, SourceLocation},
         analysis::{FileKeyUsages, FullKey, ResolvedKeyUsage, SchemaSource},
-        parsers::json::{MessageEntry, ValueType},
+        analysis::{MessageContext, MessageEntry, MessageLocation, ValueType},
     };
     use std::collections::{HashMap, HashSet};
 
-    fn create_message_map(entries: &[(&str, &str)]) -> MessageMap {
-        entries
-            .iter()
-            .map(|(k, v)| {
-                (
-                    k.to_string(),
-                    MessageEntry {
-                        value: v.to_string(),
-                        value_type: ValueType::String,
-                        file_path: "en.json".to_string(),
-                        line: 1,
-                    },
-                )
-            })
-            .collect()
+    fn create_message_map(entries: &[(&str, &str)]) -> LocaleMessages {
+        let mut messages = LocaleMessages::new("en", "en.json");
+        for (k, v) in entries {
+            messages.entries.insert(
+                k.to_string(),
+                MessageEntry {
+                    context: MessageContext::new(
+                        MessageLocation::with_line("en.json", 1),
+                        k.to_string(),
+                        v.to_string(),
+                    ),
+                    value_type: ValueType::String,
+                },
+            );
+        }
+        messages
     }
 
     fn create_resolved_usage(file: &str, line: usize, key: &str) -> ResolvedKeyUsage {

@@ -7,9 +7,8 @@ use std::collections::HashSet;
 
 use crate::{
     analysis::CheckContext,
-    analysis::{MessageContext, MessageLocation},
+    analysis::{LocaleMessages, MessageContext, MessageLocation},
     issues::UnusedKeyIssue,
-    parsers::json::MessageMap,
 };
 
 pub fn check_unused_keys_issues(ctx: &CheckContext) -> Vec<UnusedKeyIssue> {
@@ -30,16 +29,21 @@ pub fn check_unused_keys_issues(ctx: &CheckContext) -> Vec<UnusedKeyIssue> {
 /// Vector of UnusedKeyIssue for keys defined but not used
 pub fn check_unused_keys(
     used_keys: &HashSet<String>,
-    primary_messages: &MessageMap,
+    primary_messages: &LocaleMessages,
 ) -> Vec<UnusedKeyIssue> {
     let mut issues: Vec<UnusedKeyIssue> = primary_messages
+        .entries
         .iter()
         .filter(|(key, _)| !used_keys.contains(*key))
         .map(|(key, entry)| UnusedKeyIssue {
             context: MessageContext::new(
-                MessageLocation::new(&entry.file_path, entry.line, 1),
+                MessageLocation::new(
+                    &entry.context.location.file_path,
+                    entry.context.location.line,
+                    1,
+                ),
                 key.clone(),
-                entry.value.clone(),
+                entry.context.value.clone(),
             ),
         })
         .collect();
@@ -59,25 +63,27 @@ pub fn check_unused_keys(
 
 #[cfg(test)]
 mod tests {
-    use crate::parsers::json::{MessageEntry, ValueType};
+    use crate::analysis::{
+        LocaleMessages, MessageContext, MessageEntry, MessageLocation, ValueType,
+    };
     use crate::rules::unused::*;
 
-    fn create_message_map(entries: &[(&str, &str)]) -> MessageMap {
-        entries
-            .iter()
-            .enumerate()
-            .map(|(i, (k, v))| {
-                (
-                    k.to_string(),
-                    MessageEntry {
-                        value: v.to_string(),
-                        value_type: ValueType::String,
-                        file_path: "en.json".to_string(),
-                        line: i + 1,
-                    },
-                )
-            })
-            .collect()
+    fn create_message_map(entries: &[(&str, &str)]) -> LocaleMessages {
+        let mut messages = LocaleMessages::new("en", "en.json");
+        for (i, (k, v)) in entries.iter().enumerate() {
+            messages.entries.insert(
+                k.to_string(),
+                MessageEntry {
+                    context: MessageContext::new(
+                        MessageLocation::with_line("en.json", i + 1),
+                        k.to_string(),
+                        v.to_string(),
+                    ),
+                    value_type: ValueType::String,
+                },
+            );
+        }
+        messages
     }
 
     #[test]

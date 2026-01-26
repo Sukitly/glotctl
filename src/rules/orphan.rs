@@ -3,13 +3,10 @@
 //! Detects translation keys that exist in non-primary locales
 //! but are missing from the primary locale.
 
-use std::collections::HashMap;
-
 use crate::{
     analysis::CheckContext,
-    analysis::{MessageContext, MessageLocation},
+    analysis::{AllLocaleMessages, MessageContext, MessageLocation},
     issues::OrphanKeyIssue,
-    parsers::json::MessageMap,
 };
 
 pub fn check_orphan_keys_issues(ctx: &CheckContext) -> Vec<OrphanKeyIssue> {
@@ -32,7 +29,7 @@ pub fn check_orphan_keys_issues(ctx: &CheckContext) -> Vec<OrphanKeyIssue> {
 /// Vector of OrphanKeyIssue for keys missing in primary locale
 pub fn check_orphan_keys(
     primary_locale: &str,
-    all_messages: &HashMap<String, MessageMap>,
+    all_messages: &AllLocaleMessages,
 ) -> Vec<OrphanKeyIssue> {
     let Some(primary_messages) = all_messages.get(primary_locale) else {
         return Vec::new();
@@ -43,13 +40,18 @@ pub fn check_orphan_keys(
         .filter(|(locale, _)| *locale != primary_locale)
         .flat_map(|(locale, messages)| {
             messages
+                .entries
                 .iter()
-                .filter(|(key, _)| !primary_messages.contains_key(*key))
+                .filter(|(key, _)| !primary_messages.contains_key(key))
                 .map(|(key, entry)| OrphanKeyIssue {
                     context: MessageContext::new(
-                        MessageLocation::new(&entry.file_path, entry.line, 1),
+                        MessageLocation::new(
+                            &entry.context.location.file_path,
+                            entry.context.location.line,
+                            1,
+                        ),
                         key.clone(),
-                        entry.value.clone(),
+                        entry.context.value.clone(),
                     ),
                     locale: locale.clone(),
                 })
@@ -71,25 +73,30 @@ pub fn check_orphan_keys(
 
 #[cfg(test)]
 mod tests {
-    use crate::parsers::json::{MessageEntry, ValueType};
+    use std::collections::HashMap;
+
+    use crate::analysis::{
+        LocaleMessages, MessageContext, MessageEntry, MessageLocation, ValueType,
+    };
     use crate::rules::orphan::*;
 
-    fn create_message_map(file: &str, entries: &[(&str, &str)]) -> MessageMap {
-        entries
-            .iter()
-            .enumerate()
-            .map(|(i, (k, v))| {
-                (
-                    k.to_string(),
-                    MessageEntry {
-                        value: v.to_string(),
-                        value_type: ValueType::String,
-                        file_path: file.to_string(),
-                        line: i + 1,
-                    },
-                )
-            })
-            .collect()
+    fn create_message_map(file: &str, entries: &[(&str, &str)]) -> LocaleMessages {
+        let locale = file.trim_end_matches(".json");
+        let mut messages = LocaleMessages::new(locale, file);
+        for (i, (k, v)) in entries.iter().enumerate() {
+            messages.entries.insert(
+                k.to_string(),
+                MessageEntry {
+                    context: MessageContext::new(
+                        MessageLocation::with_line(file, i + 1),
+                        k.to_string(),
+                        v.to_string(),
+                    ),
+                    value_type: ValueType::String,
+                },
+            );
+        }
+        messages
     }
 
     #[test]

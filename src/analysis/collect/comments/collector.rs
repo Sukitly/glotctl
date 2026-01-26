@@ -105,7 +105,7 @@ impl CommentCollector {
 #[cfg(test)]
 mod tests {
     use crate::analysis::collect::comments::collector::*;
-    use crate::parsers::jsx::parse_jsx_source;
+    use crate::analysis::parsers::jsx::parse_jsx_source;
 
     /// Helper to parse source and collect comments
     fn parse_and_collect(source: &str) -> FileComments {

@@ -8,9 +8,13 @@
 //! Each operation knows how to execute itself and preview itself.
 
 use colored::Colorize;
+use std::path::Path;
 use unicode_width::UnicodeWidthStr;
 
-use crate::analysis::{MessageContext, SourceContext};
+use crate::{
+    actions::json_editor::JsonEditor,
+    analysis::{MessageContext, SourceContext},
+};
 
 /// A low-level file operation.
 ///
@@ -137,9 +141,6 @@ impl Operation {
     // ========== DeleteJsonKey implementation ==========
 
     fn execute_delete_json_key(context: &MessageContext) -> anyhow::Result<()> {
-        use crate::json_editor::JsonEditor;
-        use std::path::Path;
-
         let file_path = Path::new(context.file_path());
         let key = context.key.as_str();
 

@@ -11,13 +11,12 @@
 //! - Shows which locales have type mismatches with their file locations
 //! - Shows where the key is used in code
 
-use std::collections::HashMap;
-
 use crate::{
     analysis::CheckContext,
-    analysis::{LocaleTypeMismatch, MessageContext, MessageLocation, ValueType},
+    analysis::{
+        AllLocaleMessages, LocaleMessages, LocaleTypeMismatch, MessageContext, MessageLocation,
+    },
     issues::TypeMismatchIssue,
-    parsers::json::MessageMap,
     rules::{
         build_key_usage_map,
         helpers::{KeyUsageMap, get_usages_for_key},
@@ -53,13 +52,13 @@ pub fn check_type_mismatch_issues(ctx: &CheckContext) -> Vec<TypeMismatchIssue> 
 /// Vector of TypeMismatchIssue for keys with type mismatches
 pub fn check_type_mismatch(
     primary_locale: &str,
-    primary_messages: &MessageMap,
-    all_messages: &HashMap<String, MessageMap>,
+    primary_messages: &LocaleMessages,
+    all_messages: &AllLocaleMessages,
     key_usages: &KeyUsageMap,
 ) -> Vec<TypeMismatchIssue> {
     let mut issues = Vec::new();
 
-    for (key, primary_entry) in primary_messages {
+    for (key, primary_entry) in &primary_messages.entries {
         // Collect locales with type mismatch
         let mut mismatched_in: Vec<LocaleTypeMismatch> = all_messages
             .iter()
@@ -68,13 +67,17 @@ pub fn check_type_mismatch(
                     return None;
                 }
                 msgs.get(key).and_then(|entry| {
-                    let primary_type = convert_value_type(primary_entry.value_type);
-                    let entry_type = convert_value_type(entry.value_type);
+                    let primary_type = primary_entry.value_type;
+                    let entry_type = entry.value_type;
                     if entry_type != primary_type {
                         Some(LocaleTypeMismatch::new(
                             locale.clone(),
                             entry_type,
-                            MessageLocation::new(&entry.file_path, entry.line, 1),
+                            MessageLocation::new(
+                                &entry.context.location.file_path,
+                                entry.context.location.line,
+                                1,
+                            ),
                         ))
                     } else {
                         None
@@ -89,11 +92,15 @@ pub fn check_type_mismatch(
 
             issues.push(TypeMismatchIssue {
                 context: MessageContext::new(
-                    MessageLocation::new(&primary_entry.file_path, primary_entry.line, 1),
+                    MessageLocation::new(
+                        &primary_entry.context.location.file_path,
+                        primary_entry.context.location.line,
+                        1,
+                    ),
                     key.clone(),
-                    primary_entry.value.clone(),
+                    primary_entry.context.value.clone(),
                 ),
-                expected_type: convert_value_type(primary_entry.value_type),
+                expected_type: primary_entry.value_type,
                 primary_locale: primary_locale.to_string(),
                 mismatched_in,
                 usages,
@@ -114,45 +121,42 @@ pub fn check_type_mismatch(
     issues
 }
 
-/// Convert from parsers::json::ValueType to analysis::ValueType
-fn convert_value_type(vt: crate::parsers::json::ValueType) -> ValueType {
-    match vt {
-        crate::parsers::json::ValueType::String => ValueType::String,
-        crate::parsers::json::ValueType::StringArray => ValueType::StringArray,
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use crate::parsers::json::{MessageEntry, ValueType as JsonValueType};
+    use std::collections::HashMap;
+
+    use crate::analysis::{
+        LocaleMessages, MessageContext, MessageEntry, MessageLocation, ValueType,
+    };
     use crate::rules::type_mismatch::*;
 
     fn create_message_map_with_types(
         file: &str,
-        entries: &[(&str, &str, JsonValueType)],
-    ) -> MessageMap {
-        entries
-            .iter()
-            .enumerate()
-            .map(|(i, (k, v, vt))| {
-                (
-                    k.to_string(),
-                    MessageEntry {
-                        value: v.to_string(),
-                        value_type: *vt,
-                        file_path: file.to_string(),
-                        line: i + 1,
-                    },
-                )
-            })
-            .collect()
+        entries: &[(&str, &str, ValueType)],
+    ) -> LocaleMessages {
+        let locale = file.trim_end_matches(".json");
+        let mut messages = LocaleMessages::new(locale, file);
+        for (i, (k, v, vt)) in entries.iter().enumerate() {
+            messages.entries.insert(
+                k.to_string(),
+                MessageEntry {
+                    context: MessageContext::new(
+                        MessageLocation::with_line(file, i + 1),
+                        k.to_string(),
+                        v.to_string(),
+                    ),
+                    value_type: *vt,
+                },
+            );
+        }
+        messages
     }
 
     #[test]
     fn test_check_type_mismatch_none() {
         let primary_messages = create_message_map_with_types(
             "en.json",
-            &[("Common.items", "[\"a\", \"b\"]", JsonValueType::StringArray)],
+            &[("Common.items", "[\"a\", \"b\"]", ValueType::StringArray)],
         );
         let mut all_messages = HashMap::new();
         all_messages.insert("en".to_string(), primary_messages.clone());
@@ -160,11 +164,7 @@ mod tests {
             "zh".to_string(),
             create_message_map_with_types(
                 "zh.json",
-                &[(
-                    "Common.items",
-                    "[\"甲\", \"乙\"]",
-                    JsonValueType::StringArray,
-                )],
+                &[("Common.items", "[\"甲\", \"乙\"]", ValueType::StringArray)],
             ),
         );
 
@@ -177,7 +177,7 @@ mod tests {
     fn test_check_type_mismatch_one_mismatch() {
         let primary_messages = create_message_map_with_types(
             "en.json",
-            &[("Common.items", "[\"a\", \"b\"]", JsonValueType::StringArray)],
+            &[("Common.items", "[\"a\", \"b\"]", ValueType::StringArray)],
         );
         let mut all_messages = HashMap::new();
         all_messages.insert("en".to_string(), primary_messages.clone());
@@ -185,7 +185,7 @@ mod tests {
             "zh".to_string(),
             create_message_map_with_types(
                 "zh.json",
-                &[("Common.items", "甲, 乙", JsonValueType::String)], // Wrong type
+                &[("Common.items", "甲, 乙", ValueType::String)], // Wrong type
             ),
         );
 
@@ -204,23 +204,17 @@ mod tests {
     fn test_check_type_mismatch_multiple_locales() {
         let primary_messages = create_message_map_with_types(
             "en.json",
-            &[("Common.items", "[\"a\"]", JsonValueType::StringArray)],
+            &[("Common.items", "[\"a\"]", ValueType::StringArray)],
         );
         let mut all_messages = HashMap::new();
         all_messages.insert("en".to_string(), primary_messages.clone());
         all_messages.insert(
             "zh".to_string(),
-            create_message_map_with_types(
-                "zh.json",
-                &[("Common.items", "甲", JsonValueType::String)],
-            ),
+            create_message_map_with_types("zh.json", &[("Common.items", "甲", ValueType::String)]),
         );
         all_messages.insert(
             "ja".to_string(),
-            create_message_map_with_types(
-                "ja.json",
-                &[("Common.items", "あ", JsonValueType::String)],
-            ),
+            create_message_map_with_types("ja.json", &[("Common.items", "あ", ValueType::String)]),
         );
 
         let key_usages = KeyUsageMap::new();
@@ -238,7 +232,7 @@ mod tests {
         // Only one locale has mismatch
         let primary_messages = create_message_map_with_types(
             "en.json",
-            &[("Common.items", "[\"a\"]", JsonValueType::StringArray)],
+            &[("Common.items", "[\"a\"]", ValueType::StringArray)],
         );
         let mut all_messages = HashMap::new();
         all_messages.insert("en".to_string(), primary_messages.clone());
@@ -246,14 +240,14 @@ mod tests {
             "zh".to_string(),
             create_message_map_with_types(
                 "zh.json",
-                &[("Common.items", "[\"甲\"]", JsonValueType::StringArray)], // Correct type
+                &[("Common.items", "[\"甲\"]", ValueType::StringArray)], // Correct type
             ),
         );
         all_messages.insert(
             "ja".to_string(),
             create_message_map_with_types(
                 "ja.json",
-                &[("Common.items", "あ", JsonValueType::String)], // Wrong type
+                &[("Common.items", "あ", ValueType::String)], // Wrong type
             ),
         );
 
@@ -270,7 +264,7 @@ mod tests {
         // Key exists in primary but not in replica - not a type mismatch
         let primary_messages = create_message_map_with_types(
             "en.json",
-            &[("Common.items", "[\"a\"]", JsonValueType::StringArray)],
+            &[("Common.items", "[\"a\"]", ValueType::StringArray)],
         );
         let mut all_messages = HashMap::new();
         all_messages.insert("en".to_string(), primary_messages.clone());

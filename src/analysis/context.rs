@@ -9,23 +9,23 @@ use swc_ecma_visit::VisitWith;
 
 use crate::{
     analysis::{
-        AllKeyUsages,
+        AllKeyUsages, AllLocaleMessages, LocaleMessages,
         collect::{
             AllFileComments, AllFileImports, CommentCollector, FileImports, Registries,
             RegistryCollector, TranslationFnCall, TranslationProp, make_registry_key,
             make_translation_fn_call_key, make_translation_prop_key, resolve_import_path,
         },
         extract::FileAnalyzer,
+        file_scanner::scan_files,
+        parsers::{
+            json::scan_message_files,
+            jsx::{ParsedJSX, parse_jsx_source},
+        },
         resolve::resolve_translation_calls,
     },
     args::CommonArgs,
     config::{Config, load_config},
-    file_scanner::scan_files,
     issues::{HardcodedTextIssue, ParseErrorIssue},
-    parsers::{
-        json::{MessageMap, scan_message_files},
-        jsx::{ParsedJSX, parse_jsx_source},
-    },
 };
 
 use std::collections::HashMap;
@@ -35,8 +35,8 @@ pub type AllHardcodedTextIssues = HashMap<String, Vec<HardcodedTextIssue>>;
 
 /// Aggregated message data from all locale files.
 pub struct MessageData {
-    pub all_messages: HashMap<String, MessageMap>,
-    pub primary_messages: MessageMap,
+    pub all_messages: AllLocaleMessages,
+    pub primary_messages: LocaleMessages,
 }
 
 pub struct SourceMetadata {

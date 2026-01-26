@@ -1,47 +1,19 @@
-use std::{collections::HashMap, fmt, fs, path::Path};
+use std::{fs, path::Path};
 
 use anyhow::{Context, Result, bail};
 use serde_json::Value;
 
-/// Type of JSON value at a key path.
-///
-/// Used to detect type mismatches between primary and replica locales.
-/// For example, if primary has an array but replica has a string, this
-/// causes runtime crashes when the app tries to iterate over the value.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum ValueType {
-    /// A simple string value
-    String,
-    /// A string array (accessed via t.raw() as a whole)
-    StringArray,
-}
-
-impl fmt::Display for ValueType {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            ValueType::String => write!(f, "string"),
-            ValueType::StringArray => write!(f, "array"),
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct MessageEntry {
-    pub value: String,
-    pub value_type: ValueType,
-    pub file_path: String,
-    pub line: usize,
-}
-
-pub type MessageMap = HashMap<String, MessageEntry>;
+use crate::analysis::{
+    AllLocaleMessages, LocaleMessages, MessageContext, MessageEntry, MessageLocation, ValueType,
+};
 
 #[derive(Debug, Default)]
 pub struct ScanMessagesResult {
-    pub messages: HashMap<String, MessageMap>,
+    pub messages: AllLocaleMessages,
     pub warnings: Vec<String>,
 }
 
-pub fn parse_json_file(path: &Path) -> Result<MessageMap> {
+pub fn parse_json_file(path: &Path, locale: &str) -> Result<LocaleMessages> {
     let content = fs::read_to_string(path)
         .with_context(|| format!("Failed to read JSON file: {:?}", path))?;
 
@@ -51,16 +23,16 @@ pub fn parse_json_file(path: &Path) -> Result<MessageMap> {
     let file_path = path.to_string_lossy().to_string();
     // Pre-compute line index for O(log n) line lookups
     let line_index = build_line_index(&content);
-    let mut message_map = MessageMap::new();
+    let mut messages = LocaleMessages::new(locale.to_string(), file_path.to_string());
     flatten_json(
         &json,
         String::new(),
         &file_path,
         &content,
         &line_index,
-        &mut message_map,
+        &mut messages,
     );
-    Ok(message_map)
+    Ok(messages)
 }
 
 /// Build an index of line start byte offsets for O(log n) line lookups.
@@ -145,7 +117,7 @@ fn flatten_json(
     file_path: &str,
     content: &str,
     line_index: &[usize],
-    result: &mut MessageMap,
+    result: &mut LocaleMessages,
 ) {
     match value {
         Value::Object(map) => {
@@ -160,13 +132,16 @@ fn flatten_json(
         }
         Value::String(s) => {
             let line = find_key_line(content, &prefix, line_index);
-            result.insert(
+            let context = MessageContext::new(
+                MessageLocation::with_line(file_path.to_string(), line),
+                prefix.clone(),
+                s.clone(),
+            );
+            result.entries.insert(
                 prefix,
                 MessageEntry {
-                    value: s.clone(),
+                    context,
                     value_type: ValueType::String,
-                    file_path: file_path.to_string(),
-                    line,
                 },
             );
         }
@@ -185,13 +160,16 @@ fn flatten_json(
                 // Store as a single key with joined value for display
                 let values: Vec<&str> = arr.iter().filter_map(|v| v.as_str()).collect();
                 let line = find_key_line(content, &prefix, line_index);
-                result.insert(
+                let context = MessageContext::new(
+                    MessageLocation::with_line(file_path.to_string(), line),
+                    prefix.clone(),
+                    values.join(", "),
+                );
+                result.entries.insert(
                     prefix,
                     MessageEntry {
-                        value: values.join(", "),
+                        context,
                         value_type: ValueType::StringArray,
-                        file_path: file_path.to_string(),
-                        line,
                     },
                 );
             } else {
@@ -247,7 +225,7 @@ pub fn scan_message_files(message_dir: impl AsRef<Path>) -> Result<ScanMessagesR
         if path.extension().and_then(|e| e.to_str()) == Some("json")
             && let Some(locale) = extract_locale(&path)
         {
-            match parse_json_file(&path) {
+            match parse_json_file(&path, &locale) {
                 Ok(messages) => {
                     result.messages.insert(locale, messages);
                 }
@@ -265,7 +243,8 @@ pub fn scan_message_files(message_dir: impl AsRef<Path>) -> Result<ScanMessagesR
 
 #[cfg(test)]
 mod tests {
-    use crate::parsers::json::*;
+    use crate::analysis::parsers::json::*;
+    use crate::analysis::LocaleMessages;
 
     #[test]
     fn test_flatten_simple() {
@@ -273,7 +252,7 @@ mod tests {
         let json: Value = serde_json::from_str(content).unwrap();
         let line_index = build_line_index(content);
 
-        let mut result = MessageMap::new();
+        let mut result = LocaleMessages::new("en", "test.json");
         flatten_json(
             &json,
             String::new(),
@@ -284,11 +263,11 @@ mod tests {
         );
 
         assert_eq!(
-            result.get("Common.save").map(|e| &e.value),
+            result.get("Common.save").map(|e| &e.context.value),
             Some(&"Save".to_string())
         );
         assert_eq!(
-            result.get("Common.cancel").map(|e| &e.value),
+            result.get("Common.cancel").map(|e| &e.context.value),
             Some(&"Cancel".to_string())
         );
     }
@@ -299,7 +278,7 @@ mod tests {
         let json: Value = serde_json::from_str(content).unwrap();
         let line_index = build_line_index(content);
 
-        let mut result = MessageMap::new();
+        let mut result = LocaleMessages::new("en", "test.json");
         flatten_json(
             &json,
             String::new(),
@@ -310,11 +289,11 @@ mod tests {
         );
 
         assert_eq!(
-            result.get("Auth.Login.title").map(|e| &e.value),
+            result.get("Auth.Login.title").map(|e| &e.context.value),
             Some(&"Login".to_string())
         );
         assert_eq!(
-            result.get("Auth.Login.button").map(|e| &e.value),
+            result.get("Auth.Login.button").map(|e| &e.context.value),
             Some(&"Submit".to_string())
         );
     }
@@ -325,7 +304,7 @@ mod tests {
         let json: Value = serde_json::from_str(content).unwrap();
         let line_index = build_line_index(content);
 
-        let mut result = MessageMap::new();
+        let mut result = LocaleMessages::new("en", "test.json");
         flatten_json(
             &json,
             String::new(),
@@ -336,11 +315,11 @@ mod tests {
         );
 
         assert_eq!(
-            result.get("title").map(|e| &e.value),
+            result.get("title").map(|e| &e.context.value),
             Some(&"Hello".to_string())
         );
         assert_eq!(
-            result.get("description").map(|e| &e.value),
+            result.get("description").map(|e| &e.context.value),
             Some(&"World".to_string())
         );
     }
@@ -371,7 +350,7 @@ mod tests {
         let json: Value = serde_json::from_str(content).unwrap();
         let line_index = build_line_index(content);
 
-        let mut result = MessageMap::new();
+        let mut result = LocaleMessages::new("en", "test.json");
         flatten_json(
             &json,
             String::new(),
@@ -384,10 +363,16 @@ mod tests {
         // "Auth.title" should point to line 4 (the actual "title" key),
         // not line 3 where "Auth" appears in the value "Welcome to Auth page"
         let entry = result.get("Auth.title").unwrap();
-        assert_eq!(entry.line, 4, "Expected line 4 for Auth.title key");
+        assert_eq!(
+            entry.context.location.line, 4,
+            "Expected line 4 for Auth.title key"
+        );
 
         let entry = result.get("Auth.message").unwrap();
-        assert_eq!(entry.line, 3, "Expected line 3 for Auth.message key");
+        assert_eq!(
+            entry.context.location.line, 3,
+            "Expected line 3 for Auth.message key"
+        );
     }
 
     #[test]
@@ -417,10 +402,10 @@ mod tests {
         let mut file = fs::File::create(&file_path).unwrap();
         write!(file, r#"{{"Common": {{"submit": "Submit"}}}}"#).unwrap();
 
-        let messages = parse_json_file(&file_path).unwrap();
+        let messages = parse_json_file(&file_path, "en").unwrap();
         let entry = messages.get("Common.submit").unwrap();
-        assert_eq!(entry.value, "Submit");
-        assert!(entry.file_path.ends_with("en.json"));
+        assert_eq!(entry.context.value, "Submit");
+        assert!(entry.context.location.file_path.ends_with("en.json"));
     }
 
     #[test]
@@ -488,7 +473,7 @@ mod tests {
         let json: Value = serde_json::from_str(content).unwrap();
         let line_index = build_line_index(content);
 
-        let mut result = MessageMap::new();
+        let mut result = LocaleMessages::new("en", "test.json");
         flatten_json(
             &json,
             String::new(),
@@ -499,19 +484,19 @@ mod tests {
         );
 
         assert_eq!(
-            result.get("faq.items.0.question").map(|e| &e.value),
+            result.get("faq.items.0.question").map(|e| &e.context.value),
             Some(&"Q1".to_string())
         );
         assert_eq!(
-            result.get("faq.items.0.answer").map(|e| &e.value),
+            result.get("faq.items.0.answer").map(|e| &e.context.value),
             Some(&"A1".to_string())
         );
         assert_eq!(
-            result.get("faq.items.1.question").map(|e| &e.value),
+            result.get("faq.items.1.question").map(|e| &e.context.value),
             Some(&"Q2".to_string())
         );
         assert_eq!(
-            result.get("faq.items.1.answer").map(|e| &e.value),
+            result.get("faq.items.1.answer").map(|e| &e.context.value),
             Some(&"A2".to_string())
         );
     }
@@ -522,7 +507,7 @@ mod tests {
         let json: Value = serde_json::from_str(content).unwrap();
         let line_index = build_line_index(content);
 
-        let mut result = MessageMap::new();
+        let mut result = LocaleMessages::new("en", "test.json");
         flatten_json(
             &json,
             String::new(),
@@ -533,15 +518,15 @@ mod tests {
         );
 
         assert_eq!(
-            result.get("0").map(|e| &e.value),
+            result.get("0").map(|e| &e.context.value),
             Some(&"first".to_string())
         );
         assert_eq!(
-            result.get("1").map(|e| &e.value),
+            result.get("1").map(|e| &e.context.value),
             Some(&"second".to_string())
         );
         assert_eq!(
-            result.get("2").map(|e| &e.value),
+            result.get("2").map(|e| &e.context.value),
             Some(&"third".to_string())
         );
     }
@@ -552,7 +537,7 @@ mod tests {
         let json: Value = serde_json::from_str(content).unwrap();
         let line_index = build_line_index(content);
 
-        let mut result = MessageMap::new();
+        let mut result = LocaleMessages::new("en", "test.json");
         flatten_json(
             &json,
             String::new(),
@@ -563,11 +548,11 @@ mod tests {
         );
 
         assert_eq!(
-            result.get("Page.steps.0.title").map(|e| &e.value),
+            result.get("Page.steps.0.title").map(|e| &e.context.value),
             Some(&"Step 1".to_string())
         );
         assert_eq!(
-            result.get("Page.steps.1.title").map(|e| &e.value),
+            result.get("Page.steps.1.title").map(|e| &e.context.value),
             Some(&"Step 2".to_string())
         );
     }
@@ -580,7 +565,7 @@ mod tests {
         let json: Value = serde_json::from_str(content).unwrap();
         let line_index = build_line_index(content);
 
-        let mut result = MessageMap::new();
+        let mut result = LocaleMessages::new("en", "test.json");
         flatten_json(
             &json,
             String::new(),
@@ -596,7 +581,7 @@ mod tests {
             "String array should be stored as single key"
         );
         assert_eq!(
-            result.get("Page.benefits").map(|e| &e.value),
+            result.get("Page.benefits").map(|e| &e.context.value),
             Some(&"Fast, Easy, Reliable".to_string())
         );
 
@@ -618,7 +603,7 @@ mod tests {
         let json: Value = serde_json::from_str(content).unwrap();
         let line_index = build_line_index(content);
 
-        let mut result = MessageMap::new();
+        let mut result = LocaleMessages::new("en", "test.json");
         flatten_json(
             &json,
             String::new(),
@@ -642,7 +627,7 @@ mod tests {
         let json: Value = serde_json::from_str(content).unwrap();
         let line_index = build_line_index(content);
 
-        let mut result = MessageMap::new();
+        let mut result = LocaleMessages::new("en", "test.json");
         flatten_json(
             &json,
             String::new(),
@@ -663,7 +648,7 @@ mod tests {
         let json: Value = serde_json::from_str(content).unwrap();
         let line_index = build_line_index(content);
 
-        let mut result = MessageMap::new();
+        let mut result = LocaleMessages::new("en", "test.json");
         flatten_json(
             &json,
             String::new(),
@@ -676,7 +661,7 @@ mod tests {
         // Should be stored as single key
         assert!(result.contains_key("Page.tags"));
         assert_eq!(
-            result.get("Page.tags").map(|e| &e.value),
+            result.get("Page.tags").map(|e| &e.context.value),
             Some(&"only-tag".to_string())
         );
         // Should NOT be expanded
@@ -690,7 +675,7 @@ mod tests {
         let json: Value = serde_json::from_str(content).unwrap();
         let line_index = build_line_index(content);
 
-        let mut result = MessageMap::new();
+        let mut result = LocaleMessages::new("en", "test.json");
         flatten_json(
             &json,
             String::new(),
@@ -707,7 +692,7 @@ mod tests {
             "String element should be expanded"
         );
         assert_eq!(
-            result.get("Page.data.0").map(|e| &e.value),
+            result.get("Page.data.0").map(|e| &e.context.value),
             Some(&"text".to_string())
         );
         // Non-string elements don't create keys
@@ -722,7 +707,7 @@ mod tests {
         let json: Value = serde_json::from_str(content).unwrap();
         let line_index = build_line_index(content);
 
-        let mut result = MessageMap::new();
+        let mut result = LocaleMessages::new("en", "test.json");
         flatten_json(
             &json,
             String::new(),
@@ -735,7 +720,7 @@ mod tests {
         // Should be stored as single key (all elements are strings)
         assert!(result.contains_key("Page.values"));
         assert_eq!(
-            result.get("Page.values").map(|e| &e.value),
+            result.get("Page.values").map(|e| &e.context.value),
             Some(&", valid, ".to_string())
         );
     }

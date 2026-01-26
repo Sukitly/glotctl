@@ -116,7 +116,7 @@ fn remove_empty_objects(value: &mut Value) {
 
 #[cfg(test)]
 mod tests {
-    use crate::json_editor::*;
+    use super::*;
     use tempfile::TempDir;
 
     fn create_temp_json(content: &str) -> (TempDir, PathBuf) {

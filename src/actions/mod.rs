@@ -34,6 +34,7 @@
 mod delete_key;
 mod insert_disable_comment;
 mod insert_message_keys;
+mod json_editor;
 mod operation;
 mod traits;
 

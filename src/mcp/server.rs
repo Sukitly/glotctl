@@ -17,7 +17,7 @@ use crate::{
     commands::runner::{CheckRunner, CheckType},
     config::load_config,
     issue::{Issue, IssueReport, Rule},
-    parsers::json::scan_message_files,
+    analysis::parsers::json::scan_message_files,
 };
 
 use crate::mcp::helpers::process_locale_translation;

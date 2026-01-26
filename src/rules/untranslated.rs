@@ -8,15 +8,12 @@
 //! - Shows which locales have identical values
 //! - Shows where the key is used in code
 
-use std::collections::HashMap;
-
 use crate::{
     analysis::collect::SuppressibleRule,
     analysis::CheckContext,
     analysis::ResolvedKeyUsage,
-    analysis::{MessageContext, MessageLocation},
+    analysis::{AllLocaleMessages, LocaleMessages, MessageContext, MessageLocation},
     issues::UntranslatedIssue,
-    parsers::json::MessageMap,
     rules::{build_key_usage_map, helpers::KeyUsageMap},
     utils::contains_alphabetic,
 };
@@ -50,15 +47,15 @@ pub fn check_untranslated_issues(ctx: &CheckContext) -> Vec<UntranslatedIssue> {
 /// Vector of UntranslatedIssue for keys with identical values across locales
 pub fn check_untranslated(
     primary_locale: &str,
-    primary_messages: &MessageMap,
-    all_messages: &HashMap<String, MessageMap>,
+    primary_messages: &LocaleMessages,
+    all_messages: &AllLocaleMessages,
     key_usages: &KeyUsageMap,
 ) -> Vec<UntranslatedIssue> {
     let mut issues = Vec::new();
 
-    for (key, primary_entry) in primary_messages {
+    for (key, primary_entry) in &primary_messages.entries {
         // Skip if value has no alphabetic characters (pure numbers/symbols)
-        if !contains_alphabetic(&primary_entry.value) {
+        if !contains_alphabetic(&primary_entry.context.value) {
             continue;
         }
 
@@ -81,7 +78,7 @@ pub fn check_untranslated(
             .iter()
             .filter(|(locale, msgs)| {
                 *locale != primary_locale
-                    && msgs.get(key).map(|e| &e.value) == Some(&primary_entry.value)
+                    && msgs.get(key).map(|e| &e.context.value) == Some(&primary_entry.context.value)
             })
             .map(|(locale, _)| locale.clone())
             .collect();
@@ -92,9 +89,13 @@ pub fn check_untranslated(
 
             issues.push(UntranslatedIssue {
                 context: MessageContext::new(
-                    MessageLocation::new(&primary_entry.file_path, primary_entry.line, 1),
+                    MessageLocation::new(
+                        &primary_entry.context.location.file_path,
+                        primary_entry.context.location.line,
+                        1,
+                    ),
                     key.clone(),
-                    primary_entry.value.clone(),
+                    primary_entry.context.value.clone(),
                 ),
                 primary_locale: primary_locale.to_string(),
                 identical_in,
@@ -118,31 +119,32 @@ pub fn check_untranslated(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashSet;
+    use std::collections::{HashMap, HashSet};
 
     use crate::rules::untranslated::*;
     use crate::{
         analysis::FullKey,
         analysis::{CommentStyle, SourceContext, SourceLocation},
-        parsers::json::{MessageEntry, ValueType},
+        analysis::{LocaleMessages, MessageContext, MessageEntry, MessageLocation, ValueType},
     };
 
-    fn create_message_map(file: &str, entries: &[(&str, &str)]) -> MessageMap {
-        entries
-            .iter()
-            .enumerate()
-            .map(|(i, (k, v))| {
-                (
-                    k.to_string(),
-                    MessageEntry {
-                        value: v.to_string(),
-                        value_type: ValueType::String,
-                        file_path: file.to_string(),
-                        line: i + 1,
-                    },
-                )
-            })
-            .collect()
+    fn create_message_map(file: &str, entries: &[(&str, &str)]) -> LocaleMessages {
+        let locale = file.trim_end_matches(".json");
+        let mut messages = LocaleMessages::new(locale, file);
+        for (i, (k, v)) in entries.iter().enumerate() {
+            messages.entries.insert(
+                k.to_string(),
+                MessageEntry {
+                    context: MessageContext::new(
+                        MessageLocation::with_line(file, i + 1),
+                        k.to_string(),
+                        v.to_string(),
+                    ),
+                    value_type: ValueType::String,
+                },
+            );
+        }
+        messages
     }
 
     fn make_usage(key: &str, file: &str, line: usize) -> ResolvedKeyUsage {

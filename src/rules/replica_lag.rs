@@ -3,13 +3,10 @@
 //! Detects translation keys that exist in the primary locale but are missing
 //! in one or more other locales.
 
-use std::collections::HashMap;
-
 use crate::{
     analysis::CheckContext,
-    analysis::{MessageContext, MessageLocation},
+    analysis::{AllLocaleMessages, MessageContext, MessageLocation},
     issues::ReplicaLagIssue,
-    parsers::json::MessageMap,
     rules::helpers::{build_key_usage_map, get_usages_for_key, KeyUsageMap},
 };
 
@@ -34,7 +31,7 @@ pub fn check_replica_lag_issues(ctx: &CheckContext) -> Vec<ReplicaLagIssue> {
 /// Vector of ReplicaLagIssue for keys missing in other locales
 pub fn check_replica_lags(
     primary_locale: &str,
-    all_messages: &HashMap<String, MessageMap>,
+    all_messages: &AllLocaleMessages,
     key_usages: &KeyUsageMap,
 ) -> Vec<ReplicaLagIssue> {
     let Some(primary_messages) = all_messages.get(primary_locale) else {
@@ -42,6 +39,7 @@ pub fn check_replica_lags(
     };
 
     let mut issues: Vec<ReplicaLagIssue> = primary_messages
+        .entries
         .iter()
         .filter_map(|(key, entry)| {
             // Find all locales that are missing this key
@@ -59,9 +57,13 @@ pub fn check_replica_lags(
 
                 Some(ReplicaLagIssue {
                     context: MessageContext::new(
-                        MessageLocation::new(&entry.file_path, entry.line, 1),
+                        MessageLocation::new(
+                            &entry.context.location.file_path,
+                            entry.context.location.line,
+                            1,
+                        ),
                         key.clone(),
-                        entry.value.clone(),
+                        entry.context.value.clone(),
                     ),
                     primary_locale: primary_locale.to_string(),
                     missing_in,
@@ -86,25 +88,29 @@ pub fn check_replica_lags(
 
 #[cfg(test)]
 mod tests {
-    use crate::parsers::json::{MessageEntry, ValueType};
+    use std::collections::HashMap;
+
+    use crate::analysis::{
+        LocaleMessages, MessageContext, MessageEntry, MessageLocation, ValueType,
+    };
     use crate::rules::replica_lag::*;
 
-    fn create_message_map(entries: &[(&str, &str)]) -> MessageMap {
-        entries
-            .iter()
-            .enumerate()
-            .map(|(i, (k, v))| {
-                (
-                    k.to_string(),
-                    MessageEntry {
-                        value: v.to_string(),
-                        value_type: ValueType::String,
-                        file_path: "test.json".to_string(),
-                        line: i + 1,
-                    },
-                )
-            })
-            .collect()
+    fn create_message_map(entries: &[(&str, &str)]) -> LocaleMessages {
+        let mut messages = LocaleMessages::new("test", "test.json");
+        for (i, (k, v)) in entries.iter().enumerate() {
+            messages.entries.insert(
+                k.to_string(),
+                MessageEntry {
+                    context: MessageContext::new(
+                        MessageLocation::with_line("test.json", i + 1),
+                        k.to_string(),
+                        v.to_string(),
+                    ),
+                    value_type: ValueType::String,
+                },
+            );
+        }
+        messages
     }
 
     #[test]

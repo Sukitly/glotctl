@@ -128,6 +128,8 @@ pub struct LocaleMessages {
     pub entries: HashMap<String, MessageEntry>,
 }
 
+pub type AllLocaleMessages = HashMap<String, LocaleMessages>;
+
 impl LocaleMessages {
     /// Create a new LocaleMessages.
     pub fn new(locale: impl Into<String>, file_path: impl Into<String>) -> Self {
