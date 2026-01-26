@@ -5,10 +5,10 @@ use colored::Colorize;
 
 use crate::{
     actions::{Action, ActionStats, InsertMessageKeys},
-    analysis::CheckContext,
     args::FixCommand,
-    commands::helper::finish,
     commands::RunResult,
+    commands::helper::finish,
+    core::CheckContext,
     issues::{Issue, UnresolvedKeyIssue},
     rules::unresolved::check_unresolved_keys_issues,
 };

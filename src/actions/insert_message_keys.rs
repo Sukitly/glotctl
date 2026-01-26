@@ -3,7 +3,7 @@
 //! Inserts `glot-message-keys` comments for dynamic translation keys.
 //! Used by the `glot fix` command.
 
-use crate::analysis::CommentStyle;
+use crate::core::CommentStyle;
 use crate::issues::UnresolvedKeyIssue;
 
 use crate::actions::operation::Operation;
@@ -67,7 +67,7 @@ impl Action<UnresolvedKeyIssue> for InsertMessageKeys {
 #[cfg(test)]
 mod tests {
     use crate::actions::insert_message_keys::*;
-    use crate::analysis::{SourceContext, SourceLocation};
+    use crate::core::{SourceContext, SourceLocation};
     use crate::issues::IssueUnresolvedKeyReason;
 
     #[test]

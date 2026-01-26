@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 
-use crate::analysis::extract::translation_source::TranslationSource;
+use crate::core::extract::translation_source::TranslationSource;
 
 /// Manages translation function bindings with scope tracking.
 ///
@@ -91,7 +91,7 @@ impl BindingContext {
 
 #[cfg(test)]
 mod tests {
-    use crate::analysis::extract::binding_context::*;
+    use crate::core::extract::binding_context::*;
 
     #[test]
     fn test_new_has_global_scope() {

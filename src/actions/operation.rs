@@ -13,7 +13,7 @@ use unicode_width::UnicodeWidthStr;
 
 use crate::{
     actions::json_editor::JsonEditor,
-    analysis::{MessageContext, SourceContext},
+    core::{MessageContext, SourceContext},
 };
 
 /// A low-level file operation.
@@ -179,7 +179,7 @@ impl Operation {
 #[cfg(test)]
 mod tests {
     use crate::actions::operation::*;
-    use crate::analysis::{CommentStyle, MessageLocation, SourceLocation};
+    use crate::core::{CommentStyle, MessageLocation, SourceLocation};
 
     #[test]
     fn test_operation_insert_comment() {

@@ -205,7 +205,7 @@ impl ValueSource {
 
 #[cfg(test)]
 mod tests {
-    use crate::analysis::extract::value_source::*;
+    use crate::core::extract::value_source::*;
 
     #[test]
     fn test_literal_resolves_to_itself() {

@@ -7,8 +7,8 @@
 
 use enum_dispatch::enum_dispatch;
 
-use crate::analysis::ResolvedKeyUsage;
-use crate::analysis::{LocaleTypeMismatch, MessageContext, SourceContext, ValueType};
+use crate::core::ResolvedKeyUsage;
+use crate::core::{LocaleTypeMismatch, MessageContext, SourceContext, ValueType};
 
 // ============================================================
 // Severity and Rule
@@ -671,7 +671,7 @@ impl PartialOrd for Issue {
 
 #[cfg(test)]
 mod tests {
-    use crate::analysis::{CommentStyle, MessageLocation, SourceLocation};
+    use crate::core::{CommentStyle, MessageLocation, SourceLocation};
     use crate::issues::*;
 
     #[test]
@@ -783,7 +783,7 @@ mod tests {
 
     #[test]
     fn test_replica_lag_issue() {
-        use crate::analysis::FullKey;
+        use crate::core::FullKey;
         use std::collections::HashSet;
 
         let loc = MessageLocation::new("./messages/en.json", 5, 3);

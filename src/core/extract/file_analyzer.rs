@@ -21,17 +21,17 @@ use swc_ecma_ast::{
 };
 use swc_ecma_visit::{Visit, VisitWith};
 
-use crate::analysis::{CommentStyle, SourceContext, SourceLocation};
-use crate::analysis::collect::SuppressibleRule;
+use crate::core::collect::SuppressibleRule;
+use crate::core::{CommentStyle, SourceContext, SourceLocation};
 use crate::issues::HardcodedTextIssue;
 use crate::utils::contains_alphabetic;
 
-use crate::analysis::collect::Registries;
-use crate::analysis::extract::{
+use crate::core::collect::Registries;
+use crate::core::extract::{
     BindingContext, RawTranslationCall, TranslationCallKind, TranslationSource, ValueAnalyzer,
     ValueSource,
 };
-use crate::analysis::{
+use crate::core::{
     collect::types::{
         FileComments, FileImports, extract_binding_names, make_translation_fn_call_key,
     },
@@ -374,7 +374,7 @@ impl<'a> FileAnalyzer<'a> {
         prop_name: &str,
         binding_name: &str,
     ) {
-        use crate::analysis::collect::make_translation_prop_key;
+        use crate::core::collect::make_translation_prop_key;
 
         let key = make_translation_prop_key(component_name, prop_name);
 

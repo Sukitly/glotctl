@@ -6,7 +6,7 @@
 
 use std::collections::HashSet;
 
-use crate::analysis::collect::types::{SuppressibleRule, Suppressions};
+use crate::core::collect::types::{SuppressibleRule, Suppressions};
 
 impl SuppressibleRule {
     /// Parse rule name from string (case insensitive).
@@ -66,8 +66,8 @@ impl Suppressions {
 
 #[cfg(test)]
 mod tests {
-    use crate::analysis::collect::comments::suppressions::*;
-    use crate::analysis::collect::types::DisabledRange;
+    use crate::core::collect::comments::suppressions::*;
+    use crate::core::collect::types::DisabledRange;
 
     // ============================================================
     // SuppressibleRule Tests

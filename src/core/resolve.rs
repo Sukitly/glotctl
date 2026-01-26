@@ -7,16 +7,16 @@
 
 use std::collections::HashSet;
 
-use crate::analysis::{
-    collect::types::{FileComments, Registries},
-    collect::SuppressibleRule,
-    extract::{RawTranslationCall, TranslationCallKind, TranslationSource, ValueSource},
-    schema::{expand_schema_keys, SchemaCallInfo},
-};
-use crate::analysis::{CommentStyle, SourceContext, SourceLocation};
-use crate::analysis::{
+use crate::core::{CommentStyle, SourceContext, SourceLocation};
+use crate::core::{
     FileKeyUsages, FullKey, ResolvedKeyUsage, SchemaSource, UnresolvedKeyUsage,
     UsageUnresolvedKeyReason,
+};
+use crate::core::{
+    collect::SuppressibleRule,
+    collect::types::{FileComments, Registries},
+    extract::{RawTranslationCall, TranslationCallKind, TranslationSource, ValueSource},
+    schema::{SchemaCallInfo, expand_schema_keys},
 };
 
 /// Resolve translation calls and schema calls to key usages.

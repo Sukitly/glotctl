@@ -12,8 +12,8 @@
 //! - Shows where the key is used in code
 
 use crate::{
-    analysis::CheckContext,
-    analysis::{
+    core::CheckContext,
+    core::{
         AllLocaleMessages, LocaleMessages, LocaleTypeMismatch, MessageContext, MessageLocation,
     },
     issues::TypeMismatchIssue,
@@ -125,9 +125,7 @@ pub fn check_type_mismatch(
 mod tests {
     use std::collections::HashMap;
 
-    use crate::analysis::{
-        LocaleMessages, MessageContext, MessageEntry, MessageLocation, ValueType,
-    };
+    use crate::core::{LocaleMessages, MessageContext, MessageEntry, MessageLocation, ValueType};
     use crate::rules::type_mismatch::*;
 
     fn create_message_map_with_types(

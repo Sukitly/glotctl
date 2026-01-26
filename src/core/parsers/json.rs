@@ -3,7 +3,7 @@ use std::{fs, path::Path};
 use anyhow::{Context, Result, bail};
 use serde_json::Value;
 
-use crate::analysis::{
+use crate::core::{
     AllLocaleMessages, LocaleMessages, MessageContext, MessageEntry, MessageLocation, ValueType,
 };
 
@@ -243,8 +243,8 @@ pub fn scan_message_files(message_dir: impl AsRef<Path>) -> Result<ScanMessagesR
 
 #[cfg(test)]
 mod tests {
-    use crate::analysis::parsers::json::*;
-    use crate::analysis::LocaleMessages;
+    use crate::core::LocaleMessages;
+    use crate::core::parsers::json::*;
 
     #[test]
     fn test_flatten_simple() {

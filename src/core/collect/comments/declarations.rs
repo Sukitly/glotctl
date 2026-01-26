@@ -6,8 +6,8 @@
 
 use std::collections::HashSet;
 
-use crate::analysis::collect::types::{Declarations, KeyDeclaration};
-use crate::analysis::utils::{expand_glob_pattern, is_glob_pattern};
+use crate::core::collect::types::{Declarations, KeyDeclaration};
+use crate::core::utils::{expand_glob_pattern, is_glob_pattern};
 
 impl KeyDeclaration {
     /// Expand all patterns to concrete keys.
@@ -140,8 +140,8 @@ impl Declarations {
 
 #[cfg(test)]
 mod tests {
-    use crate::analysis::collect::comments::declarations::*;
-    use crate::analysis::collect::comments::directive::Directive;
+    use crate::core::collect::comments::declarations::*;
+    use crate::core::collect::comments::directive::Directive;
 
     #[test]
     fn test_get_declaration_previous_line() {

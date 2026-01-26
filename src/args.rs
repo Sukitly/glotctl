@@ -1,7 +1,7 @@
 use clap::{Args, CommandFactory, Parser, Subcommand, ValueEnum};
 
-use crate::analysis::collect::SuppressibleRule;
 use crate::commands::check::CheckRule;
+use crate::core::collect::SuppressibleRule;
 
 #[derive(Debug, Parser)]
 #[command(author, version, about, long_about = None)]
@@ -59,6 +59,11 @@ pub struct CheckCommand {
     pub args: CheckArgs,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, ValueEnum)]
+pub enum CleanRule {
+    Unused,
+    Orphan,
+}
 #[derive(Debug, Parser)]
 pub struct CleanArgs {
     #[command(flatten)]
@@ -78,12 +83,6 @@ pub struct CleanArgs {
 pub struct CleanCommand {
     #[command(flatten)]
     pub args: CleanArgs,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, ValueEnum)]
-pub enum CleanRule {
-    Unused,
-    Orphan,
 }
 
 #[derive(Debug, Parser)]

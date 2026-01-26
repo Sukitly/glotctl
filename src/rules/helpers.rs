@@ -6,7 +6,7 @@
 
 use std::collections::HashMap;
 
-use crate::analysis::{AllKeyUsages, ResolvedKeyUsage};
+use crate::core::{AllKeyUsages, ResolvedKeyUsage};
 
 /// Type alias for key usage map: full_key -> list of resolved key usages.
 pub type KeyUsageMap = HashMap<String, Vec<ResolvedKeyUsage>>;
@@ -55,8 +55,8 @@ pub fn get_usages_for_key(key_usages: &KeyUsageMap, key: &str) -> Vec<ResolvedKe
 mod tests {
     use std::collections::HashSet;
 
-    use crate::analysis::{CommentStyle, SourceContext, SourceLocation};
-    use crate::analysis::{FileKeyUsages, FullKey};
+    use crate::core::{CommentStyle, SourceContext, SourceLocation};
+    use crate::core::{FileKeyUsages, FullKey};
     use crate::rules::helpers::*;
 
     fn make_usage(file: &str, line: usize, col: usize) -> ResolvedKeyUsage {

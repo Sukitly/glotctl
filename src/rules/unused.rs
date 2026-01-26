@@ -6,8 +6,8 @@
 use std::collections::HashSet;
 
 use crate::{
-    analysis::CheckContext,
-    analysis::{LocaleMessages, MessageContext, MessageLocation},
+    core::CheckContext,
+    core::{LocaleMessages, MessageContext, MessageLocation},
     issues::UnusedKeyIssue,
 };
 
@@ -63,9 +63,7 @@ pub fn check_unused_keys(
 
 #[cfg(test)]
 mod tests {
-    use crate::analysis::{
-        LocaleMessages, MessageContext, MessageEntry, MessageLocation, ValueType,
-    };
+    use crate::core::{LocaleMessages, MessageContext, MessageEntry, MessageLocation, ValueType};
     use crate::rules::unused::*;
 
     fn create_message_map(entries: &[(&str, &str)]) -> LocaleMessages {

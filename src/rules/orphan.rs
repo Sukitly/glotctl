@@ -4,8 +4,8 @@
 //! but are missing from the primary locale.
 
 use crate::{
-    analysis::CheckContext,
-    analysis::{AllLocaleMessages, MessageContext, MessageLocation},
+    core::CheckContext,
+    core::{AllLocaleMessages, MessageContext, MessageLocation},
     issues::OrphanKeyIssue,
 };
 
@@ -75,9 +75,7 @@ pub fn check_orphan_keys(
 mod tests {
     use std::collections::HashMap;
 
-    use crate::analysis::{
-        LocaleMessages, MessageContext, MessageEntry, MessageLocation, ValueType,
-    };
+    use crate::core::{LocaleMessages, MessageContext, MessageEntry, MessageLocation, ValueType};
     use crate::rules::orphan::*;
 
     fn create_message_map(file: &str, entries: &[(&str, &str)]) -> LocaleMessages {

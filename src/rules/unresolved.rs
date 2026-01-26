@@ -6,9 +6,9 @@
 //! - Unknown namespace for schema-derived keys
 
 use crate::{
-    analysis::CheckContext,
-    analysis::SourceContext,
-    analysis::{AllKeyUsages, UsageUnresolvedKeyReason as ExtractedReason},
+    core::CheckContext,
+    core::SourceContext,
+    core::{AllKeyUsages, UsageUnresolvedKeyReason as ExtractedReason},
     issues::{IssueUnresolvedKeyReason, UnresolvedKeyIssue},
 };
 
@@ -68,8 +68,8 @@ fn convert_reason(reason: &ExtractedReason) -> IssueUnresolvedKeyReason {
 
 #[cfg(test)]
 mod tests {
-    use crate::analysis::{CommentStyle, SourceLocation};
-    use crate::analysis::{FileKeyUsages, UnresolvedKeyUsage};
+    use crate::core::{CommentStyle, SourceLocation};
+    use crate::core::{FileKeyUsages, UnresolvedKeyUsage};
     use crate::rules::unresolved::*;
     use std::collections::HashMap;
 

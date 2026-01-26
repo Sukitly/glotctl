@@ -4,10 +4,10 @@
 //! in one or more other locales.
 
 use crate::{
-    analysis::CheckContext,
-    analysis::{AllLocaleMessages, MessageContext, MessageLocation},
+    core::CheckContext,
+    core::{AllLocaleMessages, MessageContext, MessageLocation},
     issues::ReplicaLagIssue,
-    rules::helpers::{build_key_usage_map, get_usages_for_key, KeyUsageMap},
+    rules::helpers::{KeyUsageMap, build_key_usage_map, get_usages_for_key},
 };
 
 pub fn check_replica_lag_issues(ctx: &CheckContext) -> Vec<ReplicaLagIssue> {
@@ -90,9 +90,7 @@ pub fn check_replica_lags(
 mod tests {
     use std::collections::HashMap;
 
-    use crate::analysis::{
-        LocaleMessages, MessageContext, MessageEntry, MessageLocation, ValueType,
-    };
+    use crate::core::{LocaleMessages, MessageContext, MessageEntry, MessageLocation, ValueType};
     use crate::rules::replica_lag::*;
 
     fn create_message_map(entries: &[(&str, &str)]) -> LocaleMessages {

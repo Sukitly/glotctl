@@ -16,7 +16,7 @@ impl CommentStyle {
 
 #[cfg(test)]
 mod tests {
-    use crate::analysis::CommentStyle;
+    use crate::core::CommentStyle;
 
     #[test]
     fn test_comment_style_is_jsx() {

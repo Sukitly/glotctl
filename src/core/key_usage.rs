@@ -5,9 +5,9 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::analysis::collect::SuppressibleRule;
+use crate::core::collect::SuppressibleRule;
 
-use crate::analysis::SourceContext;
+use crate::core::SourceContext;
 
 // ============================================================
 // Unresolved Key Reason
@@ -138,8 +138,8 @@ pub struct HardcodedText {
 
 #[cfg(test)]
 mod tests {
-    use crate::analysis::key_usage::*;
-    use crate::analysis::{CommentStyle, SourceLocation};
+    use crate::core::key_usage::*;
+    use crate::core::{CommentStyle, SourceLocation};
 
     #[test]
     fn test_full_key() {

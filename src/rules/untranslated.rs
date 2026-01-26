@@ -9,10 +9,10 @@
 //! - Shows where the key is used in code
 
 use crate::{
-    analysis::collect::SuppressibleRule,
-    analysis::CheckContext,
-    analysis::ResolvedKeyUsage,
-    analysis::{AllLocaleMessages, LocaleMessages, MessageContext, MessageLocation},
+    core::CheckContext,
+    core::ResolvedKeyUsage,
+    core::collect::SuppressibleRule,
+    core::{AllLocaleMessages, LocaleMessages, MessageContext, MessageLocation},
     issues::UntranslatedIssue,
     rules::{build_key_usage_map, helpers::KeyUsageMap},
     utils::contains_alphabetic,
@@ -123,9 +123,9 @@ mod tests {
 
     use crate::rules::untranslated::*;
     use crate::{
-        analysis::FullKey,
-        analysis::{CommentStyle, SourceContext, SourceLocation},
-        analysis::{LocaleMessages, MessageContext, MessageEntry, MessageLocation, ValueType},
+        core::FullKey,
+        core::{CommentStyle, SourceContext, SourceLocation},
+        core::{LocaleMessages, MessageContext, MessageEntry, MessageLocation, ValueType},
     };
 
     fn create_message_map(file: &str, entries: &[(&str, &str)]) -> LocaleMessages {

@@ -3,7 +3,7 @@
 //! Detects untranslated text in JSX/TSX files that should use i18n translation functions.
 
 use crate::{
-    analysis::{AllHardcodedTextIssues, CheckContext},
+    core::{AllHardcodedTextIssues, CheckContext},
     issues::HardcodedTextIssue,
 };
 
@@ -28,7 +28,7 @@ pub fn check_hardcoded_text(hardcoded_issues: &AllHardcodedTextIssues) -> Vec<Ha
 
 #[cfg(test)]
 mod tests {
-    use crate::analysis::{CommentStyle, SourceContext, SourceLocation};
+    use crate::core::{CommentStyle, SourceContext, SourceLocation};
     use crate::rules::hardcoded::*;
     use std::collections::HashMap;
 

@@ -12,10 +12,10 @@ use crate::{
 use anyhow::Result;
 
 pub mod actions;
-pub mod analysis;
 pub mod args;
 pub mod commands;
 pub mod config;
+pub mod core;
 pub mod issues;
 pub mod report;
 pub mod rules;

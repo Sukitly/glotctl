@@ -20,9 +20,9 @@ use swc_ecma_visit::{Visit, VisitWith};
 use key_data::KeyDataInternalState;
 use schema::SchemaInternalState;
 
-use crate::analysis::schema::SchemaFunction;
+use crate::core::schema::SchemaFunction;
 
-use crate::analysis::collect::types::{
+use crate::core::collect::types::{
     FileImports, KeyArray, KeyObject, StringArray, TranslationFnCall, TranslationProp,
     extract_binding_names,
 };

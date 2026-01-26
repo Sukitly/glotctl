@@ -8,7 +8,9 @@ use anyhow::{Context as _, Result, anyhow};
 use swc_ecma_visit::VisitWith;
 
 use crate::{
-    analysis::{
+    args::CommonArgs,
+    config::{Config, load_config},
+    core::{
         AllKeyUsages, AllLocaleMessages, LocaleMessages,
         collect::{
             AllFileComments, AllFileImports, CommentCollector, FileImports, Registries,
@@ -23,8 +25,6 @@ use crate::{
         },
         resolve::resolve_translation_calls,
     },
-    args::CommonArgs,
-    config::{Config, load_config},
     issues::{HardcodedTextIssue, ParseErrorIssue},
 };
 
@@ -491,7 +491,7 @@ fn extract_from_files(
 mod tests {
     use std::{cell::OnceCell, collections::HashSet, path::PathBuf};
 
-    use crate::{analysis::*, config::Config};
+    use crate::{config::Config, core::*};
 
     /// Create a minimal CheckContext for testing without file system dependencies.
     fn create_test_context(root_dir: &str, messages_dir: &str) -> CheckContext {

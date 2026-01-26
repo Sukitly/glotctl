@@ -2,10 +2,10 @@ use anyhow::{Ok, Result};
 use clap::ValueEnum;
 
 use crate::{
-    analysis::CheckContext,
     args::CheckCommand,
     commands::RunResult,
     commands::helper::finish,
+    core::CheckContext,
     issues::Issue,
     report::report,
     rules::{

@@ -5,9 +5,9 @@
 
 use swc_ecma_ast::{ArrowExpr, CallExpr, Callee, Expr, Pat, VarDeclarator};
 
-use crate::analysis::schema::{SchemaFunction, SchemaFunctionContext};
+use crate::core::schema::{SchemaFunction, SchemaFunctionContext};
 
-use crate::analysis::collect::registry::helpers::{
+use crate::core::collect::registry::helpers::{
     extract_string_arg, is_schema_call_with_t, is_tfunction_type,
 };
 

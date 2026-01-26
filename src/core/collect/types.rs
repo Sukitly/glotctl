@@ -10,7 +10,7 @@ use std::{
 
 use swc_ecma_ast::{ObjectPatProp, Pat};
 
-use crate::analysis::schema::SchemaRegistry;
+use crate::core::schema::SchemaRegistry;
 
 /// Represents an object literal containing translation key candidates
 #[derive(Debug, Clone)]
@@ -288,7 +288,7 @@ pub type AllFileImports = HashMap<String, FileImports>;
 
 #[cfg(test)]
 mod tests {
-    use crate::analysis::collect::RegistryCollector;
+    use crate::core::collect::RegistryCollector;
     use swc_common::FileName;
     use swc_ecma_parser::{Parser, StringInput, Syntax, TsSyntax};
     use swc_ecma_visit::VisitWith;

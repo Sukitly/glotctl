@@ -1,4 +1,4 @@
-use crate::analysis::data::comment_style::CommentStyle;
+use crate::core::data::comment_style::CommentStyle;
 
 /// Pure position information in source code files (TSX/JSX/TS/JS).
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -62,7 +62,7 @@ impl SourceContext {
 
 #[cfg(test)]
 mod tests {
-    use crate::analysis::{CommentStyle, SourceContext, SourceLocation};
+    use crate::core::{CommentStyle, SourceContext, SourceLocation};
 
     #[test]
     fn test_source_location_new() {

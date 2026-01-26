@@ -40,7 +40,7 @@ impl Action<OrphanKeyIssue> for DeleteKey {
 #[cfg(test)]
 mod tests {
     use crate::actions::delete_key::*;
-    use crate::analysis::{MessageContext, MessageLocation};
+    use crate::core::{MessageContext, MessageLocation};
 
     #[test]
     fn test_unused_key_to_operations() {

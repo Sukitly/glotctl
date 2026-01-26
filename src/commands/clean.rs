@@ -5,10 +5,10 @@ use colored::Colorize;
 
 use crate::{
     actions::{Action, ActionStats, DeleteKey},
-    analysis::CheckContext,
     args::{CleanCommand, CleanRule},
-    commands::helper::finish,
     commands::RunResult,
+    commands::helper::finish,
+    core::CheckContext,
     issues::{Issue, OrphanKeyIssue, UnusedKeyIssue},
     rules::{orphan::check_orphan_keys_issues, unused::check_unused_keys_issues},
 };
