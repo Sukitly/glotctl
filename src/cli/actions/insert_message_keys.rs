@@ -7,7 +7,7 @@ use crate::core::CommentStyle;
 use crate::issues::UnresolvedKeyIssue;
 
 use super::operation::Operation;
-use super::traits::{Action, ActionStats};
+use super::traits::{Action, ActionStats, execute_operations};
 
 /// Action to insert `glot-message-keys` comments.
 ///
@@ -48,24 +48,10 @@ impl Action<UnresolvedKeyIssue> for InsertMessageKeys {
         let processed = ops.len();
         let skipped = issues.len() - processed; // Issues without pattern
 
-        let mut files_modified = std::collections::HashSet::new();
-        let mut changes_applied = 0;
-        for op in &ops {
-            let result = op.execute()?;
-            if result.is_applied() {
-                changes_applied += 1;
-                if let Operation::InsertComment { context, .. } = op {
-                    files_modified.insert(context.file_path().to_string());
-                }
-            }
-        }
-
-        Ok(ActionStats {
-            processed,
-            skipped,
-            changes_applied,
-            files_modified: files_modified.len(),
-        })
+        let mut stats = execute_operations(&ops)?;
+        stats.processed = processed;
+        stats.skipped = skipped;
+        Ok(stats)
     }
 }
 

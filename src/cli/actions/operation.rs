@@ -8,7 +8,7 @@
 //! Each operation knows how to execute itself and preview itself.
 
 use colored::Colorize;
-use std::path::Path;
+use std::{fs, path::Path};
 use unicode_width::UnicodeWidthStr;
 
 use super::json_editor::JsonEditor;
@@ -72,8 +72,6 @@ impl Operation {
         context: &SourceContext,
         comment: &str,
     ) -> anyhow::Result<OperationResult> {
-        use std::fs;
-
         let file_path = context.file_path();
         let content = fs::read_to_string(file_path)?;
 
@@ -201,6 +199,125 @@ impl Operation {
         Ok(OperationResult::Noop)
     }
 
+    pub(crate) fn apply_insert_comment_ops(ops: &[Operation]) -> anyhow::Result<usize> {
+        if ops.is_empty() {
+            return Ok(0);
+        }
+
+        let mut file_path: Option<&str> = None;
+        let mut groups: Vec<InsertGroup> = Vec::new();
+
+        for op in ops {
+            if let Operation::InsertComment { context, comment } = op {
+                let op_path = context.file_path();
+                if let Some(existing) = file_path {
+                    if existing != op_path {
+                        anyhow::bail!("apply_insert_comment_ops expects ops from a single file");
+                    }
+                } else {
+                    file_path = Some(op_path);
+                }
+
+                let kind = directive_kind(comment);
+                let line = context.line();
+                let style = context.comment_style;
+
+                if let Some(group) = groups
+                    .iter_mut()
+                    .find(|g| g.line == line && g.comment_style == style && g.kind == kind)
+                {
+                    group.comments.push(comment.clone());
+                } else {
+                    groups.push(InsertGroup {
+                        line,
+                        comment_style: style,
+                        kind,
+                        comments: vec![comment.clone()],
+                    });
+                }
+            }
+        }
+
+        let file_path = match file_path {
+            Some(path) => path,
+            None => return Ok(0),
+        };
+
+        groups.sort_by(|a, b| b.line.cmp(&a.line));
+
+        let content = fs::read_to_string(file_path)?;
+        let newline = if content.contains("\r\n") {
+            "\r\n"
+        } else {
+            "\n"
+        };
+        let had_trailing_newline = content.ends_with(newline);
+        let mut lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
+
+        let mut changes_applied = 0;
+        let mut changed = false;
+
+        for group in groups {
+            let target_idx = group.line.saturating_sub(1);
+            let indentation: String = lines
+                .get(target_idx)
+                .map(|s| s.chars().take_while(|c| c.is_whitespace()).collect())
+                .unwrap_or_default();
+
+            let existing_idx = if target_idx > 0
+                && target_idx - 1 < lines.len()
+                && looks_like_glot_comment(&lines[target_idx - 1])
+            {
+                Some(target_idx - 1)
+            } else {
+                None
+            };
+
+            if let Some(idx) = existing_idx
+                && let Some(merged_comment) = build_merged_comment(&group, Some(&lines[idx]))
+            {
+                let merge_indentation: String = lines[idx]
+                    .chars()
+                    .take_while(|c| c.is_whitespace())
+                    .collect();
+                let merged_line = format!("{}{}", merge_indentation, merged_comment);
+
+                if lines[idx].trim() != merged_line.trim() {
+                    lines[idx] = merged_line;
+                    changes_applied += 1;
+                    changed = true;
+                }
+                continue;
+            }
+
+            if let Some(merged_comment) = build_merged_comment(&group, None) {
+                let comment_line = format!("{}{}", indentation, merged_comment);
+                let insert_idx = target_idx.min(lines.len());
+                lines.insert(insert_idx, comment_line);
+                changes_applied += 1;
+                changed = true;
+            } else {
+                let insert_idx = target_idx.min(lines.len());
+                for comment in group.comments.iter().rev() {
+                    let comment_line = format!("{}{}", indentation, comment);
+                    lines.insert(insert_idx, comment_line);
+                    changes_applied += 1;
+                    changed = true;
+                }
+            }
+        }
+
+        if changed {
+            let mut new_content = lines.join(newline);
+            if had_trailing_newline {
+                new_content.push_str(newline);
+            }
+            fs::write(file_path, new_content)?;
+        }
+
+        Ok(changes_applied)
+    }
+
     fn preview_delete_json_key(context: &MessageContext) {
         let file_path = context.file_path();
         let line = context.line();
@@ -229,6 +346,29 @@ impl Operation {
 fn parse_comment_directive(comment: &str) -> Option<Directive> {
     let text = strip_comment_markers(comment)?;
     Directive::parse(text)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DirectiveKind {
+    DisableNextLine,
+    MessageKeys,
+    Other,
+}
+
+#[derive(Debug, Clone)]
+struct InsertGroup {
+    line: usize,
+    comment_style: CommentStyle,
+    kind: DirectiveKind,
+    comments: Vec<String>,
+}
+
+fn directive_kind(comment: &str) -> DirectiveKind {
+    match parse_comment_directive(comment) {
+        Some(Directive::DisableNextLine { .. }) => DirectiveKind::DisableNextLine,
+        Some(Directive::MessageKeys(_)) => DirectiveKind::MessageKeys,
+        _ => DirectiveKind::Other,
+    }
 }
 
 fn strip_comment_markers(comment: &str) -> Option<&str> {
@@ -269,6 +409,74 @@ fn looks_like_glot_comment(line: &str) -> bool {
         return text.trim_start().starts_with("glot-");
     }
     false
+}
+
+fn build_merged_comment(group: &InsertGroup, existing_line: Option<&str>) -> Option<String> {
+    let mut style = group.comment_style;
+    if let Some(line) = existing_line
+        && directive_kind(line) != group.kind
+    {
+        return None;
+    }
+    let existing_directive = existing_line.and_then(parse_comment_directive);
+    if let Some(line) = existing_line
+        && let Some(detected) = detect_comment_style(line)
+    {
+        style = detected;
+    }
+
+    match group.kind {
+        DirectiveKind::DisableNextLine => {
+            let mut merged = std::collections::HashSet::new();
+
+            if let Some(Directive::DisableNextLine { rules }) = existing_directive {
+                merged.extend(rules.iter().copied());
+            }
+
+            for comment in &group.comments {
+                if let Some(Directive::DisableNextLine { rules }) = parse_comment_directive(comment)
+                {
+                    merged.extend(rules.iter().copied());
+                }
+            }
+
+            if merged.is_empty() {
+                return None;
+            }
+            Some(format_disable_next_line(&merged, style))
+        }
+        DirectiveKind::MessageKeys => {
+            let mut patterns: Vec<String> = Vec::new();
+            let mut seen = std::collections::HashSet::new();
+
+            if let Some(line) = existing_line
+                && let Some(existing_patterns) = extract_message_key_patterns(line)
+            {
+                for pattern in existing_patterns {
+                    if seen.insert(pattern.clone()) {
+                        patterns.push(pattern);
+                    }
+                }
+            }
+
+            for comment in &group.comments {
+                if let Some(comment_patterns) = extract_message_key_patterns(comment) {
+                    for pattern in comment_patterns {
+                        if seen.insert(pattern.clone()) {
+                            patterns.push(pattern);
+                        }
+                    }
+                }
+            }
+
+            if patterns.is_empty() {
+                return None;
+            }
+
+            Some(format_message_keys(&patterns, style))
+        }
+        DirectiveKind::Other => None,
+    }
 }
 
 fn merge_directives(

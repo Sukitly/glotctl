@@ -4,6 +4,7 @@
 //! for multiple Issue types, providing type-safe handling.
 
 use anyhow::Result;
+use std::collections::{HashMap, HashSet};
 
 use super::operation::Operation;
 
@@ -55,33 +56,7 @@ pub trait Action<I> {
     /// Default implementation calls `to_operations` and executes each operation.
     fn run(issues: &[I]) -> Result<ActionStats> {
         let ops = Self::to_operations(issues);
-        let total = ops.len();
-
-        // Track unique files modified
-        let mut files_modified = std::collections::HashSet::new();
-        let mut changes_applied = 0;
-
-        for op in &ops {
-            let result = op.execute()?;
-            if result.is_applied() {
-                changes_applied += 1;
-                match op {
-                    Operation::InsertComment { context, .. } => {
-                        files_modified.insert(context.file_path().to_string());
-                    }
-                    Operation::DeleteJsonKey { context } => {
-                        files_modified.insert(context.file_path().to_string());
-                    }
-                }
-            }
-        }
-
-        Ok(ActionStats {
-            processed: total,
-            skipped: 0,
-            changes_applied,
-            files_modified: files_modified.len(),
-        })
+        execute_operations(&ops)
     }
 
     /// Preview the action (dry-run mode).
@@ -93,6 +68,54 @@ pub trait Action<I> {
             op.preview();
         }
     }
+}
+
+pub(crate) fn execute_operations(ops: &[Operation]) -> Result<ActionStats> {
+    let total = ops.len();
+    let mut files_modified: HashSet<String> = HashSet::new();
+    let mut changes_applied = 0;
+
+    let mut insert_ops_by_file: HashMap<String, Vec<Operation>> = HashMap::new();
+    let mut delete_ops: Vec<Operation> = Vec::new();
+
+    for op in ops {
+        match op {
+            Operation::InsertComment { context, .. } => {
+                insert_ops_by_file
+                    .entry(context.file_path().to_string())
+                    .or_default()
+                    .push(op.clone());
+            }
+            Operation::DeleteJsonKey { .. } => {
+                delete_ops.push(op.clone());
+            }
+        }
+    }
+
+    for (file_path, file_ops) in insert_ops_by_file {
+        let applied = Operation::apply_insert_comment_ops(&file_ops)?;
+        if applied > 0 {
+            changes_applied += applied;
+            files_modified.insert(file_path);
+        }
+    }
+
+    for op in delete_ops {
+        let result = op.execute()?;
+        if result.is_applied() {
+            changes_applied += 1;
+            if let Operation::DeleteJsonKey { context } = op {
+                files_modified.insert(context.file_path().to_string());
+            }
+        }
+    }
+
+    Ok(ActionStats {
+        processed: total,
+        skipped: 0,
+        changes_applied,
+        files_modified: files_modified.len(),
+    })
 }
 
 #[cfg(test)]
