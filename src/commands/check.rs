@@ -9,7 +9,7 @@ use crate::{
     issues::Issue,
     report::report,
     rules::{
-        hardcoded::check_hardcoded_issues, missing::check_missing_keys_issues,
+        hardcoded::check_hardcoded_text_issues, missing::check_missing_keys_issues,
         orphan::check_orphan_keys_issues, replica_lag::check_replica_lag_issues,
         type_mismatch::check_type_mismatch_issues, unresolved::check_unresolved_keys_issues,
         untranslated::check_untranslated_issues, unused::check_unused_keys_issues,
@@ -59,7 +59,7 @@ pub fn check(cmd: CheckCommand) -> Result<RunResult> {
     for check in checks {
         match check {
             CheckRule::Hardcoded => {
-                let issues = check_hardcoded_issues(&ctx);
+                let issues = check_hardcoded_text_issues(&ctx);
                 all_issues.extend(issues.into_iter().map(Issue::Hardcoded));
             }
             CheckRule::Missing => {

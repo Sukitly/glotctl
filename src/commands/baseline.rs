@@ -2,13 +2,13 @@ use std::collections::HashSet;
 
 use crate::{
     actions::{Action, ActionStats, InsertDisableComment, Operation},
-    analysis::collect::SuppressibleRule,
     analysis::CheckContext,
+    analysis::collect::SuppressibleRule,
     args::BaselineCommand,
-    commands::helper::finish,
     commands::RunResult,
-    issues::{HardcodedIssue, Issue, UntranslatedIssue},
-    rules::{hardcoded::check_hardcoded_issues, untranslated::check_untranslated_issues},
+    commands::helper::finish,
+    issues::{HardcodedTextIssue, Issue, UntranslatedIssue},
+    rules::{hardcoded::check_hardcoded_text_issues, untranslated::check_untranslated_issues},
 };
 use anyhow::{Ok, Result};
 use colored::Colorize;
@@ -25,14 +25,14 @@ pub fn baseline(cmd: BaselineCommand) -> Result<RunResult> {
         rules.clone().into_iter().collect()
     };
 
-    let mut hardcoded_issues: Vec<HardcodedIssue> = Vec::new();
+    let mut hardcoded_issues: Vec<HardcodedTextIssue> = Vec::new();
     let mut untranslated_issues: Vec<UntranslatedIssue> = Vec::new();
     let mut operations: Vec<Operation> = Vec::new();
 
     for rule in rules {
         match rule {
             SuppressibleRule::Hardcoded => {
-                let issues = check_hardcoded_issues(&ctx);
+                let issues = check_hardcoded_text_issues(&ctx);
                 let ops = InsertDisableComment::to_operations(&issues);
                 operations.extend(ops);
                 hardcoded_issues.extend(issues);

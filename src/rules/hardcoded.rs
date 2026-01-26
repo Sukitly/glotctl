@@ -3,13 +3,13 @@
 //! Detects untranslated text in JSX/TSX files that should use i18n translation functions.
 
 use crate::{
-    analysis::{AllHardcodedIssues, CheckContext},
-    issues::HardcodedIssue,
+    analysis::{AllHardcodedTextIssues, CheckContext},
+    issues::HardcodedTextIssue,
 };
 
-pub fn check_hardcoded_issues(ctx: &CheckContext) -> Vec<HardcodedIssue> {
+pub fn check_hardcoded_text_issues(ctx: &CheckContext) -> Vec<HardcodedTextIssue> {
     let hardcoded_issues = ctx.hardcoded_issues();
-    check_hardcoded(hardcoded_issues)
+    check_hardcoded_text(hardcoded_issues)
 }
 
 /// Check for hardcoded text issues.
@@ -22,7 +22,7 @@ pub fn check_hardcoded_issues(ctx: &CheckContext) -> Vec<HardcodedIssue> {
 ///
 /// # Returns
 /// Vector of HardcodedIssue for reporting
-pub fn check_hardcoded(hardcoded_issues: &AllHardcodedIssues) -> Vec<HardcodedIssue> {
+pub fn check_hardcoded_text(hardcoded_issues: &AllHardcodedTextIssues) -> Vec<HardcodedTextIssue> {
     hardcoded_issues.values().flatten().cloned().collect()
 }
 
@@ -38,8 +38,8 @@ mod tests {
         col: usize,
         text: &str,
         in_jsx: bool,
-    ) -> HardcodedIssue {
-        HardcodedIssue {
+    ) -> HardcodedTextIssue {
+        HardcodedTextIssue {
             context: SourceContext::new(
                 SourceLocation::new(file, line, col),
                 text.to_string(),
@@ -55,14 +55,14 @@ mod tests {
 
     #[test]
     fn test_check_hardcoded_empty() {
-        let hardcoded_issues: AllHardcodedIssues = HashMap::new();
-        let issues = check_hardcoded(&hardcoded_issues);
+        let hardcoded_issues: AllHardcodedTextIssues = HashMap::new();
+        let issues = check_hardcoded_text(&hardcoded_issues);
         assert!(issues.is_empty());
     }
 
     #[test]
     fn test_check_hardcoded_single_file() {
-        let mut hardcoded_issues: AllHardcodedIssues = HashMap::new();
+        let mut hardcoded_issues: AllHardcodedTextIssues = HashMap::new();
         hardcoded_issues.insert(
             "test.tsx".to_string(),
             vec![
@@ -71,13 +71,13 @@ mod tests {
             ],
         );
 
-        let issues = check_hardcoded(&hardcoded_issues);
+        let issues = check_hardcoded_text(&hardcoded_issues);
         assert_eq!(issues.len(), 2);
     }
 
     #[test]
     fn test_check_hardcoded_multiple_files() {
-        let mut hardcoded_issues: AllHardcodedIssues = HashMap::new();
+        let mut hardcoded_issues: AllHardcodedTextIssues = HashMap::new();
         hardcoded_issues.insert(
             "a.tsx".to_string(),
             vec![create_old_hardcoded_issue("a.tsx", 1, 1, "Text A", false)],
@@ -87,19 +87,19 @@ mod tests {
             vec![create_old_hardcoded_issue("b.tsx", 2, 2, "Text B", true)],
         );
 
-        let issues = check_hardcoded(&hardcoded_issues);
+        let issues = check_hardcoded_text(&hardcoded_issues);
         assert_eq!(issues.len(), 2);
     }
 
     #[test]
     fn test_check_hardcoded_preserves_context() {
-        let mut hardcoded_issues: AllHardcodedIssues = HashMap::new();
+        let mut hardcoded_issues: AllHardcodedTextIssues = HashMap::new();
         hardcoded_issues.insert(
             "test.tsx".to_string(),
             vec![create_old_hardcoded_issue("test.tsx", 10, 5, "Hello", true)],
         );
 
-        let issues = check_hardcoded(&hardcoded_issues);
+        let issues = check_hardcoded_text(&hardcoded_issues);
         assert_eq!(issues.len(), 1);
 
         let issue = &issues[0];

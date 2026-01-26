@@ -95,13 +95,13 @@ impl std::fmt::Display for IssueUnresolvedKeyReason {
 
 /// Hardcoded text in JSX/TSX that should use translations.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct HardcodedIssue {
+pub struct HardcodedTextIssue {
     pub context: SourceContext,
     /// The hardcoded text content.
     pub text: String,
 }
 
-impl HardcodedIssue {
+impl HardcodedTextIssue {
     pub fn severity() -> Severity {
         Severity::Error
     }
@@ -288,7 +288,7 @@ impl ParseErrorIssue {
 #[enum_dispatch(Report)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Issue {
-    Hardcoded(HardcodedIssue),
+    Hardcoded(HardcodedTextIssue),
     MissingKey(MissingKeyIssue),
     UnresolvedKey(UnresolvedKeyIssue),
     UnusedKey(UnusedKeyIssue),
@@ -302,7 +302,7 @@ pub enum Issue {
 impl Issue {
     pub fn severity(&self) -> Severity {
         match self {
-            Issue::Hardcoded(_) => HardcodedIssue::severity(),
+            Issue::Hardcoded(_) => HardcodedTextIssue::severity(),
             Issue::MissingKey(_) => MissingKeyIssue::severity(),
             Issue::UnresolvedKey(_) => UnresolvedKeyIssue::severity(),
             Issue::UnusedKey(_) => UnusedKeyIssue::severity(),
@@ -316,7 +316,7 @@ impl Issue {
 
     pub fn rule(&self) -> Rule {
         match self {
-            Issue::Hardcoded(_) => HardcodedIssue::rule(),
+            Issue::Hardcoded(_) => HardcodedTextIssue::rule(),
             Issue::MissingKey(_) => MissingKeyIssue::rule(),
             Issue::UnresolvedKey(_) => UnresolvedKeyIssue::rule(),
             Issue::UnusedKey(_) => UnusedKeyIssue::rule(),
@@ -382,7 +382,7 @@ pub trait Report {
 // Report Implementations
 // ============================================================
 
-impl Report for HardcodedIssue {
+impl Report for HardcodedTextIssue {
     fn location(&self) -> ReportLocation<'_> {
         ReportLocation::Source(&self.context)
     }
@@ -678,13 +678,13 @@ mod tests {
     fn test_hardcoded_issue() {
         let loc = SourceLocation::new("./src/app.tsx", 10, 5);
         let ctx = SourceContext::new(loc, "const x = \"Hello\";", CommentStyle::Js);
-        let issue = HardcodedIssue {
+        let issue = HardcodedTextIssue {
             context: ctx,
             text: "Hello".to_string(),
         };
 
-        assert_eq!(HardcodedIssue::severity(), Severity::Error);
-        assert_eq!(HardcodedIssue::rule(), Rule::HardcodedText);
+        assert_eq!(HardcodedTextIssue::severity(), Severity::Error);
+        assert_eq!(HardcodedTextIssue::rule(), Rule::HardcodedText);
         assert_eq!(issue.text, "Hello");
     }
 
@@ -863,7 +863,7 @@ mod tests {
     fn test_issue_enum_severity() {
         let loc = SourceLocation::new("./src/app.tsx", 10, 5);
         let ctx = SourceContext::new(loc, "const x = \"Hello\";", CommentStyle::Js);
-        let issue = Issue::Hardcoded(HardcodedIssue {
+        let issue = Issue::Hardcoded(HardcodedTextIssue {
             context: ctx,
             text: "Hello".to_string(),
         });

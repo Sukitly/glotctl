@@ -21,7 +21,7 @@ use crate::{
     args::CommonArgs,
     config::{Config, load_config},
     file_scanner::scan_files,
-    issues::{HardcodedIssue, ParseErrorIssue},
+    issues::{HardcodedTextIssue, ParseErrorIssue},
     parsers::{
         json::{MessageMap, scan_message_files},
         jsx::{ParsedJSX, parse_jsx_source},
@@ -31,7 +31,7 @@ use crate::{
 use std::collections::HashMap;
 
 /// Type alias for all hardcoded issues (one vec per file).
-pub type AllHardcodedIssues = HashMap<String, Vec<HardcodedIssue>>;
+pub type AllHardcodedTextIssues = HashMap<String, Vec<HardcodedTextIssue>>;
 
 /// Aggregated message data from all locale files.
 pub struct MessageData {
@@ -47,7 +47,7 @@ pub struct SourceMetadata {
 
 pub struct ResolvedData {
     pub key_usages: AllKeyUsages,
-    pub hardcoded_issues: AllHardcodedIssues,
+    pub hardcoded_issues: AllHardcodedTextIssues,
 }
 
 pub struct CheckContext {
@@ -196,7 +196,7 @@ impl CheckContext {
         &self.resolved_data().key_usages
     }
 
-    pub fn hardcoded_issues(&self) -> &AllHardcodedIssues {
+    pub fn hardcoded_issues(&self) -> &AllHardcodedTextIssues {
         &self.resolved_data().hardcoded_issues
     }
 
@@ -444,7 +444,7 @@ fn extract_from_files(
     checked_attributes: &[String],
     ignore_texts: &std::collections::HashSet<String>,
     available_keys: &std::collections::HashSet<String>,
-) -> (AllKeyUsages, AllHardcodedIssues) {
+) -> (AllKeyUsages, AllHardcodedTextIssues) {
     let mut key_usages = HashMap::new();
     let mut hardcoded_issues = HashMap::new();
 

@@ -23,7 +23,7 @@ use swc_ecma_visit::{Visit, VisitWith};
 
 use crate::analysis::{CommentStyle, SourceContext, SourceLocation};
 use crate::analysis::collect::SuppressibleRule;
-use crate::issues::HardcodedIssue;
+use crate::issues::HardcodedTextIssue;
 use crate::utils::contains_alphabetic;
 
 use crate::analysis::collect::Registries;
@@ -76,7 +76,7 @@ impl JsxState {
 #[derive(Debug)]
 pub struct FileAnalysisResult {
     /// Hardcoded text issues (directly collected).
-    pub hardcoded_issues: Vec<HardcodedIssue>,
+    pub hardcoded_issues: Vec<HardcodedTextIssue>,
     /// Raw translation calls (to be resolved in Phase 3).
     pub raw_calls: Vec<RawTranslationCall>,
     /// Schema function calls (directly collected).
@@ -101,7 +101,7 @@ pub struct FileAnalyzer<'a> {
     registries: &'a Registries,
 
     // === Output ===
-    hardcoded_issues: Vec<HardcodedIssue>,
+    hardcoded_issues: Vec<HardcodedTextIssue>,
     raw_calls: Vec<RawTranslationCall>,
     schema_calls: Vec<SchemaCallInfo>,
 }
@@ -201,7 +201,7 @@ impl<'a> FileAnalyzer<'a> {
 
         let use_jsx_comment = self.should_use_jsx_comment(&source_line);
 
-        self.hardcoded_issues.push(HardcodedIssue {
+        self.hardcoded_issues.push(HardcodedTextIssue {
             context: SourceContext::new(
                 SourceLocation::new(self.file_path, loc.line, loc.col_display + 1),
                 source_line,

@@ -4,7 +4,7 @@
 //! Used by the `glot baseline` command.
 
 use crate::analysis::CommentStyle;
-use crate::issues::{HardcodedIssue, Rule, UntranslatedIssue};
+use crate::issues::{HardcodedTextIssue, Rule, UntranslatedIssue};
 
 use crate::actions::operation::Operation;
 use crate::actions::traits::Action;
@@ -27,8 +27,8 @@ impl InsertDisableComment {
     }
 }
 
-impl Action<HardcodedIssue> for InsertDisableComment {
-    fn to_operations(issues: &[HardcodedIssue]) -> Vec<Operation> {
+impl Action<HardcodedTextIssue> for InsertDisableComment {
+    fn to_operations(issues: &[HardcodedTextIssue]) -> Vec<Operation> {
         issues
             .iter()
             .map(|issue| Operation::InsertComment {
@@ -96,7 +96,7 @@ mod tests {
     fn test_hardcoded_to_operations() {
         let loc = SourceLocation::new("./src/app.tsx", 10, 5);
         let ctx = SourceContext::new(loc, "const x = \"Hello\";", CommentStyle::Js);
-        let issue = HardcodedIssue {
+        let issue = HardcodedTextIssue {
             context: ctx,
             text: "Hello".to_string(),
         };

@@ -47,4 +47,6 @@ pub use data::{
     SourceLocation, ValueType,
 };
 
-pub use context::{AllHardcodedIssues, CheckContext, MessageData, ResolvedData, SourceMetadata};
+pub use context::{
+    AllHardcodedTextIssues, CheckContext, MessageData, ResolvedData, SourceMetadata,
+};
