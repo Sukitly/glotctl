@@ -18,7 +18,6 @@ pub(crate) mod config;
 pub(crate) mod extraction;
 pub(crate) mod file_scanner;
 pub(crate) mod json_editor;
-pub(crate) mod json_writer;
 pub(crate) mod parsers;
 pub mod report;
 pub(crate) mod rules;
