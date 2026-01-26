@@ -4,7 +4,7 @@ use clap::ValueEnum;
 use super::super::args::CheckCommand;
 use super::{
     helper::finish,
-    {CommandKind, CommandResult, CommandSummary},
+    {CommandResult, CommandSummary},
 };
 
 use crate::{
@@ -99,7 +99,6 @@ pub fn check(cmd: CheckCommand) -> Result<CommandResult> {
     all_issues.extend(parse_errors.iter().map(|i| Issue::ParseError(i.clone())));
 
     Ok(finish(
-        CommandKind::Check,
         CommandSummary::Check,
         all_issues,
         ctx.files.len(),

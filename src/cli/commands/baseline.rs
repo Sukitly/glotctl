@@ -4,7 +4,7 @@ use super::super::{
     actions::{Action, ActionStats, InsertDisableComment},
     args::BaselineCommand,
 };
-use super::{BaselineSummary, CommandKind, CommandResult, CommandSummary, helper::finish};
+use super::{BaselineSummary, CommandResult, CommandSummary, helper::finish};
 use crate::{
     core::{CheckContext, collect::SuppressibleRule},
     issues::{HardcodedTextIssue, Issue, UntranslatedIssue},
@@ -75,7 +75,6 @@ pub fn baseline(cmd: BaselineCommand) -> Result<CommandResult> {
     all_issues.extend(parse_errors.iter().map(|i| Issue::ParseError(i.clone())));
 
     Ok(finish(
-        CommandKind::Baseline,
         CommandSummary::Baseline(BaselineSummary {
             hardcoded_count,
             untranslated_usage_count,

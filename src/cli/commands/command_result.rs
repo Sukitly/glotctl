@@ -1,14 +1,5 @@
 use crate::issues::Issue;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CommandKind {
-    Check,
-    Baseline,
-    Fix,
-    Clean,
-    Init,
-}
-
 #[derive(Debug)]
 pub enum CommandSummary {
     Check,
@@ -56,10 +47,8 @@ pub struct InitSummary {
 
 /// Result of running glot commands
 pub struct CommandResult {
-    pub kind: CommandKind,
     pub summary: CommandSummary,
     pub error_count: usize,
-    pub warning_count: usize,
     /// If true, exit code 1 should be returned when error_count > 0.
     /// If false, always exit 0 (used for dry-run commands that report work to do).
     pub exit_on_errors: bool,

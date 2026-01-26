@@ -1,8 +1,7 @@
-use super::{CommandKind, CommandResult, CommandSummary};
+use super::{CommandResult, CommandSummary};
 use crate::issues::{Issue, Severity};
 
 pub fn finish(
-    kind: CommandKind,
     summary: CommandSummary,
     mut issues: Vec<Issue>,
     source_files_checked: usize,
@@ -20,16 +19,9 @@ pub fn finish(
         .filter(|i| i.severity() == Severity::Error)
         .count();
 
-    let warning_count = issues
-        .iter()
-        .filter(|i| i.severity() == Severity::Warning)
-        .count();
-
     CommandResult {
-        kind,
         summary,
         error_count,
-        warning_count,
         exit_on_errors: true,
         issues,
         parse_error_count,

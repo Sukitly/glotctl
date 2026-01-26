@@ -4,7 +4,7 @@ use crate::{
     cli::actions::{Action, ActionStats, InsertMessageKeys},
     cli::args::FixCommand,
     cli::commands::helper::finish,
-    cli::commands::{CommandKind, CommandResult, CommandSummary, FixSummary},
+    cli::commands::{CommandResult, CommandSummary, FixSummary},
     core::CheckContext,
     issues::{Issue, UnresolvedKeyIssue},
     rules::unresolved::check_unresolved_keys_issues,
@@ -52,7 +52,6 @@ pub fn fix(cmd: FixCommand) -> Result<CommandResult> {
     all_issues.extend(parse_errors.iter().map(|i| Issue::ParseError(i.clone())));
 
     Ok(finish(
-        CommandKind::Fix,
         CommandSummary::Fix(FixSummary {
             unresolved_count,
             inserted_count,

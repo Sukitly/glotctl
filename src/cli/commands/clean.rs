@@ -5,7 +5,7 @@ use super::super::{
     args::{CleanCommand, CleanRule},
 };
 use super::helper::finish;
-use super::{CleanSummary, CommandKind, CommandResult, CommandSummary};
+use super::{CleanSummary, CommandResult, CommandSummary};
 use crate::{
     core::CheckContext,
     issues::{Issue, OrphanKeyIssue, UnusedKeyIssue},
@@ -79,7 +79,6 @@ pub fn clean(cmd: CleanCommand) -> Result<CommandResult> {
     all_issues.extend(parse_errors.iter().map(|i| Issue::ParseError(i.clone())));
 
     Ok(finish(
-        CommandKind::Clean,
         CommandSummary::Clean(CleanSummary {
             unused_count,
             orphan_count,

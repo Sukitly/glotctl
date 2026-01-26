@@ -18,7 +18,7 @@ use std::{fs, path::Path};
 
 use super::{
     args::{Arguments, Command},
-    commands::{CommandKind, CommandResult, CommandSummary, InitSummary},
+    commands::{CommandResult, CommandSummary, InitSummary},
     commands::{baseline::baseline, check::check, clean::clean, fix::fix},
 };
 use crate::config::{CONFIG_FILE_NAME, default_config_json};
@@ -33,10 +33,8 @@ pub fn run(Arguments { command }: Arguments) -> Result<CommandResult> {
         Some(Command::Init) => {
             init()?;
             Ok(CommandResult {
-                kind: CommandKind::Init,
                 summary: CommandSummary::Init(InitSummary { created: true }),
                 error_count: 0,
-                warning_count: 0,
                 exit_on_errors: true,
                 issues: Vec::new(),
                 parse_error_count: 0,
