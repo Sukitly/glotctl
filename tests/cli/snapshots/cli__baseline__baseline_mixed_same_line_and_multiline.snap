@@ -11,19 +11,7 @@ info:
 success: true
 exit_code: 0
 ----- stdout -----
-  --> ./src/app.tsx:4:19
-     |
-   4 |             <span>JSX Text</span>
-     |                   ^
-  +             {/* glot-disable-next-line hardcoded */}
-
-  --> ./src/app.tsx:6:29
-     |
-   6 |                 placeholder="Multi-line attr"
-     |                             ^
-  +                 // glot-disable-next-line hardcoded
-
-Inserted 2 comment(s) in 1 file(s):
-  - hardcoded: 2 comment(s)
+Inserted 2 comment(s) in 1 file(s) (processed 2 issue(s)):
+  - hardcoded: 2 comment(s) (from 2 issue(s))
 
 ----- stderr -----

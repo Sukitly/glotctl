@@ -12,6 +12,6 @@ info:
 success: true
 exit_code: 0
 ----- stdout -----
-✓ No issues found to baseline.
+✓ Checked 1 source file, 2 locale files - no issues found
 
 ----- stderr -----

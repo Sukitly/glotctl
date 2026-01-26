@@ -11,20 +11,8 @@ info:
 success: true
 exit_code: 0
 ----- stdout -----
-Skipped (line has translation call):
-  --> ./src/app.tsx:4:33
-     |
-   4 |     return <div>{t("greeting")} suffix</div>;
-     |                                 ^
-
-  --> ./src/app.tsx:4:18
-     |
-   4 |     return <div>{t("greeting")} suffix</div>;
-     |                  ^
-  +     {/* glot-disable-next-line untranslated */}
-
-Inserted 1 comment(s) in 1 file(s):
-  - untranslated: 1 comment(s), 1 key(s)
-Skipped 1 line(s) with mixed translation/hardcoded text.
+Inserted 2 comment(s) in 2 file(s) (processed 2 issue(s)):
+  - hardcoded: 1 comment(s) (from 1 issue(s))
+  - untranslated: 1 comment(s), 1 key(s) (from 1 usage(s))
 
 ----- stderr -----

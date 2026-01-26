@@ -11,20 +11,7 @@ info:
 success: true
 exit_code: 0
 ----- stdout -----
-Skipped (line has translation call):
-  --> ./src/app.tsx:6:32
-     |
-   6 |             <span>{t("title")} (Hardcoded suffix)</span>
-     |                                ^
-
-  --> ./src/app.tsx:7:19
-     |
-   7 |             <span>Pure hardcoded text</span>
-     |                   ^
-  +             {/* glot-disable-next-line hardcoded */}
-
-Inserted 1 comment(s) in 1 file(s):
-  - hardcoded: 1 comment(s)
-Skipped 1 line(s) with mixed translation/hardcoded text.
+Inserted 2 comment(s) in 1 file(s) (processed 2 issue(s)):
+  - hardcoded: 2 comment(s) (from 2 issue(s))
 
 ----- stderr -----
