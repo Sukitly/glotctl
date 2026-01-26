@@ -3,9 +3,14 @@
 //! The actual collection logic has been moved to `registry_collector.rs` for better performance.
 //! This module now only contains type definitions and utility functions.
 
-use std::{collections::HashMap, path::Path};
+use std::{
+    collections::{HashMap, HashSet},
+    path::Path,
+};
 
 use swc_ecma_ast::{ObjectPatProp, Pat};
+
+use crate::analysis::schema::SchemaRegistry;
 
 /// Represents an object literal containing translation key candidates
 #[derive(Debug, Clone)]
@@ -218,10 +223,9 @@ pub struct DisabledRange {
 #[derive(Debug, Default)]
 pub struct Suppressions {
     /// Single-line suppressions: rule -> set of line numbers
-    pub disabled_lines:
-        std::collections::HashMap<SuppressibleRule, std::collections::HashSet<usize>>,
+    pub disabled_lines: HashMap<SuppressibleRule, HashSet<usize>>,
     /// Range-based suppressions: rule -> list of ranges
-    pub disabled_ranges: std::collections::HashMap<SuppressibleRule, Vec<DisabledRange>>,
+    pub disabled_ranges: HashMap<SuppressibleRule, Vec<DisabledRange>>,
 }
 
 /// Key declaration for a single line.
@@ -239,7 +243,7 @@ pub struct KeyDeclaration {
 #[derive(Debug, Default)]
 pub struct Declarations {
     /// Line number -> key declaration
-    pub entries: std::collections::HashMap<usize, KeyDeclaration>,
+    pub entries: HashMap<usize, KeyDeclaration>,
 }
 
 /// All glot comments collected from a single file.
@@ -255,7 +259,7 @@ pub struct FileComments {
 }
 
 /// All file comments indexed by file path
-pub type AllFileComments = std::collections::HashMap<String, FileComments>;
+pub type AllFileComments = HashMap<String, FileComments>;
 
 // ============================================================
 // Aggregated Registry Types
@@ -266,7 +270,7 @@ pub type AllFileComments = std::collections::HashMap<String, FileComments>;
 /// This struct aggregates all cross-file dependencies collected during Phase 1.
 /// Does NOT contain file_imports - that's stored separately in AllFileImports.
 pub struct Registries {
-    pub schema: crate::analysis::schema::SchemaRegistry,
+    pub schema: SchemaRegistry,
     pub key_object: KeyObjectRegistry,
     pub key_array: KeyArrayRegistry,
     pub string_array: StringArrayRegistry,
@@ -276,11 +280,11 @@ pub struct Registries {
     pub translation_fn_call: TranslationFnCallRegistry,
     /// Maps file_path -> default_export_name for files with default exports.
     /// Used to match translation function calls with default imported functions.
-    pub default_exports: std::collections::HashMap<String, String>,
+    pub default_exports: HashMap<String, String>,
 }
 
 /// Type alias for all file imports across the codebase (one per file).
-pub type AllFileImports = std::collections::HashMap<String, FileImports>;
+pub type AllFileImports = HashMap<String, FileImports>;
 
 #[cfg(test)]
 mod tests {

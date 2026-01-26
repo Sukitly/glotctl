@@ -48,7 +48,7 @@ impl std::fmt::Display for Rule {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             // Use short names for directive compatibility with v1
-            Rule::HardcodedText => write!(f, "hardcoded"),
+            Rule::HardcodedText => write!(f, "hardcoded-text"),
             Rule::MissingKey => write!(f, "missing-key"),
             Rule::UnresolvedKey => write!(f, "unresolved-key"),
             Rule::ReplicaLag => write!(f, "replica-lag"),
@@ -288,7 +288,7 @@ impl ParseErrorIssue {
 #[enum_dispatch(Report)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Issue {
-    Hardcoded(HardcodedTextIssue),
+    HardcodedText(HardcodedTextIssue),
     MissingKey(MissingKeyIssue),
     UnresolvedKey(UnresolvedKeyIssue),
     UnusedKey(UnusedKeyIssue),
@@ -302,7 +302,7 @@ pub enum Issue {
 impl Issue {
     pub fn severity(&self) -> Severity {
         match self {
-            Issue::Hardcoded(_) => HardcodedTextIssue::severity(),
+            Issue::HardcodedText(_) => HardcodedTextIssue::severity(),
             Issue::MissingKey(_) => MissingKeyIssue::severity(),
             Issue::UnresolvedKey(_) => UnresolvedKeyIssue::severity(),
             Issue::UnusedKey(_) => UnusedKeyIssue::severity(),
@@ -316,7 +316,7 @@ impl Issue {
 
     pub fn rule(&self) -> Rule {
         match self {
-            Issue::Hardcoded(_) => HardcodedTextIssue::rule(),
+            Issue::HardcodedText(_) => HardcodedTextIssue::rule(),
             Issue::MissingKey(_) => MissingKeyIssue::rule(),
             Issue::UnresolvedKey(_) => UnresolvedKeyIssue::rule(),
             Issue::UnusedKey(_) => UnusedKeyIssue::rule(),
@@ -863,7 +863,7 @@ mod tests {
     fn test_issue_enum_severity() {
         let loc = SourceLocation::new("./src/app.tsx", 10, 5);
         let ctx = SourceContext::new(loc, "const x = \"Hello\";", CommentStyle::Js);
-        let issue = Issue::Hardcoded(HardcodedTextIssue {
+        let issue = Issue::HardcodedText(HardcodedTextIssue {
             context: ctx,
             text: "Hello".to_string(),
         });

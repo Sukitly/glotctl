@@ -101,7 +101,7 @@ pub fn baseline(cmd: BaselineCommand) -> Result<RunResult> {
     let parse_errors = ctx.parsed_files_errors();
 
     let mut all_issues: Vec<Issue> = Vec::new();
-    all_issues.extend(hardcoded_issues.into_iter().map(Issue::Hardcoded));
+    all_issues.extend(hardcoded_issues.into_iter().map(Issue::HardcodedText));
     all_issues.extend(untranslated_issues.into_iter().map(Issue::Untranslated));
     all_issues.extend(parse_errors.iter().map(|i| Issue::ParseError(i.clone())));
 

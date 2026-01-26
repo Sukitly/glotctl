@@ -381,7 +381,7 @@ mod tests {
     fn test_report_hardcoded_issue() {
         let loc = SourceLocation::new("./src/app.tsx", 10, 5);
         let ctx = SourceContext::new(loc, "const x = \"Hello\";", CommentStyle::Js);
-        let issue = Issue::Hardcoded(HardcodedTextIssue {
+        let issue = Issue::HardcodedText(HardcodedTextIssue {
             context: ctx,
             text: "Hello".to_string(),
         });
@@ -476,7 +476,7 @@ mod tests {
     fn test_report_summary() {
         let loc1 = SourceLocation::new("./src/a.tsx", 10, 5);
         let ctx1 = SourceContext::new(loc1, "\"Error\"", CommentStyle::Js);
-        let issue1 = Issue::Hardcoded(HardcodedTextIssue {
+        let issue1 = Issue::HardcodedText(HardcodedTextIssue {
             context: ctx1,
             text: "Error".to_string(),
         });
@@ -700,21 +700,21 @@ mod tests {
         // Create issues in random order
         let loc1 = SourceLocation::new("./src/b.tsx", 20, 5);
         let ctx1 = SourceContext::new(loc1, "\"B20\"", CommentStyle::Js);
-        let issue1 = Issue::Hardcoded(HardcodedTextIssue {
+        let issue1 = Issue::HardcodedText(HardcodedTextIssue {
             context: ctx1,
             text: "B20".to_string(),
         });
 
         let loc2 = SourceLocation::new("./src/a.tsx", 10, 5);
         let ctx2 = SourceContext::new(loc2, "\"A10\"", CommentStyle::Js);
-        let issue2 = Issue::Hardcoded(HardcodedTextIssue {
+        let issue2 = Issue::HardcodedText(HardcodedTextIssue {
             context: ctx2,
             text: "A10".to_string(),
         });
 
         let loc3 = SourceLocation::new("./src/a.tsx", 5, 5);
         let ctx3 = SourceContext::new(loc3, "\"A5\"", CommentStyle::Js);
-        let issue3 = Issue::Hardcoded(HardcodedTextIssue {
+        let issue3 = Issue::HardcodedText(HardcodedTextIssue {
             context: ctx3,
             text: "A5".to_string(),
         });
@@ -738,7 +738,7 @@ mod tests {
         let loc = SourceLocation::new("./src/app.tsx", 10, 8);
         // "你好" takes 4 display width (2 per CJK char), then "World" starts at col 8
         let ctx = SourceContext::new(loc, "const x = \"你好World\";", CommentStyle::Js);
-        let issue = Issue::Hardcoded(HardcodedTextIssue {
+        let issue = Issue::HardcodedText(HardcodedTextIssue {
             context: ctx,
             text: "World".to_string(),
         });

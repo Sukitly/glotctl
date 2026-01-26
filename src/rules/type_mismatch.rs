@@ -20,7 +20,7 @@ use crate::{
     parsers::json::MessageMap,
     rules::{
         build_key_usage_map,
-        helpers::{get_usages_for_key, KeyUsageMap},
+        helpers::{KeyUsageMap, get_usages_for_key},
     },
 };
 

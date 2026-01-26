@@ -60,7 +60,7 @@ pub fn check(cmd: CheckCommand) -> Result<RunResult> {
         match check {
             CheckRule::Hardcoded => {
                 let issues = check_hardcoded_text_issues(&ctx);
-                all_issues.extend(issues.into_iter().map(Issue::Hardcoded));
+                all_issues.extend(issues.into_iter().map(Issue::HardcodedText));
             }
             CheckRule::Missing => {
                 let issues = check_missing_keys_issues(&ctx);
