@@ -6,11 +6,7 @@ use crate::CliTest;
 const JSX_MESSAGE_KEYS: &str = "{/* glot-message-keys";
 const JS_MESSAGE_KEYS: &str = "// glot-message-keys";
 
-fn assert_comment_insertions(
-    content: &str,
-    comment_pattern: &str,
-    line_contains: &[&str],
-) {
+fn assert_comment_insertions(content: &str, comment_pattern: &str, line_contains: &[&str]) {
     // Count occurrences of the comment pattern
     let count = content.matches(comment_pattern).count();
     assert_eq!(
@@ -552,6 +548,63 @@ export function App({ prefix }: { prefix: string }) {
     assert!(
         !content.contains(JSX_MESSAGE_KEYS),
         "Should NOT have JSX comment for JSX attribute, got:\n{}",
+        content
+    );
+    Ok(())
+}
+
+#[test]
+fn test_fix_relative_pattern_from_props() -> Result<()> {
+    let test = CliTest::new()?;
+    setup_config(&test)?;
+
+    // Parent component passes t to child
+    test.write_file(
+        "src/page.tsx",
+        r#"import { useTranslations } from "next-intl";
+import { Button } from "./button";
+
+export function Page() {
+    const t = useTranslations("Common");
+    return <Button t={t} prefix="test" />;
+}
+"#,
+    )?;
+
+    // Component receives t as prop (FromProps) - namespace unknown
+    // Should generate relative pattern ".*.submit" instead of "Common.*.submit"
+    test.write_file(
+        "src/button.tsx",
+        r#"type Props = {
+    t: ReturnType<typeof import("next-intl").useTranslations>;
+    prefix: string;
+};
+
+export function Button({ t, prefix }: Props) {
+    return <button>{t(`${prefix}.submit`)}</button>;
+}
+"#,
+    )?;
+
+    test.write_file(
+        "messages/en.json",
+        r#"{"Common": {"test": {"submit": "Submit"}}}"#,
+    )?;
+
+    let mut cmd = test.fix_command();
+    cmd.arg("--apply");
+    assert_cmd_snapshot!(cmd);
+
+    let content = test.read_file("src/button.tsx")?;
+    assert_comment_insertions(
+        &content,
+        JSX_MESSAGE_KEYS,
+        &["<button>{t(`${prefix}.submit`)}</button>"],
+    );
+    // Should contain relative pattern ".*.submit" not absolute pattern "Common.*.submit"
+    assert!(
+        content.contains("\".*.submit\"") && !content.contains("\"Common.*.submit\""),
+        "Expected relative pattern '.*.submit' in comment, got:\n{}",
         content
     );
     Ok(())
