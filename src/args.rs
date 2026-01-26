@@ -27,7 +27,7 @@ impl Arguments {
             Some(Command::Check(cmd)) => cmd.args.common.verbose,
             Some(Command::Clean(cmd)) => cmd.args.common.verbose,
             Some(Command::Baseline(cmd)) => cmd.args.common.verbose,
-            // Some(Command::Fix(cmd)) => cmd.args.common.verbose,
+            Some(Command::Fix(cmd)) => cmd.args.common.verbose,
             Some(Command::Init) | Some(Command::Serve) | None => false,
         }
     }
@@ -132,7 +132,7 @@ pub enum Command {
     /// Insert glot-disable-next-line comments to suppress hardcoded text warnings
     Baseline(BaselineCommand),
     /// Insert glot-message-keys comments for dynamic translation keys
-    // Fix(FixCommand),
+    Fix(FixCommand),
     /// Initialize a new .glotrc.json configuration file
     Init,
     /// Start MCP server for AI coding agents

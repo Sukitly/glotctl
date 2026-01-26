@@ -4,7 +4,7 @@ use colored::Colorize;
 
 use crate::{
     args::{Arguments, Command},
-    commands::{baseline::baseline, check::check, clean::clean},
+    commands::{baseline::baseline, check::check, clean::clean, fix::fix},
     config::{CONFIG_FILE_NAME, default_config_json},
     report::SUCCESS_MARK,
     types::run_result::RunResult,
@@ -46,7 +46,7 @@ pub fn run(Arguments { command }: Arguments) -> Result<RunResult> {
         Some(Command::Check(cmd)) => check(cmd),
         Some(Command::Clean(cmd)) => clean(cmd),
         Some(Command::Baseline(cmd)) => baseline(cmd),
-        // Some(Command::Fix(cmd)) => fix(cmd),
+        Some(Command::Fix(cmd)) => fix(cmd),
         Some(Command::Init) => {
             init()?;
             Ok(RunResult {
