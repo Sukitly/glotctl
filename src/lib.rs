@@ -19,7 +19,6 @@ pub mod config;
 pub mod file_scanner;
 pub mod issues;
 pub mod json_editor;
-pub mod messages;
 pub mod parsers;
 pub mod report;
 pub mod rules;
