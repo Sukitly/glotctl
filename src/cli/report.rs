@@ -381,7 +381,7 @@ fn print_baseline(summary: &BaselineSummary) {
     if total > 0 {
         if summary.is_apply {
             println!(
-                "{} {} comment(s) in {} file(s).",
+                "{} {} comment(s) in {} file(s):",
                 "Inserted".green().bold(),
                 total,
                 summary.file_count
@@ -397,11 +397,20 @@ fn print_baseline(summary: &BaselineSummary) {
             }
         } else {
             println!(
-                "{} {} comment(s) in {} file(s).",
+                "{} {} comment(s) in {} file(s):",
                 "Would insert".yellow().bold(),
                 total,
                 summary.file_count
             );
+            if summary.hardcoded_count > 0 {
+                println!("  - hardcoded: {} comment(s)", summary.hardcoded_count);
+            }
+            if summary.untranslated_usage_count > 0 {
+                println!(
+                    "  - untranslated: {} comment(s), {} key(s)",
+                    summary.untranslated_usage_count, summary.untranslated_key_count
+                );
+            }
             println!("Run with {} to insert these comments.", "--apply".cyan());
         }
     }
