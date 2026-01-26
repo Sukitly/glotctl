@@ -63,5 +63,6 @@ pub fn fix(cmd: FixCommand) -> Result<CommandResult> {
         all_issues,
         ctx.files.len(),
         ctx.messages().all_messages.len(),
+        false,
     ))
 }

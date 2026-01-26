@@ -4,9 +4,9 @@ use super::super::{
     actions::{Action, ActionStats, InsertDisableComment},
     args::BaselineCommand,
 };
-use super::{BaselineSummary, CommandResult, CommandSummary, helper::finish};
+use super::{helper::finish, BaselineSummary, CommandResult, CommandSummary};
 use crate::{
-    core::{CheckContext, collect::SuppressibleRule},
+    core::{collect::SuppressibleRule, CheckContext},
     issues::{HardcodedTextIssue, Issue, UntranslatedIssue},
     rules::{hardcoded::check_hardcoded_text_issues, untranslated::check_untranslated_issues},
 };
@@ -87,5 +87,6 @@ pub fn baseline(cmd: BaselineCommand) -> Result<CommandResult> {
         all_issues,
         ctx.files.len(),
         ctx.messages().all_messages.len(),
+        false,
     ))
 }

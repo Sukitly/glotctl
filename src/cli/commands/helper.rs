@@ -6,6 +6,7 @@ pub fn finish(
     mut issues: Vec<Issue>,
     source_files_checked: usize,
     locale_files_checked: usize,
+    exit_on_errors: bool,
 ) -> CommandResult {
     issues.sort();
 
@@ -22,7 +23,7 @@ pub fn finish(
     CommandResult {
         summary,
         error_count,
-        exit_on_errors: true,
+        exit_on_errors,
         issues,
         parse_error_count,
         source_files_checked,

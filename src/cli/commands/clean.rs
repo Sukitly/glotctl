@@ -90,5 +90,6 @@ pub fn clean(cmd: CleanCommand) -> Result<CommandResult> {
         all_issues,
         ctx.files.len(),
         ctx.messages().all_messages.len(),
+        false,
     ))
 }
