@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-pub use args::Arguments;
+pub use args::{Arguments, Command};
 use exit_code::exit_code_from_result;
 
 mod actions;

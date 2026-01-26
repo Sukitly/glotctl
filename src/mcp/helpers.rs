@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use crate::json_writer::JsonWriter;
+use crate::mcp::json_writer::{JsonWriter, KeyAction};
 
 use crate::mcp::types::{KeyActionDetail, LocaleError, LocaleResult};
 
@@ -61,8 +61,8 @@ pub fn process_locale_translation(
 
         let action = writer.add_value(key, json_value);
         match action {
-            crate::json_writer::KeyAction::Added => added_count += 1,
-            crate::json_writer::KeyAction::Updated => updated_count += 1,
+            KeyAction::Added => added_count += 1,
+            KeyAction::Updated => updated_count += 1,
         }
 
         details.push(KeyActionDetail {

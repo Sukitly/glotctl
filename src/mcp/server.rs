@@ -1,6 +1,5 @@
 use std::collections::HashSet;
-use std::fs;
-use std::path::Path;
+use std::path::{Component, Path, PathBuf};
 
 use anyhow::Result;
 use rmcp::{
@@ -13,23 +12,29 @@ use rmcp::{
 use serde_json;
 
 use crate::{
-    args::{CheckArgs, CommonArgs},
-    commands::runner::{CheckRunner, CheckType},
     config::load_config,
-    issue::{Issue, IssueReport, Rule},
-    analysis::parsers::json::scan_message_files,
+    core::parsers::json::scan_message_files,
+    core::{CheckContext, ResolvedKeyUsage},
+    issues::{
+        HardcodedTextIssue, MissingKeyIssue, ReplicaLagIssue, TypeMismatchIssue, UntranslatedIssue,
+    },
+    rules::{
+        hardcoded::check_hardcoded_text_issues, missing::check_missing_keys_issues,
+        replica_lag::check_replica_lag_issues, type_mismatch::check_type_mismatch_issues,
+        untranslated::check_untranslated_issues,
+    },
 };
 
 use crate::mcp::helpers::process_locale_translation;
 use crate::mcp::types::{
     AddTranslationsParams, AddTranslationsResult, AddTranslationsSummary, ConfigDto, ConfigValues,
     GetConfigParams, GetLocalesParams, HardcodedItem, HardcodedScanResult, HardcodedStats,
-    LocaleInfo, LocalesResult, Pagination, PrimaryMissingItem, PrimaryMissingScanResult,
-    PrimaryMissingStats, ReplicaLagItem, ReplicaLagScanResult, ReplicaLagStats,
-    ScanHardcodedParams, ScanOverviewParams, ScanOverviewResult, ScanPrimaryMissingParams,
-    ScanReplicaLagParams, ScanTypeMismatchParams, ScanUntranslatedParams, TypeMismatchItem,
-    TypeMismatchScanResult, TypeMismatchStats, UntranslatedItem, UntranslatedScanResult,
-    UntranslatedStats,
+    KeyUsageLocation, LocaleInfo, LocalesResult, Pagination, PrimaryMissingItem,
+    PrimaryMissingScanResult, PrimaryMissingStats, ReplicaLagItem, ReplicaLagScanResult,
+    ReplicaLagStats, ScanHardcodedParams, ScanOverviewParams, ScanOverviewResult,
+    ScanPrimaryMissingParams, ScanReplicaLagParams, ScanTypeMismatchParams, ScanUntranslatedParams,
+    TypeMismatchItem, TypeMismatchLocale, TypeMismatchScanResult, TypeMismatchStats,
+    UntranslatedItem, UntranslatedScanResult, UntranslatedStats,
 };
 
 #[derive(Clone)]
@@ -57,32 +62,21 @@ impl GlotMcpServer {
         let limit = params.0.limit.map(|v| v as usize).unwrap_or(20).min(100);
         let offset = params.0.offset.map(|v| v as usize).unwrap_or(0);
 
-        let check_args = CheckArgs {
-            common: CommonArgs {
-                path: std::path::PathBuf::from(path),
-                verbose: false,
-            },
-        };
+        let ctx = create_context(path)?;
+        let issues = check_hardcoded_text_issues(&ctx);
 
-        let runner = CheckRunner::new(check_args)
-            .map_err(|e| McpError::internal_error(format!("Failed to initialize: {}", e), None))?
-            .add(CheckType::Hardcoded);
-
-        let result = runner
-            .run()
-            .map_err(|e| McpError::internal_error(format!("Scan failed: {}", e), None))?;
-
-        // Filter hardcoded issues and collect file stats
         let mut hardcoded_files: HashSet<String> = HashSet::new();
-        let all_items: Vec<HardcodedItem> = result
-            .issues
+        let all_items: Vec<HardcodedItem> = issues
             .into_iter()
-            .filter_map(|issue| {
-                if let Issue::Hardcoded(hardcoded) = issue {
-                    hardcoded_files.insert(hardcoded.location.file_path.clone());
-                    Some(hardcoded.to_mcp_item())
-                } else {
-                    None
+            .map(|issue| {
+                let HardcodedTextIssue { context, text } = issue;
+                hardcoded_files.insert(context.file_path().to_string());
+                HardcodedItem {
+                    file_path: context.file_path().to_string(),
+                    line: context.line(),
+                    col: context.col(),
+                    text,
+                    source_line: context.source_line,
                 }
             })
             .collect();
@@ -124,106 +118,45 @@ impl GlotMcpServer {
     ) -> Result<CallToolResult, McpError> {
         let path = &params.0.project_root_path;
 
-        let check_args = CheckArgs {
-            common: CommonArgs {
-                path: std::path::PathBuf::from(path),
-                verbose: false,
-            },
-        };
+        let ctx = create_context(path)?;
 
-        // Run all checks
-        let runner = CheckRunner::new(check_args)
-            .map_err(|e| McpError::internal_error(format!("Failed to initialize: {}", e), None))?
-            .add(CheckType::Hardcoded)
-            .add(CheckType::Missing)
-            .add(CheckType::Untranslated)
-            .add(CheckType::TypeMismatch);
+        let hardcoded = check_hardcoded_text_issues(&ctx);
+        let primary_missing = check_missing_keys_issues(&ctx);
+        let replica_lag = check_replica_lag_issues(&ctx);
+        let untranslated = check_untranslated_issues(&ctx);
+        let type_mismatch = check_type_mismatch_issues(&ctx);
 
-        let result = runner
-            .run()
-            .map_err(|e| McpError::internal_error(format!("Scan failed: {}", e), None))?;
-
-        // Count hardcoded issues
         let mut hardcoded_files: HashSet<String> = HashSet::new();
-        let hardcoded_count = result
-            .issues
-            .iter()
-            .filter(|i| i.rule() == Rule::HardcodedText)
-            .filter_map(|i| i.file_path())
-            .map(|fp| {
-                hardcoded_files.insert(fp.to_string());
-            })
-            .count();
+        for issue in &hardcoded {
+            hardcoded_files.insert(issue.context.file_path().to_string());
+        }
 
-        // Count primary missing
-        let primary_missing_count: usize = result
-            .issues
-            .iter()
-            .filter(|i| matches!(i, Issue::MissingKey(_)))
-            .count();
-
-        // Count replica lag and collect affected locales
         let mut replica_lag_locales: HashSet<String> = HashSet::new();
-        let replica_lag_count = result
-            .issues
-            .iter()
-            .filter_map(|i| {
-                if let Issue::ReplicaLag(lag) = i {
-                    Some(lag)
-                } else {
-                    None
-                }
-            })
-            .map(|lag| {
-                for locale in &lag.missing_in {
-                    replica_lag_locales.insert(locale.clone());
-                }
-            })
-            .count();
+        for issue in &replica_lag {
+            for locale in &issue.missing_in {
+                replica_lag_locales.insert(locale.clone());
+            }
+        }
+
+        let mut untranslated_locales: HashSet<String> = HashSet::new();
+        for issue in &untranslated {
+            for locale in &issue.identical_in {
+                untranslated_locales.insert(locale.clone());
+            }
+        }
+
+        let mut type_mismatch_locales: HashSet<String> = HashSet::new();
+        for issue in &type_mismatch {
+            for mismatch in &issue.mismatched_in {
+                type_mismatch_locales.insert(mismatch.locale.clone());
+            }
+        }
 
         let mut replica_lag_locales_vec: Vec<String> = replica_lag_locales.into_iter().collect();
         replica_lag_locales_vec.sort();
 
-        // Count untranslated and collect affected locales
-        let mut untranslated_locales: HashSet<String> = HashSet::new();
-        let untranslated_count = result
-            .issues
-            .iter()
-            .filter_map(|i| {
-                if let Issue::Untranslated(untranslated) = i {
-                    Some(untranslated)
-                } else {
-                    None
-                }
-            })
-            .map(|untranslated| {
-                for locale in &untranslated.identical_in {
-                    untranslated_locales.insert(locale.clone());
-                }
-            })
-            .count();
-
         let mut untranslated_locales_vec: Vec<String> = untranslated_locales.into_iter().collect();
         untranslated_locales_vec.sort();
-
-        // Count type mismatch and collect affected locales
-        let mut type_mismatch_locales: HashSet<String> = HashSet::new();
-        let type_mismatch_count = result
-            .issues
-            .iter()
-            .filter_map(|i| {
-                if let Issue::TypeMismatch(mismatch) = i {
-                    Some(mismatch)
-                } else {
-                    None
-                }
-            })
-            .map(|mismatch| {
-                for locale_mismatch in &mismatch.mismatched_in {
-                    type_mismatch_locales.insert(locale_mismatch.locale.clone());
-                }
-            })
-            .count();
 
         let mut type_mismatch_locales_vec: Vec<String> =
             type_mismatch_locales.into_iter().collect();
@@ -231,22 +164,22 @@ impl GlotMcpServer {
 
         let overview = ScanOverviewResult {
             hardcoded: HardcodedStats {
-                total_count: hardcoded_count,
+                total_count: hardcoded.len(),
                 file_count: hardcoded_files.len(),
             },
             primary_missing: PrimaryMissingStats {
-                total_count: primary_missing_count,
+                total_count: primary_missing.len(),
             },
             replica_lag: ReplicaLagStats {
-                total_count: replica_lag_count,
+                total_count: replica_lag.len(),
                 affected_locales: replica_lag_locales_vec,
             },
             untranslated: UntranslatedStats {
-                total_count: untranslated_count,
+                total_count: untranslated.len(),
                 affected_locales: untranslated_locales_vec,
             },
             type_mismatch: TypeMismatchStats {
-                total_count: type_mismatch_count,
+                total_count: type_mismatch.len(),
                 affected_locales: type_mismatch_locales_vec,
             },
         };
@@ -270,38 +203,24 @@ impl GlotMcpServer {
         let limit = params.0.limit.map(|v| v as usize).unwrap_or(50).min(100);
         let offset = params.0.offset.map(|v| v as usize).unwrap_or(0);
 
-        let check_args = CheckArgs {
-            common: CommonArgs {
-                path: std::path::PathBuf::from(path),
-                verbose: false,
-            },
-        };
+        let ctx = create_context(path)?;
+        let issues = check_missing_keys_issues(&ctx);
 
-        let runner = CheckRunner::new(check_args)
-            .map_err(|e| McpError::internal_error(format!("Failed to initialize: {}", e), None))?
-            .add(CheckType::Missing);
-
-        let result = runner
-            .run()
-            .map_err(|e| McpError::internal_error(format!("Scan failed: {}", e), None))?;
-
-        // Collect primary missing keys
-        let all_items: Vec<PrimaryMissingItem> = result
-            .issues
-            .iter()
-            .filter_map(|i| {
-                if let Issue::MissingKey(missing) = i {
-                    Some(PrimaryMissingItem {
-                        key: missing.key.clone(),
-                        file_path: missing.location.file_path.clone(),
-                        line: missing.location.line,
-                        source: missing
-                            .from_schema
-                            .as_ref()
-                            .map(|(name, _)| format!("from schema \"{}\"", name)),
-                    })
-                } else {
-                    None
+        let all_items: Vec<PrimaryMissingItem> = issues
+            .into_iter()
+            .map(|issue| {
+                let MissingKeyIssue {
+                    context,
+                    key,
+                    from_schema,
+                } = issue;
+                PrimaryMissingItem {
+                    key,
+                    file_path: context.file_path().to_string(),
+                    line: context.line(),
+                    source: from_schema
+                        .as_ref()
+                        .map(|(name, _)| format!("from schema \"{}\"", name)),
                 }
             })
             .collect();
@@ -343,30 +262,30 @@ impl GlotMcpServer {
         let limit = params.0.limit.map(|v| v as usize).unwrap_or(50).min(100);
         let offset = params.0.offset.map(|v| v as usize).unwrap_or(0);
 
-        let check_args = CheckArgs {
-            common: CommonArgs {
-                path: std::path::PathBuf::from(path),
-                verbose: false,
-            },
-        };
+        let ctx = create_context(path)?;
+        let issues = check_replica_lag_issues(&ctx);
 
-        let runner = CheckRunner::new(check_args)
-            .map_err(|e| McpError::internal_error(format!("Failed to initialize: {}", e), None))?
-            .add(CheckType::Missing);
-
-        let result = runner
-            .run()
-            .map_err(|e| McpError::internal_error(format!("Scan failed: {}", e), None))?;
-
-        // Collect replica lag items
-        let all_items: Vec<ReplicaLagItem> = result
-            .issues
-            .iter()
-            .filter_map(|i| {
-                if let Issue::ReplicaLag(lag) = i {
-                    Some(lag.to_mcp_item())
-                } else {
-                    None
+        let all_items: Vec<ReplicaLagItem> = issues
+            .into_iter()
+            .map(|issue| {
+                let ReplicaLagIssue {
+                    context,
+                    primary_locale,
+                    missing_in,
+                    usages,
+                } = issue;
+                let (usages, total_usages) = to_usage_locations(&usages);
+                let file_path = context.file_path().to_string();
+                let line = context.line();
+                ReplicaLagItem {
+                    key: context.key,
+                    value: context.value,
+                    file_path,
+                    line,
+                    exists_in: primary_locale,
+                    missing_in,
+                    usages,
+                    total_usages,
                 }
             })
             .collect();
@@ -408,30 +327,30 @@ impl GlotMcpServer {
         let limit = params.0.limit.map(|v| v as usize).unwrap_or(50).min(100);
         let offset = params.0.offset.map(|v| v as usize).unwrap_or(0);
 
-        let check_args = CheckArgs {
-            common: CommonArgs {
-                path: std::path::PathBuf::from(path),
-                verbose: false,
-            },
-        };
+        let ctx = create_context(path)?;
+        let issues = check_untranslated_issues(&ctx);
 
-        let runner = CheckRunner::new(check_args)
-            .map_err(|e| McpError::internal_error(format!("Failed to initialize: {}", e), None))?
-            .add(CheckType::Untranslated);
-
-        let result = runner
-            .run()
-            .map_err(|e| McpError::internal_error(format!("Scan failed: {}", e), None))?;
-
-        // Collect untranslated items
-        let all_items: Vec<UntranslatedItem> = result
-            .issues
-            .iter()
-            .filter_map(|i| {
-                if let Issue::Untranslated(untranslated) = i {
-                    Some(untranslated.to_mcp_item())
-                } else {
-                    None
+        let all_items: Vec<UntranslatedItem> = issues
+            .into_iter()
+            .map(|issue| {
+                let UntranslatedIssue {
+                    context,
+                    primary_locale,
+                    identical_in,
+                    usages,
+                } = issue;
+                let (usages, total_usages) = to_usage_locations(&usages);
+                let file_path = context.file_path().to_string();
+                let line = context.line();
+                UntranslatedItem {
+                    key: context.key,
+                    value: context.value,
+                    file_path,
+                    line,
+                    identical_in,
+                    primary_locale,
+                    usages,
+                    total_usages,
                 }
             })
             .collect();
@@ -473,30 +392,41 @@ impl GlotMcpServer {
         let limit = params.0.limit.map(|v| v as usize).unwrap_or(50).min(100);
         let offset = params.0.offset.map(|v| v as usize).unwrap_or(0);
 
-        let check_args = CheckArgs {
-            common: CommonArgs {
-                path: std::path::PathBuf::from(path),
-                verbose: false,
-            },
-        };
+        let ctx = create_context(path)?;
+        let issues = check_type_mismatch_issues(&ctx);
 
-        let runner = CheckRunner::new(check_args)
-            .map_err(|e| McpError::internal_error(format!("Failed to initialize: {}", e), None))?
-            .add(CheckType::TypeMismatch);
+        let all_items: Vec<TypeMismatchItem> = issues
+            .into_iter()
+            .map(|issue| {
+                let TypeMismatchIssue {
+                    context,
+                    expected_type,
+                    primary_locale,
+                    mismatched_in,
+                    usages,
+                } = issue;
+                let (usages, total_usages) = to_usage_locations(&usages);
+                let mismatched_in = mismatched_in
+                    .into_iter()
+                    .map(|mismatch| TypeMismatchLocale {
+                        locale: mismatch.locale,
+                        actual_type: mismatch.actual_type.to_string(),
+                        file_path: mismatch.location.file_path,
+                        line: mismatch.location.line,
+                    })
+                    .collect();
 
-        let result = runner
-            .run()
-            .map_err(|e| McpError::internal_error(format!("Scan failed: {}", e), None))?;
-
-        // Collect type mismatch items
-        let all_items: Vec<TypeMismatchItem> = result
-            .issues
-            .iter()
-            .filter_map(|i| {
-                if let Issue::TypeMismatch(mismatch) = i {
-                    Some(mismatch.to_mcp_item())
-                } else {
-                    None
+                let primary_file_path = context.file_path().to_string();
+                let primary_line = context.line();
+                TypeMismatchItem {
+                    key: context.key,
+                    expected_type: expected_type.to_string(),
+                    primary_file_path,
+                    primary_line,
+                    primary_locale,
+                    mismatched_in,
+                    usages,
+                    total_usages,
                 }
             })
             .collect();
@@ -549,7 +479,7 @@ impl GlotMcpServer {
         let config = load_config(Path::new(path))
             .map_err(|e| McpError::internal_error(format!("Failed to load config: {}", e), None))?;
 
-        let messages_dir = Path::new(path).join(&config.config.messages_dir);
+        let messages_dir = resolve_messages_dir(Path::new(path), &config.config.messages_dir);
 
         let mut results = Vec::new();
         let mut total_keys_added = 0;
@@ -611,45 +541,23 @@ impl GlotMcpServer {
         let config = load_config(Path::new(path))
             .map_err(|e| McpError::internal_error(format!("Failed to load config: {}", e), None))?;
 
-        let messages_dir = Path::new(path).join(&config.config.messages_dir);
+        let messages_dir = resolve_messages_dir(Path::new(path), &config.config.messages_dir);
         let messages_dir_str = messages_dir.to_string_lossy().to_string();
 
-        let mut locales = Vec::new();
+        let scan_result = scan_message_files(&messages_dir).map_err(|e| {
+            McpError::internal_error(format!("Failed to scan messages: {}", e), None)
+        })?;
 
-        if messages_dir.exists() && messages_dir.is_dir() {
-            let entries = fs::read_dir(&messages_dir).map_err(|e| {
-                McpError::internal_error(format!("Failed to read messages directory: {}", e), None)
-            })?;
+        let mut locales: Vec<LocaleInfo> = scan_result
+            .messages
+            .values()
+            .map(|messages| LocaleInfo {
+                locale: messages.locale.clone(),
+                file_path: messages.file_path.clone(),
+                key_count: messages.len(),
+            })
+            .collect();
 
-            for entry in entries {
-                let entry = entry.map_err(|e| {
-                    McpError::internal_error(format!("Failed to read directory entry: {}", e), None)
-                })?;
-                let file_path = entry.path();
-
-                if file_path.extension().and_then(|e| e.to_str()) == Some("json")
-                    && let Some(locale) = file_path.file_stem().and_then(|s| s.to_str())
-                {
-                    // Count keys in the file
-                    let key_count = match scan_message_files(&messages_dir) {
-                        Ok(scan_result) => scan_result
-                            .messages
-                            .get(locale)
-                            .map(|m| m.len())
-                            .unwrap_or(0),
-                        Err(_) => 0,
-                    };
-
-                    locales.push(LocaleInfo {
-                        locale: locale.to_string(),
-                        file_path: file_path.to_string_lossy().to_string(),
-                        key_count,
-                    });
-                }
-            }
-        }
-
-        // Sort locales alphabetically
         locales.sort_by(|a, b| a.locale.cmp(&b.locale));
 
         let result = LocalesResult {
@@ -686,6 +594,42 @@ impl GlotMcpServer {
         })?;
 
         Ok(CallToolResult::success(vec![Content::text(json_str)]))
+    }
+}
+
+fn create_context(path: &str) -> Result<CheckContext, McpError> {
+    CheckContext::new(&PathBuf::from(path), false)
+        .map_err(|e| McpError::internal_error(format!("Failed to initialize: {}", e), None))
+}
+
+fn to_usage_locations(usages: &[ResolvedKeyUsage]) -> (Vec<KeyUsageLocation>, usize) {
+    let total = usages.len();
+    let items = usages
+        .iter()
+        .take(3)
+        .map(|usage| KeyUsageLocation {
+            file_path: usage.context.file_path().to_string(),
+            line: usage.context.line(),
+            col: usage.context.col(),
+        })
+        .collect();
+    (items, total)
+}
+
+fn resolve_messages_dir(root_dir: &Path, messages_dir: &str) -> PathBuf {
+    let p = Path::new(messages_dir);
+    if p.is_absolute() {
+        p.to_path_buf()
+    } else {
+        let is_cur_dir = root_dir
+            .components()
+            .all(|c| matches!(c, Component::CurDir));
+        if is_cur_dir {
+            p.to_path_buf()
+        } else {
+            let rel = p.strip_prefix(Path::new(".")).unwrap_or(p);
+            root_dir.join(rel)
+        }
     }
 }
 

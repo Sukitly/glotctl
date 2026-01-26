@@ -18,10 +18,10 @@ use std::{fs, path::Path};
 
 use super::{
     args::{Arguments, Command},
-    commands::{CommandResult, CommandSummary, InitSummary},
     commands::{baseline::baseline, check::check, clean::clean, fix::fix},
+    commands::{CommandResult, CommandSummary, InitSummary},
 };
-use crate::config::{CONFIG_FILE_NAME, default_config_json};
+use crate::config::{default_config_json, CONFIG_FILE_NAME};
 use anyhow::Result;
 
 pub fn run(Arguments { command }: Arguments) -> Result<CommandResult> {
