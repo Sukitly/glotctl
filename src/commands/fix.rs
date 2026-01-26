@@ -1,19 +1,17 @@
 use std::collections::HashSet;
 
-use anyhow::{Ok, Result};
-use colored::Colorize;
-
 use crate::{
     actions::{Action, ActionStats, InsertMessageKeys},
     args::FixCommand,
-    commands::RunResult,
     commands::helper::finish,
+    commands::{CommandKind, CommandResult, CommandSummary, FixSummary},
     core::CheckContext,
     issues::{Issue, UnresolvedKeyIssue},
     rules::unresolved::check_unresolved_keys_issues,
 };
+use anyhow::{Ok, Result};
 
-pub fn fix(cmd: FixCommand) -> Result<RunResult> {
+pub fn fix(cmd: FixCommand) -> Result<CommandResult> {
     let args = &cmd.args;
     let ctx = CheckContext::new(&args.common)?;
     let apply = args.apply;
@@ -21,34 +19,19 @@ pub fn fix(cmd: FixCommand) -> Result<RunResult> {
     let unresolved_issues: Vec<UnresolvedKeyIssue> = check_unresolved_keys_issues(&ctx);
     let unresolved_count = unresolved_issues.len();
 
-    if apply {
+    let (inserted_count, skipped_count, file_count) = if apply {
         let stats = if unresolved_issues.is_empty() {
             ActionStats::default()
         } else {
             InsertMessageKeys::run(&unresolved_issues)?
         };
-
-        print_stats(
-            "Inserted",
-            unresolved_count,
-            stats.processed,
-            stats.skipped,
-            stats.files_modified,
-            true,
-        );
+        (stats.processed, stats.skipped, stats.files_modified)
     } else {
-        if !unresolved_issues.is_empty() {
-            InsertMessageKeys::preview(&unresolved_issues);
-        }
-
         let mut files: HashSet<&str> = HashSet::new();
         for issue in &unresolved_issues {
             files.insert(issue.context.file_path());
         }
-
-        print_stats(
-            "Would insert",
-            unresolved_count,
+        (
             unresolved_issues
                 .iter()
                 .filter(|issue| issue.pattern.is_some())
@@ -58,10 +41,10 @@ pub fn fix(cmd: FixCommand) -> Result<RunResult> {
                 .filter(|issue| issue.pattern.is_none())
                 .count(),
             files.len(),
-            false,
-        );
-    }
+        )
+    };
 
+    let unresolved_issues_summary = unresolved_issues.clone();
     let parse_errors = ctx.parsed_files_errors();
 
     let mut all_issues: Vec<Issue> = Vec::new();
@@ -69,42 +52,17 @@ pub fn fix(cmd: FixCommand) -> Result<RunResult> {
     all_issues.extend(parse_errors.iter().map(|i| Issue::ParseError(i.clone())));
 
     Ok(finish(
+        CommandKind::Fix,
+        CommandSummary::Fix(FixSummary {
+            unresolved_count,
+            inserted_count,
+            skipped_count,
+            file_count,
+            is_apply: apply,
+            unresolved_issues: unresolved_issues_summary,
+        }),
         all_issues,
         ctx.files.len(),
         ctx.messages().all_messages.len(),
     ))
-}
-
-fn print_stats(
-    action: &str,
-    unresolved: usize,
-    inserted: usize,
-    skipped: usize,
-    file_count: usize,
-    is_apply: bool,
-) {
-    if unresolved > 0 {
-        if is_apply {
-            println!(
-                "{} {} comment(s) in {} file(s):",
-                action.green().bold(),
-                unresolved,
-                file_count
-            );
-            if inserted > 0 {
-                println!("  - inserted: {} comment(s)", inserted);
-            }
-            if skipped > 0 {
-                println!("  - skipped: {} issue(s) without pattern", skipped);
-            }
-        } else {
-            println!(
-                "{} {} comment(s) in {} file(s):",
-                action.yellow().bold(),
-                unresolved,
-                file_count
-            );
-            println!("Run with {} to insert these comments.", "--apply".cyan());
-        }
-    }
 }

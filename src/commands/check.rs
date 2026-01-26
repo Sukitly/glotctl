@@ -3,11 +3,10 @@ use clap::ValueEnum;
 
 use crate::{
     args::CheckCommand,
-    commands::RunResult,
     commands::helper::finish,
+    commands::{CommandKind, CommandResult, CommandSummary},
     core::CheckContext,
     issues::Issue,
-    report::report,
     rules::{
         hardcoded::check_hardcoded_text_issues, missing::check_missing_keys_issues,
         orphan::check_orphan_keys_issues, replica_lag::check_replica_lag_issues,
@@ -43,7 +42,7 @@ impl CheckRule {
     }
 }
 
-pub fn check(cmd: CheckCommand) -> Result<RunResult> {
+pub fn check(cmd: CheckCommand) -> Result<CommandResult> {
     let args = &cmd.args;
     let checks = &cmd.checks;
     let ctx = CheckContext::new(&args.common)?;
@@ -96,9 +95,9 @@ pub fn check(cmd: CheckCommand) -> Result<RunResult> {
     let parse_errors = ctx.parsed_files_errors();
     all_issues.extend(parse_errors.iter().map(|i| Issue::ParseError(i.clone())));
 
-    report(&all_issues);
-
     Ok(finish(
+        CommandKind::Check,
+        CommandSummary::Check,
         all_issues,
         ctx.files.len(),
         ctx.messages().all_messages.len(),

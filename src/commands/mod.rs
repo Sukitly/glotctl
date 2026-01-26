@@ -1,8 +1,8 @@
 pub mod baseline;
 pub mod check;
 pub mod clean;
+mod command_result;
 pub mod fix;
 pub mod helper;
-mod run_result;
 
-pub use run_result::RunResult;
+pub use command_result::*;

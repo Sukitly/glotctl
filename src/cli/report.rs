@@ -8,6 +8,11 @@ use std::io::{self, Write};
 use colored::Colorize;
 use unicode_width::UnicodeWidthStr;
 
+use crate::actions::{Action, DeleteKey, InsertDisableComment, InsertMessageKeys};
+use crate::commands::{
+    BaselineSummary, CleanSummary, CommandResult, CommandSummary, FixSummary, InitSummary,
+};
+use crate::config::CONFIG_FILE_NAME;
 use crate::core::ResolvedKeyUsage;
 use crate::issues::{Issue, Report, ReportLocation, Severity};
 
@@ -330,6 +335,157 @@ fn compare_issues(a: &Issue, b: &Issue) -> std::cmp::Ordering {
         .then_with(|| a_col.cmp(&b_col))
 }
 
+pub fn print(result: &CommandResult, verbose: bool) {
+    print_command_output(result);
+
+    if result.issues.is_empty() {
+        print_success(result.source_files_checked, result.locale_files_checked);
+    }
+
+    print_parse_warning(result.parse_error_count, verbose);
+}
+
+fn print_command_output(result: &CommandResult) {
+    match &result.summary {
+        CommandSummary::Check => {
+            report(&result.issues);
+        }
+        CommandSummary::Baseline(summary) => {
+            print_baseline(summary);
+        }
+        CommandSummary::Fix(summary) => {
+            print_fix(summary);
+        }
+        CommandSummary::Clean(summary) => {
+            print_clean(summary);
+        }
+        CommandSummary::Init(summary) => {
+            print_init(summary);
+        }
+    }
+}
+
+fn print_baseline(summary: &BaselineSummary) {
+    if !summary.is_apply {
+        if !summary.hardcoded_issues.is_empty() {
+            InsertDisableComment::preview(&summary.hardcoded_issues);
+        }
+        if !summary.untranslated_issues.is_empty() {
+            InsertDisableComment::preview(&summary.untranslated_issues);
+        }
+    }
+
+    let total = summary.hardcoded_count + summary.untranslated_usage_count;
+    if total > 0 {
+        if summary.is_apply {
+            println!(
+                "{} {} comment(s) in {} file(s):",
+                "Inserted".green().bold(),
+                total,
+                summary.file_count
+            );
+            if summary.hardcoded_count > 0 {
+                println!("  - hardcoded: {} comment(s)", summary.hardcoded_count);
+            }
+            if summary.untranslated_usage_count > 0 {
+                println!(
+                    "  - untranslated: {} comment(s), {} key(s)",
+                    summary.untranslated_usage_count, summary.untranslated_key_count
+                );
+            }
+        } else {
+            println!(
+                "{} {} comment(s) in {} file(s):",
+                "Would insert".yellow().bold(),
+                total,
+                summary.file_count
+            );
+            println!("Run with {} to insert these comments.", "--apply".cyan());
+        }
+    }
+}
+
+fn print_fix(summary: &FixSummary) {
+    if !summary.is_apply && !summary.unresolved_issues.is_empty() {
+        InsertMessageKeys::preview(&summary.unresolved_issues);
+    }
+
+    if summary.unresolved_count > 0 {
+        if summary.is_apply {
+            println!(
+                "{} {} comment(s) in {} file(s):",
+                "Inserted".green().bold(),
+                summary.unresolved_count,
+                summary.file_count
+            );
+            if summary.inserted_count > 0 {
+                println!("  - inserted: {} comment(s)", summary.inserted_count);
+            }
+            if summary.skipped_count > 0 {
+                println!(
+                    "  - skipped: {} issue(s) without pattern",
+                    summary.skipped_count
+                );
+            }
+        } else {
+            println!(
+                "{} {} comment(s) in {} file(s):",
+                "Would insert".yellow().bold(),
+                summary.unresolved_count,
+                summary.file_count
+            );
+            println!("Run with {} to insert these comments.", "--apply".cyan());
+        }
+    }
+}
+
+fn print_clean(summary: &CleanSummary) {
+    if !summary.is_apply {
+        if !summary.unused_issues.is_empty() {
+            DeleteKey::preview(&summary.unused_issues);
+        }
+        if !summary.orphan_issues.is_empty() {
+            DeleteKey::preview(&summary.orphan_issues);
+        }
+    }
+
+    let total = summary.unused_count + summary.orphan_count;
+    if total > 0 {
+        if summary.is_apply {
+            println!(
+                "{} {} key(s) in {} file(s):",
+                "Deleted".green().bold(),
+                total,
+                summary.file_count
+            );
+            if summary.unused_count > 0 {
+                println!("  - unused: {} key(s)", summary.unused_count);
+            }
+            if summary.orphan_count > 0 {
+                println!("  - orphan: {} key(s)", summary.orphan_count);
+            }
+        } else {
+            println!(
+                "{} {} key(s) in {} file(s):",
+                "Would delete".yellow().bold(),
+                total,
+                summary.file_count
+            );
+            println!("Run with {} to delete these keys.", "--apply".cyan());
+        }
+    }
+}
+
+fn print_init(summary: &InitSummary) {
+    if summary.created {
+        println!(
+            "{} {}",
+            SUCCESS_MARK.green(),
+            format!("Created {}", CONFIG_FILE_NAME).green()
+        );
+    }
+}
+
 // ============================================================
 // Tests
 // ============================================================
@@ -338,6 +494,7 @@ fn compare_issues(a: &Issue, b: &Issue) -> std::cmp::Ordering {
 mod tests {
     use std::collections::HashSet;
 
+    use super::*;
     use crate::core::FullKey;
     use crate::core::{
         CommentStyle, LocaleTypeMismatch, MessageContext, MessageLocation, SourceContext,
@@ -348,7 +505,6 @@ mod tests {
         ParseErrorIssue, ReplicaLagIssue, TypeMismatchIssue, UnresolvedKeyIssue, UntranslatedIssue,
         UnusedKeyIssue,
     };
-    use crate::report::*;
 
     fn strip_ansi(s: &str) -> String {
         // Simple ANSI escape code stripper for testing

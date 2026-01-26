@@ -1,17 +1,15 @@
 use std::collections::HashSet;
 
-use anyhow::{Ok, Result};
-use colored::Colorize;
-
 use crate::{
     actions::{Action, ActionStats, DeleteKey},
     args::{CleanCommand, CleanRule},
-    commands::RunResult,
     commands::helper::finish,
+    commands::{CleanSummary, CommandKind, CommandResult, CommandSummary},
     core::CheckContext,
     issues::{Issue, OrphanKeyIssue, UnusedKeyIssue},
     rules::{orphan::check_orphan_keys_issues, unused::check_unused_keys_issues},
 };
+use anyhow::{Ok, Result};
 
 impl CleanRule {
     pub fn all() -> HashSet<Self> {
@@ -19,7 +17,7 @@ impl CleanRule {
     }
 }
 
-pub fn clean(cmd: CleanCommand) -> Result<RunResult> {
+pub fn clean(cmd: CleanCommand) -> Result<CommandResult> {
     let args = &cmd.args;
     let ctx = CheckContext::new(&args.common)?;
     let apply = args.apply;
@@ -49,7 +47,7 @@ pub fn clean(cmd: CleanCommand) -> Result<RunResult> {
     let unused_count = unused_issues.len();
     let orphan_count = orphan_issues.len();
 
-    if apply {
+    let file_count = if apply {
         let mut stats = ActionStats::default();
         if !unused_issues.is_empty() {
             stats += DeleteKey::run(&unused_issues)?;
@@ -57,22 +55,8 @@ pub fn clean(cmd: CleanCommand) -> Result<RunResult> {
         if !orphan_issues.is_empty() {
             stats += DeleteKey::run(&orphan_issues)?;
         }
-
-        print_stats(
-            "Deleted",
-            unused_count,
-            orphan_count,
-            stats.files_modified,
-            true,
-        );
+        stats.files_modified
     } else {
-        if !unused_issues.is_empty() {
-            DeleteKey::preview(&unused_issues);
-        }
-        if !orphan_issues.is_empty() {
-            DeleteKey::preview(&orphan_issues);
-        }
-
         let mut files: HashSet<&str> = HashSet::new();
         for issue in &unused_issues {
             files.insert(issue.context.file_path());
@@ -80,16 +64,11 @@ pub fn clean(cmd: CleanCommand) -> Result<RunResult> {
         for issue in &orphan_issues {
             files.insert(issue.context.file_path());
         }
+        files.len()
+    };
 
-        print_stats(
-            "Would delete",
-            unused_count,
-            orphan_count,
-            files.len(),
-            false,
-        );
-    }
-
+    let unused_issues_summary = unused_issues.clone();
+    let orphan_issues_summary = orphan_issues.clone();
     let parse_errors = ctx.parsed_files_errors();
 
     let mut all_issues: Vec<Issue> = Vec::new();
@@ -98,36 +77,17 @@ pub fn clean(cmd: CleanCommand) -> Result<RunResult> {
     all_issues.extend(parse_errors.iter().map(|i| Issue::ParseError(i.clone())));
 
     Ok(finish(
+        CommandKind::Clean,
+        CommandSummary::Clean(CleanSummary {
+            unused_count,
+            orphan_count,
+            file_count,
+            is_apply: apply,
+            unused_issues: unused_issues_summary,
+            orphan_issues: orphan_issues_summary,
+        }),
         all_issues,
         ctx.files.len(),
         ctx.messages().all_messages.len(),
     ))
-}
-
-fn print_stats(action: &str, unused: usize, orphan: usize, file_count: usize, is_apply: bool) {
-    let total = unused + orphan;
-    if total > 0 {
-        if is_apply {
-            println!(
-                "{} {} key(s) in {} file(s):",
-                action.green().bold(),
-                total,
-                file_count
-            );
-            if unused > 0 {
-                println!("  - unused: {} key(s)", unused);
-            }
-            if orphan > 0 {
-                println!("  - orphan: {} key(s)", orphan);
-            }
-        } else {
-            println!(
-                "{} {} key(s) in {} file(s):",
-                action.yellow().bold(),
-                total,
-                file_count
-            );
-            println!("Run with {} to delete these keys.", "--apply".cyan());
-        }
-    }
 }

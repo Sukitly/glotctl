@@ -1,13 +1,15 @@
 use crate::{
-    commands::RunResult,
+    commands::{CommandKind, CommandResult, CommandSummary},
     issues::{Issue, Severity},
 };
 
 pub fn finish(
+    kind: CommandKind,
+    summary: CommandSummary,
     mut issues: Vec<Issue>,
     source_files_checked: usize,
     locale_files_checked: usize,
-) -> RunResult {
+) -> CommandResult {
     issues.sort();
 
     let parse_error_count = issues
@@ -25,7 +27,9 @@ pub fn finish(
         .filter(|i| i.severity() == Severity::Warning)
         .count();
 
-    RunResult {
+    CommandResult {
+        kind,
+        summary,
         error_count,
         warning_count,
         exit_on_errors: true,

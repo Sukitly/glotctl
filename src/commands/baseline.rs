@@ -1,19 +1,18 @@
 use std::collections::HashSet;
 
 use crate::{
-    actions::{Action, ActionStats, InsertDisableComment, Operation},
+    actions::{Action, ActionStats, InsertDisableComment},
     args::BaselineCommand,
-    commands::RunResult,
     commands::helper::finish,
+    commands::{BaselineSummary, CommandKind, CommandResult, CommandSummary},
     core::CheckContext,
     core::collect::SuppressibleRule,
     issues::{HardcodedTextIssue, Issue, UntranslatedIssue},
     rules::{hardcoded::check_hardcoded_text_issues, untranslated::check_untranslated_issues},
 };
 use anyhow::{Ok, Result};
-use colored::Colorize;
 
-pub fn baseline(cmd: BaselineCommand) -> Result<RunResult> {
+pub fn baseline(cmd: BaselineCommand) -> Result<CommandResult> {
     let args = &cmd.args;
     let rules = &cmd.args.rules;
     let ctx = CheckContext::new(&args.common)?;
@@ -27,20 +26,14 @@ pub fn baseline(cmd: BaselineCommand) -> Result<RunResult> {
 
     let mut hardcoded_issues: Vec<HardcodedTextIssue> = Vec::new();
     let mut untranslated_issues: Vec<UntranslatedIssue> = Vec::new();
-    let mut operations: Vec<Operation> = Vec::new();
-
     for rule in rules {
         match rule {
             SuppressibleRule::Hardcoded => {
                 let issues = check_hardcoded_text_issues(&ctx);
-                let ops = InsertDisableComment::to_operations(&issues);
-                operations.extend(ops);
                 hardcoded_issues.extend(issues);
             }
             SuppressibleRule::Untranslated => {
                 let issues = check_untranslated_issues(&ctx);
-                let ops = InsertDisableComment::to_operations(&issues);
-                operations.extend(ops);
                 untranslated_issues.extend(issues);
             }
         }
@@ -50,8 +43,7 @@ pub fn baseline(cmd: BaselineCommand) -> Result<RunResult> {
     let untranslated_usage_count: usize = untranslated_issues.iter().map(|u| u.usages.len()).sum();
     let untranslated_key_count = untranslated_issues.len();
 
-    if apply {
-        // Execute
+    let file_count = if apply {
         let mut stats = ActionStats::default();
         if !hardcoded_issues.is_empty() {
             stats += InsertDisableComment::run(&hardcoded_issues)?;
@@ -59,25 +51,8 @@ pub fn baseline(cmd: BaselineCommand) -> Result<RunResult> {
         if !untranslated_issues.is_empty() {
             stats += InsertDisableComment::run(&untranslated_issues)?;
         }
-
-        print_stats(
-            "Inserted",
-            hardcoded_count,
-            untranslated_usage_count,
-            untranslated_key_count,
-            stats.files_modified,
-            true,
-        );
+        stats.files_modified
     } else {
-        // Dry-run: preview changes
-        if !hardcoded_issues.is_empty() {
-            InsertDisableComment::preview(&hardcoded_issues);
-        }
-        if !untranslated_issues.is_empty() {
-            InsertDisableComment::preview(&untranslated_issues);
-        }
-
-        // Count unique files
         let mut files: HashSet<&str> = HashSet::new();
         for issue in &hardcoded_issues {
             files.insert(issue.context.file_path());
@@ -87,17 +62,11 @@ pub fn baseline(cmd: BaselineCommand) -> Result<RunResult> {
                 files.insert(usage.context.file_path());
             }
         }
+        files.len()
+    };
 
-        print_stats(
-            "Would insert",
-            hardcoded_count,
-            untranslated_usage_count,
-            untranslated_key_count,
-            files.len(),
-            false,
-        );
-    }
-
+    let hardcoded_issues_summary = hardcoded_issues.clone();
+    let untranslated_issues_summary = untranslated_issues.clone();
     let parse_errors = ctx.parsed_files_errors();
 
     let mut all_issues: Vec<Issue> = Vec::new();
@@ -106,46 +75,18 @@ pub fn baseline(cmd: BaselineCommand) -> Result<RunResult> {
     all_issues.extend(parse_errors.iter().map(|i| Issue::ParseError(i.clone())));
 
     Ok(finish(
+        CommandKind::Baseline,
+        CommandSummary::Baseline(BaselineSummary {
+            hardcoded_count,
+            untranslated_usage_count,
+            untranslated_key_count,
+            file_count,
+            is_apply: apply,
+            hardcoded_issues: hardcoded_issues_summary,
+            untranslated_issues: untranslated_issues_summary,
+        }),
         all_issues,
         ctx.files.len(),
         ctx.messages().all_messages.len(),
     ))
-}
-
-fn print_stats(
-    action: &str,
-    hardcoded: usize,
-    untranslated: usize,
-    untranslated_keys: usize,
-    file_count: usize,
-    is_apply: bool,
-) {
-    let total = hardcoded + untranslated;
-    if total > 0 {
-        if is_apply {
-            println!(
-                "{} {} comment(s) in {} file(s):",
-                action.green().bold(),
-                total,
-                file_count
-            );
-            if hardcoded > 0 {
-                println!("  - hardcoded: {} comment(s)", hardcoded);
-            }
-            if untranslated > 0 {
-                println!(
-                    "  - untranslated: {} comment(s), {} key(s)",
-                    untranslated, untranslated_keys
-                );
-            }
-        } else {
-            println!(
-                "{} {} comment(s) in {} file(s):",
-                action.yellow().bold(),
-                total,
-                file_count
-            );
-            println!("Run with {} to insert these comments.", "--apply".cyan());
-        }
-    }
 }
