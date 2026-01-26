@@ -11,12 +11,6 @@ info:
 success: true
 exit_code: 0
 ----- stdout -----
-  --> ./src/app.tsx:8:20
-     |
-   8 |             <span>{t(`${a}.x`)} {t(`${b}.y`)}</span>
-     |                    ^
-   +             {/* glot-message-keys "Common.*.x", "Common.*.y" */}
-
-Inserted 1 comment(s) in 1 file(s).
+Inserted 1 comment(s) in 1 file(s) (processed 2 issue(s)).
 
 ----- stderr -----

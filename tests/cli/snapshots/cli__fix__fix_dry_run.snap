@@ -14,7 +14,7 @@ exit_code: 0
      |
    7 |         <button>{t(`${prefix}.submit`)}</button>
      |                  ^
-   +         {/* glot-message-keys "Common.*.submit" */}
+  +         {/* glot-message-keys "Common.*.submit" */}
 
 Would insert 1 comment(s) in 1 file(s).
 Run with --apply to insert these comments.

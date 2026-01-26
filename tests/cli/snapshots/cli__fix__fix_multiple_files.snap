@@ -11,18 +11,6 @@ info:
 success: true
 exit_code: 0
 ----- stdout -----
-  --> ./src/app.tsx:6:18
-     |
-   6 |     return <div>{t(`${prefix}.title`)}</div>;
-     |                  ^
-   +     // glot-message-keys "Common.*.title"
-
-  --> ./src/button.tsx:6:21
-     |
-   6 |     return <button>{t(`${type}.label`)}</button>;
-     |                     ^
-   +     // glot-message-keys "Button.*.label"
-
-Inserted 2 comment(s) in 2 file(s).
+Inserted 2 comment(s) in 2 file(s) (processed 2 issue(s)).
 
 ----- stderr -----

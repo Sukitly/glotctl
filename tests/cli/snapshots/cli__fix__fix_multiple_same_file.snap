@@ -11,24 +11,6 @@ info:
 success: true
 exit_code: 0
 ----- stdout -----
-  --> ./src/app.tsx:8:20
-     |
-   8 |             <span>{t(`${prefix}.title`)}</span>
-     |                    ^
-   +             {/* glot-message-keys "Common.*.title" */}
-
-  --> ./src/app.tsx:9:20
-     |
-   9 |             <span>{t(`${prefix}.description`)}</span>
-     |                    ^
-   +             {/* glot-message-keys "Common.*.description" */}
-
-  --> ./src/app.tsx:10:20
-     |
-  10 |             <span>{t(`error.${code}`)}</span>
-     |                    ^
-   +             {/* glot-message-keys "Common.error.*" */}
-
-Inserted 3 comment(s) in 1 file(s).
+Inserted 3 comment(s) in 1 file(s) (processed 3 issue(s)).
 
 ----- stderr -----
