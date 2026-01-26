@@ -4,8 +4,8 @@
 //! collected during AST traversal. The actual resolution to UsedKey/DynamicKeyWarning
 //! happens in the resolve phase.
 
+use crate::analysis::SourceContext;
 use crate::extraction::extract::{TranslationSource, ValueSource};
-use crate::types::context::SourceContext;
 
 /// Translation call kind.
 #[derive(Debug, Clone, PartialEq, Eq)]

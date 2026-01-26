@@ -7,15 +7,16 @@
 
 use std::collections::HashSet;
 
+use crate::analysis::{CommentStyle, SourceContext, SourceLocation};
+use crate::extraction::{
+    FileKeyUsages, FullKey, ResolvedKeyUsage, SchemaSource, UnresolvedKeyUsage,
+    UsageUnresolvedKeyReason,
+};
 use crate::extraction::{
     collect::SuppressibleRule,
     collect::types::{FileComments, Registries},
     extract::{RawTranslationCall, TranslationCallKind, TranslationSource, ValueSource},
     schema::{SchemaCallInfo, expand_schema_keys},
-};
-use crate::types::context::{CommentStyle, SourceContext, SourceLocation};
-use crate::types::key_usage::{
-    FileKeyUsages, FullKey, ResolvedKeyUsage, SchemaSource, UnresolvedKeyReason, UnresolvedKeyUsage,
 };
 
 /// Resolve translation calls and schema calls to key usages.
@@ -180,7 +181,7 @@ fn resolve_schema_call(
             // Namespace could not be determined
             unresolved.push(UnresolvedKeyUsage {
                 context: context.clone(),
-                reason: UnresolvedKeyReason::UnknownNamespace {
+                reason: UsageUnresolvedKeyReason::UnknownNamespace {
                     schema_name: key.from_schema.clone(),
                     raw_key: key.raw_key.clone(),
                 },
@@ -255,13 +256,13 @@ fn infer_warning_details(
     argument: &ValueSource,
     translation_source: &TranslationSource,
     comment_style: CommentStyle,
-) -> (UnresolvedKeyReason, Option<String>, Option<String>) {
+) -> (UsageUnresolvedKeyReason, Option<String>, Option<String>) {
     match argument {
         ValueSource::Template { prefix, suffix, .. } => {
             // Reconstruct pattern from Template
             let pattern = infer_pattern_from_template(prefix, suffix, translation_source);
             let hint = pattern.as_ref().map(|p| format_hint(p, comment_style));
-            (UnresolvedKeyReason::TemplateWithExpr, hint, pattern)
+            (UsageUnresolvedKeyReason::TemplateWithExpr, hint, pattern)
         }
         ValueSource::Conditional {
             consequent,
@@ -271,12 +272,12 @@ fn infer_warning_details(
             let is_template = matches!(consequent.as_ref(), ValueSource::Template { .. })
                 || matches!(alternate.as_ref(), ValueSource::Template { .. });
             if is_template {
-                (UnresolvedKeyReason::TemplateWithExpr, None, None)
+                (UsageUnresolvedKeyReason::TemplateWithExpr, None, None)
             } else {
-                (UnresolvedKeyReason::VariableKey, None, None)
+                (UsageUnresolvedKeyReason::VariableKey, None, None)
             }
         }
-        _ => (UnresolvedKeyReason::VariableKey, None, None),
+        _ => (UsageUnresolvedKeyReason::VariableKey, None, None),
     }
 }
 

@@ -4,9 +4,9 @@
 
 use std::collections::HashMap;
 
-use crate::types::context::ValueType;
+use crate::analysis::ValueType;
 
-use super::context::MessageContext;
+use crate::analysis::MessageContext;
 
 // ============================================================
 // Message Types
@@ -74,8 +74,8 @@ impl LocaleMessages {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::types::context::MessageLocation;
+    use crate::analysis::MessageLocation;
+    use crate::messages::*;
 
     #[test]
     fn test_locale_messages_new() {

@@ -30,10 +30,12 @@
 
 pub mod collect;
 pub mod extract;
+pub mod key_usage;
 pub mod resolve;
-pub mod results;
 pub mod schema;
 pub mod utils;
 
-// Re-export commonly used types from results module
-pub use results::AllKeyUsages;
+pub use key_usage::{
+    AllKeyUsages, FileKeyUsages, FullKey, HardcodedText, ResolvedKeyUsage, SchemaSource,
+    UnresolvedKeyUsage, UsageUnresolvedKeyReason,
+};

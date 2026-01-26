@@ -4,7 +4,7 @@ use std::path::Path;
 
 use crate::json_writer::JsonWriter;
 
-use super::types::{KeyActionDetail, LocaleError, LocaleResult};
+use crate::mcp::types::{KeyActionDetail, LocaleError, LocaleResult};
 
 /// Process a single locale translation entry.
 ///
@@ -161,7 +161,7 @@ pub fn validate_and_convert_value(value: &serde_json::Value) -> Result<serde_jso
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::mcp::helpers::*;
     use serde_json::json;
     use std::fs;
     use tempfile::tempdir;

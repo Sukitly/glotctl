@@ -3,10 +3,10 @@
 //! Deletes unused or orphan translation keys from JSON files.
 //! Used by the `glot clean` command.
 
-use crate::types::issue::{OrphanKeyIssue, UnusedKeyIssue};
+use crate::issues::{OrphanKeyIssue, UnusedKeyIssue};
 
-use super::operation::Operation;
-use super::traits::Action;
+use crate::actions::operation::Operation;
+use crate::actions::traits::Action;
 
 /// Action to delete translation keys from JSON files.
 ///
@@ -39,8 +39,8 @@ impl Action<OrphanKeyIssue> for DeleteKey {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::types::context::{MessageContext, MessageLocation};
+    use crate::actions::delete_key::*;
+    use crate::analysis::{MessageContext, MessageLocation};
 
     #[test]
     fn test_unused_key_to_operations() {

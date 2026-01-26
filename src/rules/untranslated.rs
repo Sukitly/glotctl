@@ -11,15 +11,13 @@
 use std::collections::HashMap;
 
 use crate::{
+    analysis::{MessageContext, MessageLocation},
     commands::context::CheckContext,
+    extraction::ResolvedKeyUsage,
     extraction::collect::SuppressibleRule,
+    issues::UntranslatedIssue,
     parsers::json::MessageMap,
     rules::{build_key_usage_map, helpers::KeyUsageMap},
-    types::{
-        context::{MessageContext, MessageLocation},
-        issue::UntranslatedIssue,
-        key_usage::ResolvedKeyUsage,
-    },
     utils::contains_alphabetic,
 };
 
@@ -122,13 +120,11 @@ pub fn check_untranslated(
 mod tests {
     use std::collections::HashSet;
 
-    use super::*;
+    use crate::rules::untranslated::*;
     use crate::{
+        analysis::{CommentStyle, SourceContext, SourceLocation},
+        extraction::FullKey,
         parsers::json::{MessageEntry, ValueType},
-        types::{
-            context::{CommentStyle, SourceContext, SourceLocation},
-            key_usage::FullKey,
-        },
     };
 
     fn create_message_map(file: &str, entries: &[(&str, &str)]) -> MessageMap {

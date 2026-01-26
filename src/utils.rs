@@ -23,7 +23,7 @@ pub fn contains_alphabetic(text: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::utils::*;
 
     #[test]
     fn test_contains_alphabetic() {

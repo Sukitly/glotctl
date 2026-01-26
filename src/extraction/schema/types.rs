@@ -91,8 +91,8 @@ pub fn expand_schema_keys(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::extraction::collect::RegistryCollector;
+    use crate::extraction::schema::types::*;
     use swc_common::FileName;
     use swc_ecma_parser::{Parser, StringInput, Syntax, TsSyntax};
     use swc_ecma_visit::VisitWith;

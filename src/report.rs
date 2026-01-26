@@ -8,10 +8,8 @@ use std::io::{self, Write};
 use colored::Colorize;
 use unicode_width::UnicodeWidthStr;
 
-use crate::types::{
-    issue::{Issue, Report, ReportLocation, Severity},
-    key_usage::ResolvedKeyUsage,
-};
+use crate::extraction::ResolvedKeyUsage;
+use crate::issues::{Issue, Report, ReportLocation, Severity};
 
 /// Success mark for consistent output formatting.
 pub const SUCCESS_MARK: &str = "\u{2713}"; // ✓
@@ -31,7 +29,7 @@ const MAX_USAGES_DISPLAY: usize = 3;
 ///
 /// ```ignore
 /// use glot::report::report;
-/// use glot::types::Issue;
+/// use glot::issues::Issue;
 ///
 /// let issues: Vec<Issue> = checker.check(&data);
 /// report(&issues);
@@ -340,17 +338,16 @@ fn compare_issues(a: &Issue, b: &Issue) -> std::cmp::Ordering {
 mod tests {
     use std::collections::HashSet;
 
-    use super::*;
-    use crate::types::context::{
+    use crate::analysis::{
         CommentStyle, LocaleTypeMismatch, MessageContext, MessageLocation, SourceContext,
         SourceLocation, ValueType,
     };
-    use crate::types::issue::{
-        HardcodedIssue, MissingKeyIssue, OrphanKeyIssue, ParseErrorIssue, ReplicaLagIssue,
-        TypeMismatchIssue, UnresolvedKeyIssue, UnresolvedKeyReason, UntranslatedIssue,
-        UnusedKeyIssue,
+    use crate::extraction::FullKey;
+    use crate::issues::{
+        HardcodedIssue, IssueUnresolvedKeyReason, MissingKeyIssue, OrphanKeyIssue, ParseErrorIssue,
+        ReplicaLagIssue, TypeMismatchIssue, UnresolvedKeyIssue, UntranslatedIssue, UnusedKeyIssue,
     };
-    use crate::types::key_usage::FullKey;
+    use crate::report::*;
 
     fn strip_ansi(s: &str) -> String {
         // Simple ANSI escape code stripper for testing
@@ -526,7 +523,7 @@ mod tests {
         let ctx = SourceContext::new(loc, "t(`status.${code}`)", CommentStyle::Jsx);
         let issue = Issue::UnresolvedKey(UnresolvedKeyIssue {
             context: ctx,
-            reason: UnresolvedKeyReason::TemplateWithExpr,
+            reason: IssueUnresolvedKeyReason::TemplateWithExpr,
             hint: Some("Use glot-message-keys annotation".to_string()),
             pattern: Some("status.*".to_string()),
         });
@@ -622,7 +619,7 @@ mod tests {
         let ctx = SourceContext::new(loc, "schema(t)", CommentStyle::Js);
         let issue = Issue::UnresolvedKey(UnresolvedKeyIssue {
             context: ctx,
-            reason: UnresolvedKeyReason::UnknownNamespace {
+            reason: IssueUnresolvedKeyReason::UnknownNamespace {
                 schema_name: "formSchema".to_string(),
             },
             hint: None,

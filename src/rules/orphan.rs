@@ -6,12 +6,10 @@
 use std::collections::HashMap;
 
 use crate::{
+    analysis::{MessageContext, MessageLocation},
     commands::context::CheckContext,
+    issues::OrphanKeyIssue,
     parsers::json::MessageMap,
-    types::{
-        context::{MessageContext, MessageLocation},
-        issue::OrphanKeyIssue,
-    },
 };
 
 pub fn check_orphan_keys_issues(ctx: &CheckContext) -> Vec<OrphanKeyIssue> {
@@ -73,8 +71,8 @@ pub fn check_orphan_keys(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::parsers::json::{MessageEntry, ValueType};
+    use crate::rules::orphan::*;
 
     fn create_message_map(file: &str, entries: &[(&str, &str)]) -> MessageMap {
         entries

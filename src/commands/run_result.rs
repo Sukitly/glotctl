@@ -1,4 +1,4 @@
-use crate::types::issue::Issue;
+use crate::issues::Issue;
 
 /// Result of running glot commands
 pub struct RunResult {

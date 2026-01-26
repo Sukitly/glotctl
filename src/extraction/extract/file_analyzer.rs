@@ -21,15 +21,16 @@ use swc_ecma_ast::{
 };
 use swc_ecma_visit::{Visit, VisitWith};
 
+use crate::analysis::{CommentStyle, SourceContext, SourceLocation};
 use crate::extraction::collect::SuppressibleRule;
-use crate::types::context::{CommentStyle, SourceContext, SourceLocation};
-use crate::types::issue::HardcodedIssue;
+use crate::issues::HardcodedIssue;
 use crate::utils::contains_alphabetic;
 
-use super::{
+use crate::extraction::collect::Registries;
+use crate::extraction::extract::{
     BindingContext, RawTranslationCall, TranslationCallKind, TranslationSource, ValueAnalyzer,
+    ValueSource,
 };
-use crate::commands::context::Registries;
 use crate::extraction::{
     collect::types::{
         FileComments, FileImports, extract_binding_names, make_translation_fn_call_key,
@@ -289,7 +290,7 @@ impl<'a> FileAnalyzer<'a> {
         &mut self,
         loc: Loc,
         translation_source: TranslationSource,
-        argument: super::ValueSource,
+        argument: ValueSource,
         call_kind: TranslationCallKind,
     ) {
         let context = self.make_source_context(&loc);

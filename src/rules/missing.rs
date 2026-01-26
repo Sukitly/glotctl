@@ -3,10 +3,8 @@
 //! Detects translation keys used in code but not defined in the primary locale.
 
 use crate::{
-    commands::context::CheckContext,
-    extraction::collect::Registries,
-    parsers::json::MessageMap,
-    types::{context::SourceContext, issue::MissingKeyIssue, key_usage::AllKeyUsages},
+    analysis::SourceContext, commands::context::CheckContext, extraction::AllKeyUsages,
+    extraction::collect::Registries, issues::MissingKeyIssue, parsers::json::MessageMap,
 };
 
 pub fn check_missing_keys_issues(ctx: &CheckContext) -> Vec<MissingKeyIssue> {
@@ -65,13 +63,11 @@ pub fn check_missing_keys(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::rules::missing::*;
     use crate::{
+        analysis::{CommentStyle, SourceLocation},
+        extraction::{FileKeyUsages, FullKey, ResolvedKeyUsage, SchemaSource},
         parsers::json::{MessageEntry, ValueType},
-        types::{
-            context::{CommentStyle, SourceLocation},
-            key_usage::{FileKeyUsages, FullKey, ResolvedKeyUsage, SchemaSource},
-        },
     };
     use std::collections::{HashMap, HashSet};
 

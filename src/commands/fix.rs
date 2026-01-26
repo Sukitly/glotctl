@@ -6,12 +6,10 @@ use colored::Colorize;
 use crate::{
     actions::{Action, ActionStats, InsertMessageKeys},
     args::FixCommand,
+    commands::RunResult,
     commands::{context::CheckContext, helper::finish},
+    issues::{Issue, UnresolvedKeyIssue},
     rules::unresolved::check_unresolved_keys_issues,
-    types::{
-        issue::{Issue, UnresolvedKeyIssue},
-        run_result::RunResult,
-    },
 };
 
 pub fn fix(cmd: FixCommand) -> Result<RunResult> {

@@ -22,7 +22,7 @@ use schema::SchemaInternalState;
 
 use crate::extraction::schema::SchemaFunction;
 
-use super::types::{
+use crate::extraction::collect::types::{
     FileImports, KeyArray, KeyObject, StringArray, TranslationFnCall, TranslationProp,
     extract_binding_names,
 };

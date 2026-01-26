@@ -217,7 +217,7 @@ impl LocaleTypeMismatch {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::analysis::context::*;
 
     #[test]
     fn test_source_location_new() {

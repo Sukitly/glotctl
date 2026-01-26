@@ -507,8 +507,8 @@ impl<'a> ValueAnalyzer<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::extraction::collect::types::{ImportInfo, KeyArray, KeyObject, StringArray};
+    use crate::extraction::extract::value_analyzer::*;
 
     fn create_empty_analyzer<'a>(
         file_path: &'a str,

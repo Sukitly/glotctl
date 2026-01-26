@@ -20,8 +20,8 @@ use crate::{
     parsers::json::scan_message_files,
 };
 
-use super::helpers::process_locale_translation;
-use super::types::{
+use crate::mcp::helpers::process_locale_translation;
+use crate::mcp::types::{
     AddTranslationsParams, AddTranslationsResult, AddTranslationsSummary, ConfigDto, ConfigValues,
     GetConfigParams, GetLocalesParams, HardcodedItem, HardcodedScanResult, HardcodedStats,
     LocaleInfo, LocalesResult, Pagination, PrimaryMissingItem, PrimaryMissingScanResult,

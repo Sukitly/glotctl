@@ -10,7 +10,7 @@
 use colored::Colorize;
 use unicode_width::UnicodeWidthStr;
 
-use crate::types::context::{MessageContext, SourceContext};
+use crate::analysis::{MessageContext, SourceContext};
 
 /// A low-level file operation.
 ///
@@ -177,8 +177,8 @@ impl Operation {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::types::context::{CommentStyle, MessageLocation, SourceLocation};
+    use crate::actions::operation::*;
+    use crate::analysis::{CommentStyle, MessageLocation, SourceLocation};
 
     #[test]
     fn test_operation_insert_comment() {

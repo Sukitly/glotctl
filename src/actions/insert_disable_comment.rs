@@ -3,11 +3,11 @@
 //! Inserts `glot-disable-next-line` comments to suppress warnings.
 //! Used by the `glot baseline` command.
 
-use crate::types::context::CommentStyle;
-use crate::types::issue::{HardcodedIssue, Rule, UntranslatedIssue};
+use crate::analysis::CommentStyle;
+use crate::issues::{HardcodedIssue, Rule, UntranslatedIssue};
 
-use super::operation::Operation;
-use super::traits::Action;
+use crate::actions::operation::Operation;
+use crate::actions::traits::Action;
 
 /// Action to insert `glot-disable-next-line` comments.
 ///
@@ -57,11 +57,9 @@ impl Action<UntranslatedIssue> for InsertDisableComment {
 mod tests {
     use std::collections::HashSet;
 
-    use super::*;
-    use crate::types::{
-        context::{MessageContext, MessageLocation, SourceContext, SourceLocation},
-        key_usage::{FullKey, ResolvedKeyUsage},
-    };
+    use crate::actions::insert_disable_comment::*;
+    use crate::analysis::{MessageContext, MessageLocation, SourceContext, SourceLocation};
+    use crate::extraction::{FullKey, ResolvedKeyUsage};
 
     fn make_usage(
         key: &str,

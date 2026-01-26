@@ -14,15 +14,13 @@
 use std::collections::HashMap;
 
 use crate::{
+    analysis::{LocaleTypeMismatch, MessageContext, MessageLocation, ValueType},
     commands::context::CheckContext,
+    issues::TypeMismatchIssue,
     parsers::json::MessageMap,
     rules::{
         build_key_usage_map,
         helpers::{KeyUsageMap, get_usages_for_key},
-    },
-    types::{
-        context::{LocaleTypeMismatch, MessageContext, MessageLocation, ValueType},
-        issue::TypeMismatchIssue,
     },
 };
 
@@ -116,7 +114,7 @@ pub fn check_type_mismatch(
     issues
 }
 
-/// Convert from parsers::json::ValueType to types::context::ValueType
+/// Convert from parsers::json::ValueType to analysis::ValueType
 fn convert_value_type(vt: crate::parsers::json::ValueType) -> ValueType {
     match vt {
         crate::parsers::json::ValueType::String => ValueType::String,
@@ -126,8 +124,8 @@ fn convert_value_type(vt: crate::parsers::json::ValueType) -> ValueType {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::parsers::json::{MessageEntry, ValueType as JsonValueType};
+    use crate::rules::type_mismatch::*;
 
     fn create_message_map_with_types(
         file: &str,

@@ -8,7 +8,7 @@ use regex::Regex;
 use std::collections::HashSet;
 use std::sync::LazyLock;
 
-use super::super::types::{KeyDeclaration, SuppressibleRule};
+use crate::extraction::collect::types::{KeyDeclaration, SuppressibleRule};
 
 static QUOTED_STRING_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#""([^"]+)""#).unwrap());
 
@@ -170,7 +170,7 @@ fn is_valid_pattern(pattern: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::extraction::collect::comments::directive::*;
 
     // ============================================================
     // Suppression Directive Tests

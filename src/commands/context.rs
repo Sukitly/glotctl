@@ -4,34 +4,31 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
-use anyhow::{anyhow, Context as _, Result};
+use anyhow::{Context as _, Result, anyhow};
 use swc_ecma_visit::VisitWith;
 
 use crate::{
     args::CommonArgs,
-    config::{load_config, Config},
+    config::{Config, load_config},
     extraction::{
+        AllKeyUsages,
         collect::{
-            make_registry_key, make_translation_fn_call_key, make_translation_prop_key,
-            resolve_import_path, AllFileComments, CommentCollector, FileImports, RegistryCollector,
-            TranslationFnCall, TranslationProp,
+            AllFileComments, AllFileImports, CommentCollector, FileImports, Registries,
+            RegistryCollector, TranslationFnCall, TranslationProp, make_registry_key,
+            make_translation_fn_call_key, make_translation_prop_key, resolve_import_path,
         },
         extract::FileAnalyzer,
         resolve::resolve_translation_calls,
     },
     file_scanner::scan_files,
+    issues::{HardcodedIssue, ParseErrorIssue},
     parsers::{
-        json::{scan_message_files, MessageMap},
-        jsx::{parse_jsx_source, ParsedJSX},
+        json::{MessageMap, scan_message_files},
+        jsx::{ParsedJSX, parse_jsx_source},
     },
-    types::issue::{HardcodedIssue, ParseErrorIssue},
 };
 
 use std::collections::HashMap;
-
-// Re-export types from extraction module for convenience
-pub use crate::extraction::collect::{AllFileImports, Registries};
-pub use crate::extraction::AllKeyUsages;
 
 /// Type alias for all hardcoded issues (one vec per file).
 pub type AllHardcodedIssues = HashMap<String, Vec<HardcodedIssue>>;
@@ -397,7 +394,7 @@ fn collect_registries_and_comments(
         }
     }
 
-    let registries = crate::commands::context::Registries {
+    let registries = Registries {
         schema,
         key_object,
         key_array,
@@ -492,7 +489,7 @@ fn extract_from_files(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::commands::context::*;
 
     /// Create a minimal CheckContext for testing without file system dependencies.
     fn create_test_context(root_dir: &str, messages_dir: &str) -> CheckContext {

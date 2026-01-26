@@ -3,11 +3,11 @@
 //! Inserts `glot-message-keys` comments for dynamic translation keys.
 //! Used by the `glot fix` command.
 
-use crate::types::context::CommentStyle;
-use crate::types::issue::UnresolvedKeyIssue;
+use crate::analysis::CommentStyle;
+use crate::issues::UnresolvedKeyIssue;
 
-use super::operation::Operation;
-use super::traits::{Action, ActionStats};
+use crate::actions::operation::Operation;
+use crate::actions::traits::{Action, ActionStats};
 
 /// Action to insert `glot-message-keys` comments.
 ///
@@ -66,9 +66,9 @@ impl Action<UnresolvedKeyIssue> for InsertMessageKeys {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::types::context::{SourceContext, SourceLocation};
-    use crate::types::issue::UnresolvedKeyReason;
+    use crate::actions::insert_message_keys::*;
+    use crate::analysis::{SourceContext, SourceLocation};
+    use crate::issues::IssueUnresolvedKeyReason;
 
     #[test]
     fn test_format_comment_js() {
@@ -88,7 +88,7 @@ mod tests {
         let ctx = SourceContext::new(loc, "t(`status.${code}`)", CommentStyle::Jsx);
         let issue = UnresolvedKeyIssue {
             context: ctx,
-            reason: UnresolvedKeyReason::TemplateWithExpr,
+            reason: IssueUnresolvedKeyReason::TemplateWithExpr,
             hint: Some("Use glot-message-keys".to_string()),
             pattern: Some("status.*".to_string()),
         };
@@ -111,7 +111,7 @@ mod tests {
         let ctx = SourceContext::new(loc, "t(keyVar)", CommentStyle::Js);
         let issue = UnresolvedKeyIssue {
             context: ctx,
-            reason: UnresolvedKeyReason::VariableKey,
+            reason: IssueUnresolvedKeyReason::VariableKey,
             hint: None,
             pattern: None, // No pattern - cannot be fixed
         };
@@ -127,7 +127,7 @@ mod tests {
         let ctx1 = SourceContext::new(loc1, "t(`status.${code}`)", CommentStyle::Jsx);
         let issue1 = UnresolvedKeyIssue {
             context: ctx1,
-            reason: UnresolvedKeyReason::TemplateWithExpr,
+            reason: IssueUnresolvedKeyReason::TemplateWithExpr,
             hint: None,
             pattern: Some("status.*".to_string()),
         };
@@ -136,7 +136,7 @@ mod tests {
         let ctx2 = SourceContext::new(loc2, "t(keyVar)", CommentStyle::Js);
         let issue2 = UnresolvedKeyIssue {
             context: ctx2,
-            reason: UnresolvedKeyReason::VariableKey,
+            reason: IssueUnresolvedKeyReason::VariableKey,
             hint: None,
             pattern: None, // No pattern
         };

@@ -1,6 +1,6 @@
-use crate::types::{
-    issue::{Issue, Severity},
-    run_result::RunResult,
+use crate::{
+    commands::RunResult,
+    issues::{Issue, Severity},
 };
 
 pub fn finish(

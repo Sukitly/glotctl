@@ -266,7 +266,7 @@ pub type AllFileComments = std::collections::HashMap<String, FileComments>;
 /// This struct aggregates all cross-file dependencies collected during Phase 1.
 /// Does NOT contain file_imports - that's stored separately in AllFileImports.
 pub struct Registries {
-    pub schema: super::super::schema::SchemaRegistry,
+    pub schema: crate::extraction::schema::SchemaRegistry,
     pub key_object: KeyObjectRegistry,
     pub key_array: KeyArrayRegistry,
     pub string_array: StringArrayRegistry,

@@ -7,12 +7,8 @@
 
 use enum_dispatch::enum_dispatch;
 
-use crate::types::context::ValueType;
-
-use super::{
-    context::{LocaleTypeMismatch, MessageContext, SourceContext},
-    key_usage::ResolvedKeyUsage,
-};
+use crate::analysis::{LocaleTypeMismatch, MessageContext, SourceContext, ValueType};
+use crate::extraction::ResolvedKeyUsage;
 
 // ============================================================
 // Severity and Rule
@@ -71,7 +67,7 @@ impl std::fmt::Display for Rule {
 
 /// Reason why a key cannot be resolved (statically analyzed).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum UnresolvedKeyReason {
+pub enum IssueUnresolvedKeyReason {
     /// Key is a variable: `t(keyName)`
     VariableKey,
     /// Key is a template with expressions: `t(\`${prefix}.key\`)`
@@ -81,12 +77,12 @@ pub enum UnresolvedKeyReason {
     UnknownNamespace { schema_name: String },
 }
 
-impl std::fmt::Display for UnresolvedKeyReason {
+impl std::fmt::Display for IssueUnresolvedKeyReason {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            UnresolvedKeyReason::VariableKey => write!(f, "variable key"),
-            UnresolvedKeyReason::TemplateWithExpr => write!(f, "template with expression"),
-            UnresolvedKeyReason::UnknownNamespace { schema_name } => {
+            IssueUnresolvedKeyReason::VariableKey => write!(f, "variable key"),
+            IssueUnresolvedKeyReason::TemplateWithExpr => write!(f, "template with expression"),
+            IssueUnresolvedKeyReason::UnknownNamespace { schema_name } => {
                 write!(f, "unknown namespace for schema '{}'", schema_name)
             }
         }
@@ -140,7 +136,7 @@ impl MissingKeyIssue {
 pub struct UnresolvedKeyIssue {
     pub context: SourceContext,
     /// Why the key cannot be resolved.
-    pub reason: UnresolvedKeyReason,
+    pub reason: IssueUnresolvedKeyReason,
     /// Hint for the user on how to fix.
     pub hint: Option<String>,
     /// Pattern for FixAction to generate glot-message-keys comment.
@@ -675,8 +671,8 @@ impl PartialOrd for Issue {
 
 #[cfg(test)]
 mod tests {
-    use super::super::context::{CommentStyle, MessageLocation, SourceLocation};
-    use super::*;
+    use crate::analysis::{CommentStyle, MessageLocation, SourceLocation};
+    use crate::issues::*;
 
     #[test]
     fn test_hardcoded_issue() {
@@ -732,25 +728,28 @@ mod tests {
         let ctx = SourceContext::new(loc, "t(`status.${code}`)", CommentStyle::Jsx);
         let issue = UnresolvedKeyIssue {
             context: ctx,
-            reason: UnresolvedKeyReason::TemplateWithExpr,
+            reason: IssueUnresolvedKeyReason::TemplateWithExpr,
             hint: Some("Use glot-message-keys annotation".to_string()),
             pattern: Some("status.*".to_string()),
         };
 
         assert_eq!(UnresolvedKeyIssue::severity(), Severity::Warning);
-        assert_eq!(issue.reason, UnresolvedKeyReason::TemplateWithExpr);
+        assert_eq!(issue.reason, IssueUnresolvedKeyReason::TemplateWithExpr);
         assert_eq!(issue.pattern, Some("status.*".to_string()));
     }
 
     #[test]
     fn test_unresolved_key_reason_display() {
-        assert_eq!(UnresolvedKeyReason::VariableKey.to_string(), "variable key");
         assert_eq!(
-            UnresolvedKeyReason::TemplateWithExpr.to_string(),
+            IssueUnresolvedKeyReason::VariableKey.to_string(),
+            "variable key"
+        );
+        assert_eq!(
+            IssueUnresolvedKeyReason::TemplateWithExpr.to_string(),
             "template with expression"
         );
         assert_eq!(
-            UnresolvedKeyReason::UnknownNamespace {
+            IssueUnresolvedKeyReason::UnknownNamespace {
                 schema_name: "formSchema".to_string()
             }
             .to_string(),
@@ -784,7 +783,7 @@ mod tests {
 
     #[test]
     fn test_replica_lag_issue() {
-        use super::super::key_usage::FullKey;
+        use crate::extraction::FullKey;
         use std::collections::HashSet;
 
         let loc = MessageLocation::new("./messages/en.json", 5, 3);

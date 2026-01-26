@@ -7,7 +7,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::extraction::collect::SuppressibleRule;
 
-use super::context::SourceContext;
+use crate::analysis::SourceContext;
 
 // ============================================================
 // Unresolved Key Reason
@@ -15,7 +15,7 @@ use super::context::SourceContext;
 
 /// Reason why a key cannot be resolved (statically analyzed).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum UnresolvedKeyReason {
+pub enum UsageUnresolvedKeyReason {
     /// Key is a variable: `t(keyName)`
     VariableKey,
     /// Key is a template with expressions: `t(\`${prefix}.key\`)`
@@ -27,12 +27,12 @@ pub enum UnresolvedKeyReason {
     },
 }
 
-impl std::fmt::Display for UnresolvedKeyReason {
+impl std::fmt::Display for UsageUnresolvedKeyReason {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            UnresolvedKeyReason::VariableKey => write!(f, "variable key"),
-            UnresolvedKeyReason::TemplateWithExpr => write!(f, "template with expression"),
-            UnresolvedKeyReason::UnknownNamespace { schema_name, .. } => {
+            UsageUnresolvedKeyReason::VariableKey => write!(f, "variable key"),
+            UsageUnresolvedKeyReason::TemplateWithExpr => write!(f, "template with expression"),
+            UsageUnresolvedKeyReason::UnknownNamespace { schema_name, .. } => {
                 write!(f, "unknown namespace for schema '{}'", schema_name)
             }
         }
@@ -97,7 +97,7 @@ pub struct UnresolvedKeyUsage {
     /// Source code context (location, source_line, comment_style).
     pub context: SourceContext,
     /// Reason why the key could not be resolved.
-    pub reason: UnresolvedKeyReason,
+    pub reason: UsageUnresolvedKeyReason,
     /// Hint for the user on how to fix (formatted message).
     pub hint: Option<String>,
     /// Pattern inferred from template (e.g., "Common.*.submit").
@@ -138,8 +138,8 @@ pub struct HardcodedText {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::types::context::{CommentStyle, SourceLocation};
+    use crate::analysis::{CommentStyle, SourceLocation};
+    use crate::extraction::key_usage::*;
 
     #[test]
     fn test_full_key() {
@@ -150,13 +150,16 @@ mod tests {
 
     #[test]
     fn test_unresolved_key_reason_display() {
-        assert_eq!(UnresolvedKeyReason::VariableKey.to_string(), "variable key");
         assert_eq!(
-            UnresolvedKeyReason::TemplateWithExpr.to_string(),
+            UsageUnresolvedKeyReason::VariableKey.to_string(),
+            "variable key"
+        );
+        assert_eq!(
+            UsageUnresolvedKeyReason::TemplateWithExpr.to_string(),
             "template with expression"
         );
         assert_eq!(
-            UnresolvedKeyReason::UnknownNamespace {
+            UsageUnresolvedKeyReason::UnknownNamespace {
                 schema_name: "formSchema".to_string(),
                 raw_key: "email".to_string(),
             }
@@ -210,11 +213,11 @@ mod tests {
         let ctx = SourceContext::new(loc, "t(keyVar)", CommentStyle::Jsx);
         let usage = UnresolvedKeyUsage {
             context: ctx,
-            reason: UnresolvedKeyReason::VariableKey,
+            reason: UsageUnresolvedKeyReason::VariableKey,
             hint: Some("use glot-message-keys".to_string()),
             pattern: None,
         };
-        assert_eq!(usage.reason, UnresolvedKeyReason::VariableKey);
+        assert_eq!(usage.reason, UsageUnresolvedKeyReason::VariableKey);
         assert!(usage.hint.is_some());
     }
 }

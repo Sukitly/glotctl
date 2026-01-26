@@ -6,7 +6,7 @@
 
 use std::collections::HashSet;
 
-use super::super::types::{Declarations, KeyDeclaration};
+use crate::extraction::collect::types::{Declarations, KeyDeclaration};
 use crate::extraction::utils::{expand_glob_pattern, is_glob_pattern};
 
 impl KeyDeclaration {
@@ -140,7 +140,7 @@ impl Declarations {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::extraction::collect::comments::declarations::*;
     use crate::extraction::collect::comments::directive::Directive;
 
     #[test]

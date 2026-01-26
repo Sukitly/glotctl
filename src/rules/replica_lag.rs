@@ -6,13 +6,11 @@
 use std::collections::HashMap;
 
 use crate::{
+    analysis::{MessageContext, MessageLocation},
     commands::context::CheckContext,
+    issues::ReplicaLagIssue,
     parsers::json::MessageMap,
     rules::helpers::{KeyUsageMap, build_key_usage_map, get_usages_for_key},
-    types::{
-        context::{MessageContext, MessageLocation},
-        issue::ReplicaLagIssue,
-    },
 };
 
 pub fn check_replica_lag_issues(ctx: &CheckContext) -> Vec<ReplicaLagIssue> {
@@ -88,8 +86,8 @@ pub fn check_replica_lags(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::parsers::json::{MessageEntry, ValueType};
+    use crate::rules::replica_lag::*;
 
     fn create_message_map(entries: &[(&str, &str)]) -> MessageMap {
         entries

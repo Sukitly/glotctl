@@ -4,7 +4,7 @@
 
 use crate::{
     commands::context::{AllHardcodedIssues, CheckContext},
-    types::issue::HardcodedIssue,
+    issues::HardcodedIssue,
 };
 
 pub fn check_hardcoded_issues(ctx: &CheckContext) -> Vec<HardcodedIssue> {
@@ -28,8 +28,8 @@ pub fn check_hardcoded(hardcoded_issues: &AllHardcodedIssues) -> Vec<HardcodedIs
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::types::context::{CommentStyle, SourceContext, SourceLocation};
+    use crate::analysis::{CommentStyle, SourceContext, SourceLocation};
+    use crate::rules::hardcoded::*;
     use std::collections::HashMap;
 
     fn create_old_hardcoded_issue(

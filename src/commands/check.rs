@@ -3,7 +3,9 @@ use clap::ValueEnum;
 
 use crate::{
     args::CheckCommand,
+    commands::RunResult,
     commands::{context::CheckContext, helper::finish},
+    issues::Issue,
     report::report,
     rules::{
         hardcoded::check_hardcoded_issues, missing::check_missing_keys_issues,
@@ -11,8 +13,6 @@ use crate::{
         type_mismatch::check_type_mismatch_issues, unresolved::check_unresolved_keys_issues,
         untranslated::check_untranslated_issues, unused::check_unused_keys_issues,
     },
-    types::issue::Issue,
-    RunResult,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, ValueEnum)]

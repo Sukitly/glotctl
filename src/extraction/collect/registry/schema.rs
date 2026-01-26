@@ -7,7 +7,9 @@ use swc_ecma_ast::{ArrowExpr, CallExpr, Callee, Expr, Pat, VarDeclarator};
 
 use crate::extraction::schema::{SchemaFunction, SchemaFunctionContext};
 
-use super::helpers::{extract_string_arg, is_schema_call_with_t, is_tfunction_type};
+use crate::extraction::collect::registry::helpers::{
+    extract_string_arg, is_schema_call_with_t, is_tfunction_type,
+};
 
 /// Internal state for schema function collection.
 ///

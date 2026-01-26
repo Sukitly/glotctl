@@ -3,13 +3,11 @@ use std::collections::HashSet;
 use crate::{
     actions::{Action, ActionStats, InsertDisableComment, Operation},
     args::BaselineCommand,
+    commands::RunResult,
     commands::{context::CheckContext, helper::finish},
     extraction::collect::SuppressibleRule,
+    issues::{HardcodedIssue, Issue, UntranslatedIssue},
     rules::{hardcoded::check_hardcoded_issues, untranslated::check_untranslated_issues},
-    types::{
-        issue::{HardcodedIssue, Issue, UntranslatedIssue},
-        run_result::RunResult,
-    },
 };
 use anyhow::{Ok, Result};
 use colored::Colorize;

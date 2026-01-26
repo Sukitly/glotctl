@@ -6,12 +6,10 @@
 use std::collections::HashSet;
 
 use crate::{
+    analysis::{MessageContext, MessageLocation},
     commands::context::CheckContext,
+    issues::UnusedKeyIssue,
     parsers::json::MessageMap,
-    types::{
-        context::{MessageContext, MessageLocation},
-        issue::UnusedKeyIssue,
-    },
 };
 
 pub fn check_unused_keys_issues(ctx: &CheckContext) -> Vec<UnusedKeyIssue> {
@@ -61,8 +59,8 @@ pub fn check_unused_keys(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::parsers::json::{MessageEntry, ValueType};
+    use crate::rules::unused::*;
 
     fn create_message_map(entries: &[(&str, &str)]) -> MessageMap {
         entries

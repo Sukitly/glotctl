@@ -25,7 +25,7 @@
 //!
 //! ```ignore
 //! use glot::actions::{Action, InsertDisableComment};
-//! use glot::types::HardcodedIssue;
+//! use glot::issues::HardcodedIssue;
 //!
 //! let issues: Vec<HardcodedIssue> = checkers::hardcoded(&data);
 //! let stats = InsertDisableComment::run(&issues, apply)?;

@@ -6,12 +6,10 @@
 //! - Unknown namespace for schema-derived keys
 
 use crate::{
+    analysis::SourceContext,
     commands::context::CheckContext,
-    types::{
-        context::SourceContext,
-        issue::{UnresolvedKeyIssue, UnresolvedKeyReason},
-        key_usage::{AllKeyUsages, UnresolvedKeyReason as ExtractedReason},
-    },
+    extraction::{AllKeyUsages, UsageUnresolvedKeyReason as ExtractedReason},
+    issues::{IssueUnresolvedKeyReason, UnresolvedKeyIssue},
 };
 
 pub fn check_unresolved_keys_issues(ctx: &CheckContext) -> Vec<UnresolvedKeyIssue> {
@@ -55,13 +53,13 @@ pub fn check_unresolved_keys(extractions: &AllKeyUsages) -> Vec<UnresolvedKeyIss
     issues
 }
 
-/// Convert from extraction's UnresolvedKeyReason to issue's UnresolvedKeyReason.
-fn convert_reason(reason: &ExtractedReason) -> UnresolvedKeyReason {
+/// Convert from extraction's UsageUnresolvedKeyReason to issue's IssueUnresolvedKeyReason.
+fn convert_reason(reason: &ExtractedReason) -> IssueUnresolvedKeyReason {
     match reason {
-        ExtractedReason::VariableKey => UnresolvedKeyReason::VariableKey,
-        ExtractedReason::TemplateWithExpr => UnresolvedKeyReason::TemplateWithExpr,
+        ExtractedReason::VariableKey => IssueUnresolvedKeyReason::VariableKey,
+        ExtractedReason::TemplateWithExpr => IssueUnresolvedKeyReason::TemplateWithExpr,
         ExtractedReason::UnknownNamespace { schema_name, .. } => {
-            UnresolvedKeyReason::UnknownNamespace {
+            IssueUnresolvedKeyReason::UnknownNamespace {
                 schema_name: schema_name.clone(),
             }
         }
@@ -70,11 +68,9 @@ fn convert_reason(reason: &ExtractedReason) -> UnresolvedKeyReason {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::types::{
-        context::{CommentStyle, SourceLocation},
-        key_usage::{FileKeyUsages, UnresolvedKeyUsage},
-    };
+    use crate::analysis::{CommentStyle, SourceLocation};
+    use crate::extraction::{FileKeyUsages, UnresolvedKeyUsage};
+    use crate::rules::unresolved::*;
     use std::collections::HashMap;
 
     fn create_unresolved_usage(
@@ -118,7 +114,7 @@ mod tests {
 
         let issues = check_unresolved_keys(&extractions);
         assert_eq!(issues.len(), 1);
-        assert_eq!(issues[0].reason, UnresolvedKeyReason::VariableKey);
+        assert_eq!(issues[0].reason, IssueUnresolvedKeyReason::VariableKey);
     }
 
     #[test]
@@ -138,7 +134,7 @@ mod tests {
 
         let issues = check_unresolved_keys(&extractions);
         assert_eq!(issues.len(), 1);
-        assert_eq!(issues[0].reason, UnresolvedKeyReason::TemplateWithExpr);
+        assert_eq!(issues[0].reason, IssueUnresolvedKeyReason::TemplateWithExpr);
     }
 
     #[test]
@@ -162,7 +158,7 @@ mod tests {
         let issues = check_unresolved_keys(&extractions);
         assert_eq!(issues.len(), 1);
         match &issues[0].reason {
-            UnresolvedKeyReason::UnknownNamespace { schema_name } => {
+            IssueUnresolvedKeyReason::UnknownNamespace { schema_name } => {
                 assert_eq!(schema_name, "formSchema");
             }
             _ => panic!("Expected UnknownNamespace reason"),

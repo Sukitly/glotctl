@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 use swc_common::{SourceMap, comments::SingleThreadedComments};
 
-use super::directive::Directive;
+use crate::extraction::collect::comments::directive::Directive;
 use crate::extraction::collect::types::{
     Declarations, DisabledRange, FileComments, SuppressibleRule, Suppressions,
 };
@@ -104,7 +104,7 @@ impl CommentCollector {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::extraction::collect::comments::collector::*;
     use crate::parsers::jsx::parse_jsx_source;
 
     /// Helper to parse source and collect comments

@@ -166,7 +166,7 @@ mod tests {
     use pretty_assertions::assert_eq;
     use tempfile::tempdir;
 
-    use super::*;
+    use crate::file_scanner::*;
 
     #[test]
     fn test_scan_tsx_files() {

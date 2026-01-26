@@ -6,12 +6,10 @@ use colored::Colorize;
 use crate::{
     actions::{Action, ActionStats, DeleteKey},
     args::{CleanCommand, CleanRule},
+    commands::RunResult,
     commands::{context::CheckContext, helper::finish},
+    issues::{Issue, OrphanKeyIssue, UnusedKeyIssue},
     rules::{orphan::check_orphan_keys_issues, unused::check_unused_keys_issues},
-    types::{
-        issue::{Issue, OrphanKeyIssue, UnusedKeyIssue},
-        run_result::RunResult,
-    },
 };
 
 impl CleanRule {

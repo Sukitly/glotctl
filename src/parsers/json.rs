@@ -265,7 +265,7 @@ pub fn scan_message_files(message_dir: impl AsRef<Path>) -> Result<ScanMessagesR
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::parsers::json::*;
 
     #[test]
     fn test_flatten_simple() {
