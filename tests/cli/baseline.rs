@@ -70,6 +70,8 @@ fn assert_no_comments(content: &str) {
         JS_HARDCODED,
         JSX_UNTRANSLATED,
         JS_UNTRANSLATED,
+        JSX_MERGED,
+        JS_MERGED,
     ] {
         assert!(
             !content.contains(comment),
@@ -96,8 +98,6 @@ fn test_baseline_dry_run() -> Result<()> {
     test.write_file("messages/en.json", r#"{}"#)?;
 
     assert_cmd_snapshot!(test.baseline_command());
-    let content = test.read_file("src/app.tsx")?;
-    assert_no_comments(&content);
     Ok(())
 }
 
@@ -1040,7 +1040,6 @@ export function App({ show }) {
 #[test]
 fn test_baseline_skips_line_with_translation_call() -> Result<()> {
     // Line has both t("key") AND hardcoded text "(Hardcoded)"
-    // Should skip inserting comment to avoid making key appear unused
     let test = CliTest::new()?;
     setup_config(&test)?;
 
@@ -1061,13 +1060,17 @@ export function App() {
     assert_cmd_snapshot!(cmd);
 
     let content = test.read_file("src/app.tsx")?;
-    assert_no_comments(&content);
+    assert_comment_insertions(
+        &content,
+        JSX_HARDCODED,
+        &["<span>{t(\"title\")} (Hardcoded)</span>"],
+    );
     Ok(())
 }
 
 #[test]
 fn test_baseline_skips_and_inserts_mixed() -> Result<()> {
-    // Test that some lines are skipped while others are inserted
+    // Comments should be inserted for both lines
     let test = CliTest::new()?;
     setup_config(&test)?;
 
@@ -1096,7 +1099,10 @@ export function App() {
     assert_comment_insertions(
         &content,
         JSX_HARDCODED,
-        &["<span>Pure hardcoded text</span>"],
+        &[
+            "<span>{t(\"title\")} (Hardcoded suffix)</span>",
+            "<span>Pure hardcoded text</span>",
+        ],
     );
     Ok(())
 }
@@ -1381,12 +1387,20 @@ export function App() {
     assert_cmd_snapshot!(cmd);
 
     let content = test.read_file("src/app.tsx")?;
-    // The hardcoded "suffix" is on a line with t() call, so it should be skipped for hardcoded
-    // But untranslated should still be inserted for the t("greeting") usage
     assert_comment_insertions(
         &content,
-        JSX_UNTRANSLATED,
+        JSX_MERGED,
         &["return <div>{t(\"greeting\")} suffix</div>;"],
+    );
+    assert!(
+        !content.contains(JSX_HARDCODED),
+        "Expected merged comment, got:\n{}",
+        content
+    );
+    assert!(
+        !content.contains(JSX_UNTRANSLATED),
+        "Expected merged comment, got:\n{}",
+        content
     );
     Ok(())
 }

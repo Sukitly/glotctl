@@ -222,10 +222,11 @@ impl Operation {
                 let line = context.line();
                 let style = context.comment_style;
 
-                if let Some(group) = groups
-                    .iter_mut()
-                    .find(|g| g.line == line && g.comment_style == style && g.kind == kind)
-                {
+                if let Some(group) = groups.iter_mut().find(|g| {
+                    g.line == line
+                        && g.kind == kind
+                        && (kind == DirectiveKind::DisableNextLine || g.comment_style == style)
+                }) {
                     group.comments.push(comment.clone());
                 } else {
                     groups.push(InsertGroup {
@@ -412,21 +413,17 @@ fn looks_like_glot_comment(line: &str) -> bool {
 }
 
 fn build_merged_comment(group: &InsertGroup, existing_line: Option<&str>) -> Option<String> {
-    let mut style = group.comment_style;
     if let Some(line) = existing_line
         && directive_kind(line) != group.kind
     {
         return None;
     }
     let existing_directive = existing_line.and_then(parse_comment_directive);
-    if let Some(line) = existing_line
-        && let Some(detected) = detect_comment_style(line)
-    {
-        style = detected;
-    }
 
     match group.kind {
         DirectiveKind::DisableNextLine => {
+            let style =
+                select_disable_comment_style(group, existing_line, existing_directive.as_ref());
             let mut merged = std::collections::HashSet::new();
 
             if let Some(Directive::DisableNextLine { rules }) = existing_directive {
@@ -446,6 +443,12 @@ fn build_merged_comment(group: &InsertGroup, existing_line: Option<&str>) -> Opt
             Some(format_disable_next_line(&merged, style))
         }
         DirectiveKind::MessageKeys => {
+            let mut style = group.comment_style;
+            if let Some(line) = existing_line
+                && let Some(detected) = detect_comment_style(line)
+            {
+                style = detected;
+            }
             let mut patterns: Vec<String> = Vec::new();
             let mut seen = std::collections::HashSet::new();
 
@@ -477,6 +480,37 @@ fn build_merged_comment(group: &InsertGroup, existing_line: Option<&str>) -> Opt
         }
         DirectiveKind::Other => None,
     }
+}
+
+fn select_disable_comment_style(
+    group: &InsertGroup,
+    existing_line: Option<&str>,
+    existing_directive: Option<&Directive>,
+) -> CommentStyle {
+    if let Some(Directive::DisableNextLine { rules }) = existing_directive
+        && rules.contains(&SuppressibleRule::Hardcoded)
+        && let Some(line) = existing_line
+        && let Some(detected) = detect_comment_style(line)
+    {
+        return detected;
+    }
+
+    for comment in &group.comments {
+        if let Some(Directive::DisableNextLine { rules }) = parse_comment_directive(comment)
+            && rules.contains(&SuppressibleRule::Hardcoded)
+            && let Some(detected) = detect_comment_style(comment)
+        {
+            return detected;
+        }
+    }
+
+    if let Some(line) = existing_line
+        && let Some(detected) = detect_comment_style(line)
+    {
+        return detected;
+    }
+
+    group.comment_style
 }
 
 fn merge_directives(

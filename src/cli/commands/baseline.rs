@@ -1,12 +1,12 @@
 use std::collections::HashSet;
 
 use super::super::{
-    actions::{Action, ActionStats, InsertDisableComment},
+    actions::{Action, ActionStats, InsertDisableComment, execute_operations},
     args::BaselineCommand,
 };
-use super::{helper::finish, BaselineSummary, CommandResult, CommandSummary};
+use super::{BaselineSummary, CommandResult, CommandSummary, helper::finish};
 use crate::{
-    core::{collect::SuppressibleRule, CheckContext},
+    core::{CheckContext, collect::SuppressibleRule},
     issues::{HardcodedTextIssue, Issue, UntranslatedIssue},
     rules::{hardcoded::check_hardcoded_text_issues, untranslated::check_untranslated_issues},
 };
@@ -45,24 +45,28 @@ pub fn baseline(cmd: BaselineCommand) -> Result<CommandResult> {
 
     let (file_count, applied_hardcoded_count, applied_untranslated_count, applied_total_count) =
         if apply {
-            let mut stats = ActionStats::default();
-            let mut hardcoded_stats = ActionStats::default();
-            let mut untranslated_stats = ActionStats::default();
-
+            let mut ops = Vec::new();
             if !hardcoded_issues.is_empty() {
-                hardcoded_stats = InsertDisableComment::run(&hardcoded_issues)?;
-                stats += hardcoded_stats.clone();
+                ops.extend(InsertDisableComment::to_operations(&hardcoded_issues));
             }
             if !untranslated_issues.is_empty() {
-                untranslated_stats = InsertDisableComment::run(&untranslated_issues)?;
-                stats += untranslated_stats.clone();
+                ops.extend(InsertDisableComment::to_operations(&untranslated_issues));
             }
+
+            let stats = if ops.is_empty() {
+                ActionStats::default()
+            } else {
+                execute_operations(&ops)?
+            };
+
+            let applied_hardcoded_count = unique_hardcoded_lines(&hardcoded_issues);
+            let applied_untranslated_count = unique_untranslated_lines(&untranslated_issues);
 
             (
                 stats.files_modified,
-                hardcoded_stats.changes_applied,
-                untranslated_stats.changes_applied,
-                hardcoded_stats.changes_applied + untranslated_stats.changes_applied,
+                applied_hardcoded_count,
+                applied_untranslated_count,
+                stats.changes_applied,
             )
         } else {
             let mut files: HashSet<&str> = HashSet::new();
@@ -104,4 +108,22 @@ pub fn baseline(cmd: BaselineCommand) -> Result<CommandResult> {
         ctx.messages().all_messages.len(),
         false,
     ))
+}
+
+fn unique_hardcoded_lines(issues: &[HardcodedTextIssue]) -> usize {
+    let mut unique = HashSet::new();
+    for issue in issues {
+        unique.insert((issue.context.file_path().to_string(), issue.context.line()));
+    }
+    unique.len()
+}
+
+fn unique_untranslated_lines(issues: &[UntranslatedIssue]) -> usize {
+    let mut unique = HashSet::new();
+    for issue in issues {
+        for usage in &issue.usages {
+            unique.insert((usage.context.file_path().to_string(), usage.context.line()));
+        }
+    }
+    unique.len()
 }

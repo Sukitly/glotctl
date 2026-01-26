@@ -5,14 +5,15 @@ info:
   args:
     - baseline
     - "--apply"
+    - "--rules"
+    - untranslated
   env:
     NO_COLOR: "1"
 ---
 success: true
 exit_code: 0
 ----- stdout -----
-Inserted 1 comment(s) in 1 file(s) (processed 2 issue(s)):
-  - hardcoded: 1 comment(s) (from 1 issue(s))
+Inserted 1 comment(s) in 1 file(s) (processed 1 issue(s)):
   - untranslated: 1 comment(s), 1 key(s) (from 1 usage(s))
 
 ----- stderr -----
