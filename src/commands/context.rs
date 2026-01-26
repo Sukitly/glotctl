@@ -156,13 +156,13 @@ impl CheckContext {
                 }
             }
 
-            self.parsed_files_errors.set(errors);
+            let _ = self.parsed_files_errors.set(errors);
             parsed
         })
     }
 
     pub fn parsed_files_errors(&self) -> &Vec<ParseErrorIssue> {
-        &self.parsed_files_errors.get_or_init(|| Vec::new())
+        self.parsed_files_errors.get_or_init(Vec::new)
     }
 
     pub fn registries(&self) -> &Registries {
@@ -178,7 +178,7 @@ impl CheckContext {
     }
 
     pub fn messages(&self) -> &MessageData {
-        &self.messages.get_or_init(|| {
+        self.messages.get_or_init(|| {
             let message_dir = self.resolved_messages_dir();
             let scan_results = scan_message_files(&message_dir).expect("Failed to scan messages");
 
@@ -188,11 +188,10 @@ impl CheckContext {
                 .expect("Primary locale messages not found")
                 .clone();
 
-            let data = MessageData {
+            MessageData {
                 all_messages: scan_results.messages,
                 primary_messages,
-            };
-            data
+            }
         })
     }
 
@@ -231,12 +230,11 @@ impl CheckContext {
             let (registries, file_imports, file_comments) =
                 collect_registries_and_comments(parsed_files, &available_keys);
 
-            let source_metadata = SourceMetadata {
+            SourceMetadata {
                 registries,
                 file_imports,
                 file_comments,
-            };
-            source_metadata
+            }
         })
     }
 
@@ -261,11 +259,10 @@ impl CheckContext {
                 &available_keys,
             );
 
-            let resolved_data = ResolvedData {
+            ResolvedData {
                 key_usages,
                 hardcoded_issues,
-            };
-            resolved_data
+            }
         })
     }
 
