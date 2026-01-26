@@ -12,7 +12,9 @@ use std::path::Path;
 use unicode_width::UnicodeWidthStr;
 
 use super::json_editor::JsonEditor;
-use crate::core::{MessageContext, SourceContext};
+use crate::core::collect::Directive;
+use crate::core::collect::types::SuppressibleRule;
+use crate::core::{CommentStyle, MessageContext, SourceContext};
 
 /// A low-level file operation.
 ///
@@ -76,6 +78,31 @@ impl Operation {
             .get(target_line_idx)
             .map(|s| s.chars().take_while(|c| c.is_whitespace()).collect())
             .unwrap_or_default();
+
+        // Merge with existing glot directive if present
+        if let Some(new_directive) = parse_comment_directive(comment)
+            && let Some(merge_idx) = find_mergeable_comment_line(&lines, target_line_idx)
+            && let Some(existing_directive) = parse_comment_directive(&lines[merge_idx])
+            && let Some(merged_comment) = merge_directives(
+                &existing_directive,
+                &new_directive,
+                detect_comment_style(&lines[merge_idx]).unwrap_or(context.comment_style),
+            )
+        {
+            let merge_indentation: String = lines[merge_idx]
+                .chars()
+                .take_while(|c| c.is_whitespace())
+                .collect();
+            lines[merge_idx] = format!("{}{}", merge_indentation, merged_comment);
+
+            let mut new_content = lines.join(newline);
+            if had_trailing_newline {
+                new_content.push_str(newline);
+            }
+
+            fs::write(file_path, new_content)?;
+            return Ok(());
+        }
 
         // Insert comment above the target line
         let comment_line = format!("{}{}", indentation, comment);
@@ -174,10 +201,131 @@ impl Operation {
     }
 }
 
+fn parse_comment_directive(comment: &str) -> Option<Directive> {
+    let text = strip_comment_markers(comment)?;
+    Directive::parse(text)
+}
+
+fn strip_comment_markers(comment: &str) -> Option<&str> {
+    let trimmed = comment.trim();
+    if let Some(rest) = trimmed.strip_prefix("//") {
+        return Some(rest.trim());
+    }
+    if trimmed.starts_with("{/*") && trimmed.ends_with("*/}") {
+        let inner = &trimmed[3..trimmed.len().saturating_sub(3)];
+        return Some(inner.trim());
+    }
+    None
+}
+
+fn detect_comment_style(line: &str) -> Option<CommentStyle> {
+    let trimmed = line.trim_start();
+    if trimmed.starts_with("//") {
+        return Some(CommentStyle::Js);
+    }
+    if trimmed.starts_with("{/*") {
+        return Some(CommentStyle::Jsx);
+    }
+    None
+}
+
+fn find_mergeable_comment_line(lines: &[String], target_line_idx: usize) -> Option<usize> {
+    if target_line_idx < lines.len() && looks_like_glot_comment(&lines[target_line_idx]) {
+        return Some(target_line_idx);
+    }
+    if target_line_idx > 0 && looks_like_glot_comment(&lines[target_line_idx - 1]) {
+        return Some(target_line_idx - 1);
+    }
+    None
+}
+
+fn looks_like_glot_comment(line: &str) -> bool {
+    if let Some(text) = strip_comment_markers(line) {
+        return text.trim_start().starts_with("glot-");
+    }
+    false
+}
+
+fn merge_directives(
+    existing: &Directive,
+    new: &Directive,
+    comment_style: CommentStyle,
+) -> Option<String> {
+    match (existing, new) {
+        (Directive::DisableNextLine { rules: a }, Directive::DisableNextLine { rules: b }) => {
+            let mut merged = a.clone();
+            merged.extend(b.iter().copied());
+            Some(format_disable_next_line(&merged, comment_style))
+        }
+        (Directive::MessageKeys(a), Directive::MessageKeys(b)) => {
+            let merged = merge_message_key_patterns(a, b);
+            Some(format_message_keys(&merged, comment_style))
+        }
+        _ => None,
+    }
+}
+
+fn merge_message_key_patterns(
+    existing: &crate::core::collect::types::KeyDeclaration,
+    new: &crate::core::collect::types::KeyDeclaration,
+) -> Vec<String> {
+    let mut merged: Vec<String> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+
+    for pattern in existing
+        .absolute_patterns
+        .iter()
+        .chain(existing.relative_patterns.iter())
+    {
+        if seen.insert(pattern.clone()) {
+            merged.push(pattern.clone());
+        }
+    }
+
+    for pattern in new
+        .absolute_patterns
+        .iter()
+        .chain(new.relative_patterns.iter())
+    {
+        if seen.insert(pattern.clone()) {
+            merged.push(pattern.clone());
+        }
+    }
+
+    merged
+}
+
+fn format_disable_next_line(
+    rules: &std::collections::HashSet<SuppressibleRule>,
+    style: CommentStyle,
+) -> String {
+    let suffix = SuppressibleRule::format_rules(rules);
+    let directive = if suffix.is_empty() {
+        "glot-disable-next-line".to_string()
+    } else {
+        format!("glot-disable-next-line {}", suffix)
+    };
+    match style {
+        CommentStyle::Js => format!("// {}", directive),
+        CommentStyle::Jsx => format!("{{/* {} */}}", directive),
+    }
+}
+
+fn format_message_keys(patterns: &[String], style: CommentStyle) -> String {
+    let quoted: Vec<String> = patterns.iter().map(|p| format!("\"{}\"", p)).collect();
+    let directive = format!("glot-message-keys {}", quoted.join(", "));
+    match style {
+        CommentStyle::Js => format!("// {}", directive),
+        CommentStyle::Jsx => format!("{{/* {} */}}", directive),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::core::{CommentStyle, MessageLocation, SourceLocation};
+    use std::fs;
+    use tempfile::tempdir;
 
     #[test]
     fn test_operation_insert_comment() {
@@ -210,5 +358,95 @@ mod tests {
             }
             _ => panic!("Expected DeleteJsonKey"),
         }
+    }
+
+    #[test]
+    fn test_insert_comment_merges_disable_existing() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("app.tsx");
+        let content = "// glot-disable-next-line hardcoded\nconst x = \"Hello\";\n";
+        fs::write(&file_path, content).unwrap();
+
+        let loc = SourceLocation::new(file_path.to_string_lossy(), 2, 1);
+        let ctx = SourceContext::new(loc, "const x = \"Hello\";", CommentStyle::Js);
+        let op = Operation::InsertComment {
+            context: ctx,
+            comment: "// glot-disable-next-line untranslated".to_string(),
+        };
+
+        op.execute().unwrap();
+
+        let updated = fs::read_to_string(&file_path).unwrap();
+        let expected = "// glot-disable-next-line hardcoded untranslated\nconst x = \"Hello\";\n";
+        assert_eq!(updated, expected);
+    }
+
+    #[test]
+    fn test_insert_comment_merges_message_keys_existing() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("app.tsx");
+        let content = "// glot-message-keys \"a\"\nconst x = t(key);\n";
+        fs::write(&file_path, content).unwrap();
+
+        let loc = SourceLocation::new(file_path.to_string_lossy(), 2, 1);
+        let ctx = SourceContext::new(loc, "const x = t(key);", CommentStyle::Js);
+        let op = Operation::InsertComment {
+            context: ctx,
+            comment: "// glot-message-keys \"b\"".to_string(),
+        };
+
+        op.execute().unwrap();
+
+        let updated = fs::read_to_string(&file_path).unwrap();
+        let expected = "// glot-message-keys \"a\", \"b\"\nconst x = t(key);\n";
+        assert_eq!(updated, expected);
+    }
+
+    #[test]
+    fn test_insert_comment_merges_multiple_inserts_same_line() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("app.tsx");
+        let content = "const x = \"Hello\";\n";
+        fs::write(&file_path, content).unwrap();
+
+        let loc = SourceLocation::new(file_path.to_string_lossy(), 1, 1);
+        let ctx = SourceContext::new(loc, "const x = \"Hello\";", CommentStyle::Js);
+
+        let op1 = Operation::InsertComment {
+            context: ctx.clone(),
+            comment: "// glot-disable-next-line hardcoded".to_string(),
+        };
+        op1.execute().unwrap();
+
+        let op2 = Operation::InsertComment {
+            context: ctx,
+            comment: "// glot-disable-next-line untranslated".to_string(),
+        };
+        op2.execute().unwrap();
+
+        let updated = fs::read_to_string(&file_path).unwrap();
+        let expected = "// glot-disable-next-line hardcoded untranslated\nconst x = \"Hello\";\n";
+        assert_eq!(updated, expected);
+    }
+
+    #[test]
+    fn test_insert_comment_merges_message_keys_jsx() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("app.tsx");
+        let content = "{/* glot-message-keys \"a\" */}\nconst x = t(key);\n";
+        fs::write(&file_path, content).unwrap();
+
+        let loc = SourceLocation::new(file_path.to_string_lossy(), 2, 1);
+        let ctx = SourceContext::new(loc, "const x = t(key);", CommentStyle::Jsx);
+        let op = Operation::InsertComment {
+            context: ctx,
+            comment: "{/* glot-message-keys \"b\" */}".to_string(),
+        };
+
+        op.execute().unwrap();
+
+        let updated = fs::read_to_string(&file_path).unwrap();
+        let expected = "{/* glot-message-keys \"a\", \"b\" */}\nconst x = t(key);\n";
+        assert_eq!(updated, expected);
     }
 }

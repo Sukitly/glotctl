@@ -1,4 +1,4 @@
 pub mod collector;
 mod declarations;
-mod directive;
+pub mod directive;
 mod suppressions;

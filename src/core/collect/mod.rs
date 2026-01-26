@@ -9,5 +9,6 @@ pub mod registry;
 pub mod types;
 
 pub use comments::collector::CommentCollector;
+pub use comments::directive::Directive;
 pub use registry::RegistryCollector;
 pub use types::*;
