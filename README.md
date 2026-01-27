@@ -9,7 +9,7 @@ A fast CLI for checking internationalization (i18n) issues in Next.js projects u
 - 🔍 **Hardcoded Text Detection** - Find untranslated text in JSX/TSX
 - 🌐 **Untranslated Detection** - Detect values identical to primary locale
 - 🔑 **Missing Key Detection** - Identify keys used in code but missing from locale files
-- 🧹 **Orphan Key Detection** - Find unused keys in locale files
+- 🧹 **Orphan Key Detection** - Find keys in replica locales not in primary locale
 - 🤖 **AI Integration** - MCP server for AI coding agents
 
 ## Installation
@@ -82,23 +82,30 @@ error: common.submit  missing-key
 
 ### Orphan Keys
 
-Keys defined in locale files but never used in code:
+Keys in replica locales that don't exist in the primary locale:
 
 ```jsonc
-// messages/en.json
+// messages/en.json (primary)
 {
   "common": {
-    "submit": "Submit",
-    "oldButton": "Old Text" // Never used
+    "submit": "Submit"
+  }
+}
+
+// messages/es.json (replica)
+{
+  "common": {
+    "submit": "Enviar",
+    "legacyText": "Texto antiguo" // Not in primary locale
   }
 }
 ```
 
 ```
-warning: common.oldButton  orphan-key
-  --> ./messages/en.json
+warning: common.legacyText  orphan-key
+  --> ./messages/es.json
   |
-  | Key exists in locale file but is not used in code
+  | Key exists in non-primary locale but not in primary locale (en)
 ```
 
 ### Untranslated Values

@@ -1,0 +1,275 @@
+---
+title: Unused Keys
+description: Understanding unused key detection
+---
+
+Glot detects translation keys defined in the primary locale that are never referenced in your codebase.
+
+## Detection Rule
+
+A key is flagged as unused if it:
+
+1. Exists in the **primary locale** file (e.g., `messages/en.json`)
+2. Is **not referenced** in any TSX/JSX file in your codebase
+3. Is **not matched** by any `glot-message-keys` annotation
+
+This check helps identify dead translation keys that can be safely removed.
+
+## What Gets Detected
+
+### Keys Not Used Anywhere
+
+Keys that have no corresponding `t()` call in the codebase:
+
+```json messages/en.json
+{
+  "common": {
+    "submit": "Submit",
+    "oldFeature": "Old Feature",  // Never used
+    "deprecatedText": "Deprecated"  // Never used
+  }
+}
+```
+
+```tsx
+// Your codebase only uses "submit"
+function Button() {
+  const t = useTranslations('common');
+  return <button>{t('submit')}</button>;
+}
+```
+
+### Leftover Keys from Refactoring
+
+Keys that were used but removed during code changes:
+
+```json messages/en.json
+{
+  "home": {
+    "welcome": "Welcome",
+    "oldLayout": "Old Layout"  // Component was removed
+  }
+}
+```
+
+## Output Format
+
+```
+warning: common.oldFeature  unused-key
+  --> ./messages/en.json
+  |
+  | Key exists in primary locale but is not used in code
+  |
+```
+
+## Severity
+
+**Warning** - Unused keys don't cause runtime errors, but they:
+- Increase bundle size (unused translations are shipped to users)
+- Make maintenance harder (more keys to manage)
+- Can confuse developers about which keys are actually used
+
+## How to Fix
+
+### Option 1: Remove with `glot clean` (Recommended)
+
+Preview what will be removed:
+
+```bash
+npx glot clean
+```
+
+Remove unused keys:
+
+```bash
+npx glot clean --apply
+```
+
+The `clean` command:
+- Removes unused keys from the primary locale
+- Automatically removes them from all replica locales too
+- Creates a backup before making changes
+
+### Option 2: Start Using the Key
+
+If the key should be used, add it to your code:
+
+```tsx
+<button>{t('oldFeature')}</button>
+```
+
+### Option 3: Keep Intentionally
+
+If you're keeping keys for future use:
+- Accept the warnings (they don't fail builds)
+- Document why you're keeping them (add comments)
+- Consider using feature flags to conditionally use them
+
+## Important Limitations
+
+### Dynamic Keys
+
+If your code uses dynamic translation keys, glot cannot determine if a key is truly unused:
+
+```tsx
+// Dynamic key - glot can't analyze this
+const status = getStatus();
+return <span>{t(`status.${status}`)}</span>;
+```
+
+In this case, `glot clean` will **refuse to run** to prevent accidental deletion of keys that are actually used dynamically.
+
+**Solution**: Use `glot-message-keys` annotations to declare dynamic keys:
+
+```tsx
+// glot-message-keys "status.active", "status.inactive", "status.pending"
+const status = getStatus();
+return <span>{t(`status.${status}`)}</span>;
+```
+
+Or use glob patterns:
+
+```tsx
+// glot-message-keys "status.*"
+const status = getStatus();
+return <span>{t(`status.${status}`)}</span>;
+```
+
+Then `glot clean` will know these keys are used and won't remove them.
+
+### Conditional Usage
+
+Keys used in conditional code might appear unused if that code path wasn't analyzed:
+
+```tsx
+// This key is used, but only under specific conditions
+if (experimental_feature_enabled) {
+  return <div>{t('experimental.feature')}</div>;
+}
+```
+
+Glot analyzes all code paths, so this will be detected correctly. However, if the key is in a separate file that's not part of your configured `sourceRoot`, it won't be detected.
+
+## Configuration
+
+### Source Root
+
+Make sure your `sourceRoot` includes all files that might use translations:
+
+```json .glotrc.json
+{
+  "sourceRoot": "./src",
+  "messagesRoot": "./messages",
+  "primaryLocale": "en"
+}
+```
+
+### Exclude Patterns
+
+You can exclude specific directories from scanning:
+
+```json .glotrc.json
+{
+  "sourceRoot": "./src",
+  "exclude": ["**/node_modules/**", "**/dist/**"]
+}
+```
+
+## Related Checks
+
+### Unused vs Orphan
+
+Don't confuse these two checks:
+
+| Check     | What it finds                                          | Severity |
+| --------- | ------------------------------------------------------ | -------- |
+| `unused`  | Keys in **primary locale** not used in code            | Warning  |
+| `orphan`  | Keys in **replica locales** not in primary locale      | Warning  |
+
+**Example:**
+
+```json messages/en.json (primary)
+{
+  "common": {
+    "used": "Used",
+    "unused": "Unused"  // unused check
+  }
+}
+```
+
+```json messages/zh.json (replica)
+{
+  "common": {
+    "used": "已使用",
+    "unused": "未使用",
+    "extra": "额外"  // orphan check
+  }
+}
+```
+
+- `common.unused` is flagged by `unused` (in primary but not used in code)
+- `common.extra` is flagged by `orphan` (in replica but not in primary)
+
+## Examples
+
+<Accordion title="Before and After Cleanup">
+
+**Before cleanup:**
+
+```json messages/en.json
+{
+  "home": {
+    "title": "Home",
+    "welcome": "Welcome",
+    "oldFeature": "Old Feature",
+    "deprecatedButton": "Deprecated Button",
+    "legacyText": "Legacy Text"
+  }
+}
+```
+
+**Code only uses:**
+
+```tsx
+function Home() {
+  const t = useTranslations('home');
+  return (
+    <div>
+      <h1>{t('title')}</h1>
+      <p>{t('welcome')}</p>
+    </div>
+  );
+}
+```
+
+**After running `glot clean --apply`:**
+
+```json messages/en.json
+{
+  "home": {
+    "title": "Home",
+    "welcome": "Welcome"
+  }
+}
+```
+
+All unused keys removed, keeping only what's actually used.
+
+</Accordion>
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Check Command" icon="terminal" href="/commands/check">
+    Run unused key detection
+  </Card>
+  <Card title="Clean Command" icon="broom" href="/commands/clean">
+    Remove unused keys automatically
+  </Card>
+  <Card title="Orphan Keys" icon="file-code" href="/detection/orphan-keys">
+    Keys in replica locales not in primary
+  </Card>
+  <Card title="Directives" icon="code" href="/directives">
+    Declare dynamic keys with annotations
+  </Card>
+</CardGroup>
