@@ -14,7 +14,7 @@ exit_code: 0
      |
    4 |     return <div>{t("greeting")}</div>;
      |                  ^
-  +     {/* glot-disable-next-line untranslated */}
+  +     // glot-disable-next-line untranslated
 
 Would insert 1 comment(s) in 1 file(s):
   - untranslated: 1 comment(s), 1 key(s)

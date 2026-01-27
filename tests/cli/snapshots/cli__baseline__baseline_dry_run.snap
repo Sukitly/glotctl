@@ -14,7 +14,7 @@ exit_code: 0
      |
    2 |     return <div>Hello World</div>;
      |                 ^
-  +     {/* glot-disable-next-line hardcoded */}
+  +     // glot-disable-next-line hardcoded
 
 Would insert 1 comment(s) in 1 file(s):
   - hardcoded: 1 comment(s)
