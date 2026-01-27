@@ -1,0 +1,27 @@
+---
+source: tests/cli/check.rs
+info:
+  program: glot
+  args:
+    - check
+    - replica-lag
+    - orphan
+  env:
+    NO_COLOR: "1"
+---
+success: false
+exit_code: 1
+----- stdout -----
+error: "Common.b"  replica-lag
+  --> ./messages/en.json:1:1
+  = note: ("B") missing in: zh
+  = used: (no usages found)
+
+warning: "Common.c"  orphan-key
+  --> ./messages/ja.json:1:1
+  = note: in ja ("C")
+
+
+✘ 2 problems (1 error, 1 warning)
+
+----- stderr -----

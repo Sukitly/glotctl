@@ -1,0 +1,28 @@
+---
+source: tests/cli/check.rs
+info:
+  program: glot
+  args:
+    - check
+    - "--help"
+  env:
+    NO_COLOR: "1"
+---
+success: true
+exit_code: 0
+----- stdout -----
+Check for i18n issues (hardcoded text, missing keys, orphan keys, untranslated values)
+
+Usage: glot check [OPTIONS] [CHECKS]...
+
+Arguments:
+  [CHECKS]...  [possible values: hardcoded, missing, unused, orphan, replica-lag, untranslated, type-mismatch, unresolved]
+
+Options:
+      --primary-locale <PRIMARY_LOCALE>  Primary locale (overrides config file)
+      --source-root <SOURCE_ROOT>        Source code root directory (overrides config file)
+      --messages-root <MESSAGES_ROOT>    Messages directory path (overrides config file)
+  -v, --verbose                          Enable verbose output
+  -h, --help                             Print help
+
+----- stderr -----

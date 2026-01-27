@@ -1,0 +1,25 @@
+---
+source: tests/cli/check.rs
+info:
+  program: glot
+  args:
+    - check
+    - missing
+    - "--messages-root"
+    - custom-messages
+  env:
+    NO_COLOR: "1"
+---
+success: false
+exit_code: 1
+----- stdout -----
+error: "Common.submit"  missing-key
+  --> ./src/app.tsx:4:21
+  |
+4 |     return <button>{t("submit")}</button>;
+  |                     ^
+
+
+✘ 1 problems (1 error, 0 warnings)
+
+----- stderr -----

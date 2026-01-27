@@ -4,14 +4,13 @@ info:
   program: glot
   args:
     - check
-    - "--path"
-    - subdir
-    - hardcoded
+    - "--verbose"
   env:
     NO_COLOR: "1"
 ---
 success: true
 exit_code: 0
 ----- stdout -----
+✓ Checked 1 source file, 1 locale file - no issues found
 
 ----- stderr -----

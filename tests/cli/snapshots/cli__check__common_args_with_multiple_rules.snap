@@ -1,0 +1,29 @@
+---
+source: tests/cli/check.rs
+info:
+  program: glot
+  args:
+    - check
+    - hardcoded
+    - missing
+    - "--verbose"
+    - "--primary-locale"
+    - en
+    - "--source-root"
+    - custom-src
+    - "--messages-root"
+    - i18n
+  env:
+    NO_COLOR: "1"
+---
+success: false
+exit_code: 2
+----- stdout -----
+
+----- stderr -----
+warning: Include path does not exist: custom-src/src/app/[locale]
+warning: Include path does not exist: custom-src/src/components
+warning: Include path does not exist: custom-src/app/[locale]
+warning: Include path does not exist: custom-src/components
+Error: Messages directory 'custom-src/i18n' does not exist.
+Hint: Check your .glotrc.json 'messagesDir' setting.

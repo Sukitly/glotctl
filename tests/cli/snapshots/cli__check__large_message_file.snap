@@ -1,0 +1,1013 @@
+---
+source: tests/cli/check.rs
+info:
+  program: glot
+  args:
+    - check
+    - unused
+  env:
+    NO_COLOR: "1"
+---
+success: true
+exit_code: 0
+----- stdout -----
+warning: "Common.key1"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 1")
+
+warning: "Common.key10"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 10")
+
+warning: "Common.key100"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 100")
+
+warning: "Common.key101"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 101")
+
+warning: "Common.key102"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 102")
+
+warning: "Common.key103"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 103")
+
+warning: "Common.key104"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 104")
+
+warning: "Common.key105"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 105")
+
+warning: "Common.key106"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 106")
+
+warning: "Common.key107"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 107")
+
+warning: "Common.key108"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 108")
+
+warning: "Common.key109"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 109")
+
+warning: "Common.key11"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 11")
+
+warning: "Common.key110"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 110")
+
+warning: "Common.key111"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 111")
+
+warning: "Common.key112"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 112")
+
+warning: "Common.key113"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 113")
+
+warning: "Common.key114"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 114")
+
+warning: "Common.key115"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 115")
+
+warning: "Common.key116"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 116")
+
+warning: "Common.key117"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 117")
+
+warning: "Common.key118"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 118")
+
+warning: "Common.key119"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 119")
+
+warning: "Common.key12"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 12")
+
+warning: "Common.key120"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 120")
+
+warning: "Common.key121"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 121")
+
+warning: "Common.key122"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 122")
+
+warning: "Common.key123"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 123")
+
+warning: "Common.key124"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 124")
+
+warning: "Common.key125"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 125")
+
+warning: "Common.key126"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 126")
+
+warning: "Common.key127"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 127")
+
+warning: "Common.key128"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 128")
+
+warning: "Common.key129"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 129")
+
+warning: "Common.key13"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 13")
+
+warning: "Common.key130"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 130")
+
+warning: "Common.key131"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 131")
+
+warning: "Common.key132"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 132")
+
+warning: "Common.key133"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 133")
+
+warning: "Common.key134"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 134")
+
+warning: "Common.key135"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 135")
+
+warning: "Common.key136"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 136")
+
+warning: "Common.key137"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 137")
+
+warning: "Common.key138"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 138")
+
+warning: "Common.key139"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 139")
+
+warning: "Common.key14"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 14")
+
+warning: "Common.key140"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 140")
+
+warning: "Common.key141"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 141")
+
+warning: "Common.key142"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 142")
+
+warning: "Common.key143"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 143")
+
+warning: "Common.key144"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 144")
+
+warning: "Common.key145"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 145")
+
+warning: "Common.key146"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 146")
+
+warning: "Common.key147"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 147")
+
+warning: "Common.key148"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 148")
+
+warning: "Common.key149"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 149")
+
+warning: "Common.key15"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 15")
+
+warning: "Common.key150"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 150")
+
+warning: "Common.key151"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 151")
+
+warning: "Common.key152"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 152")
+
+warning: "Common.key153"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 153")
+
+warning: "Common.key154"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 154")
+
+warning: "Common.key155"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 155")
+
+warning: "Common.key156"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 156")
+
+warning: "Common.key157"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 157")
+
+warning: "Common.key158"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 158")
+
+warning: "Common.key159"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 159")
+
+warning: "Common.key16"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 16")
+
+warning: "Common.key160"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 160")
+
+warning: "Common.key161"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 161")
+
+warning: "Common.key162"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 162")
+
+warning: "Common.key163"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 163")
+
+warning: "Common.key164"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 164")
+
+warning: "Common.key165"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 165")
+
+warning: "Common.key166"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 166")
+
+warning: "Common.key167"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 167")
+
+warning: "Common.key168"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 168")
+
+warning: "Common.key169"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 169")
+
+warning: "Common.key17"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 17")
+
+warning: "Common.key170"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 170")
+
+warning: "Common.key171"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 171")
+
+warning: "Common.key172"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 172")
+
+warning: "Common.key173"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 173")
+
+warning: "Common.key174"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 174")
+
+warning: "Common.key175"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 175")
+
+warning: "Common.key176"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 176")
+
+warning: "Common.key177"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 177")
+
+warning: "Common.key178"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 178")
+
+warning: "Common.key179"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 179")
+
+warning: "Common.key18"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 18")
+
+warning: "Common.key180"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 180")
+
+warning: "Common.key181"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 181")
+
+warning: "Common.key182"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 182")
+
+warning: "Common.key183"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 183")
+
+warning: "Common.key184"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 184")
+
+warning: "Common.key185"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 185")
+
+warning: "Common.key186"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 186")
+
+warning: "Common.key187"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 187")
+
+warning: "Common.key188"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 188")
+
+warning: "Common.key189"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 189")
+
+warning: "Common.key19"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 19")
+
+warning: "Common.key190"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 190")
+
+warning: "Common.key191"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 191")
+
+warning: "Common.key192"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 192")
+
+warning: "Common.key193"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 193")
+
+warning: "Common.key194"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 194")
+
+warning: "Common.key195"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 195")
+
+warning: "Common.key196"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 196")
+
+warning: "Common.key197"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 197")
+
+warning: "Common.key198"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 198")
+
+warning: "Common.key199"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 199")
+
+warning: "Common.key2"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 2")
+
+warning: "Common.key20"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 20")
+
+warning: "Common.key200"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 200")
+
+warning: "Common.key201"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 201")
+
+warning: "Common.key202"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 202")
+
+warning: "Common.key203"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 203")
+
+warning: "Common.key204"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 204")
+
+warning: "Common.key205"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 205")
+
+warning: "Common.key206"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 206")
+
+warning: "Common.key207"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 207")
+
+warning: "Common.key208"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 208")
+
+warning: "Common.key209"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 209")
+
+warning: "Common.key21"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 21")
+
+warning: "Common.key210"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 210")
+
+warning: "Common.key211"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 211")
+
+warning: "Common.key212"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 212")
+
+warning: "Common.key213"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 213")
+
+warning: "Common.key214"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 214")
+
+warning: "Common.key215"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 215")
+
+warning: "Common.key216"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 216")
+
+warning: "Common.key217"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 217")
+
+warning: "Common.key218"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 218")
+
+warning: "Common.key219"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 219")
+
+warning: "Common.key22"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 22")
+
+warning: "Common.key220"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 220")
+
+warning: "Common.key221"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 221")
+
+warning: "Common.key222"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 222")
+
+warning: "Common.key223"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 223")
+
+warning: "Common.key224"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 224")
+
+warning: "Common.key225"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 225")
+
+warning: "Common.key226"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 226")
+
+warning: "Common.key227"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 227")
+
+warning: "Common.key228"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 228")
+
+warning: "Common.key229"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 229")
+
+warning: "Common.key23"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 23")
+
+warning: "Common.key230"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 230")
+
+warning: "Common.key231"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 231")
+
+warning: "Common.key232"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 232")
+
+warning: "Common.key233"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 233")
+
+warning: "Common.key234"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 234")
+
+warning: "Common.key235"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 235")
+
+warning: "Common.key236"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 236")
+
+warning: "Common.key237"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 237")
+
+warning: "Common.key238"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 238")
+
+warning: "Common.key239"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 239")
+
+warning: "Common.key24"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 24")
+
+warning: "Common.key240"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 240")
+
+warning: "Common.key241"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 241")
+
+warning: "Common.key242"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 242")
+
+warning: "Common.key243"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 243")
+
+warning: "Common.key244"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 244")
+
+warning: "Common.key245"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 245")
+
+warning: "Common.key246"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 246")
+
+warning: "Common.key247"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 247")
+
+warning: "Common.key248"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 248")
+
+warning: "Common.key249"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 249")
+
+warning: "Common.key25"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 25")
+
+warning: "Common.key26"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 26")
+
+warning: "Common.key27"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 27")
+
+warning: "Common.key28"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 28")
+
+warning: "Common.key29"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 29")
+
+warning: "Common.key3"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 3")
+
+warning: "Common.key30"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 30")
+
+warning: "Common.key31"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 31")
+
+warning: "Common.key32"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 32")
+
+warning: "Common.key33"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 33")
+
+warning: "Common.key34"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 34")
+
+warning: "Common.key35"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 35")
+
+warning: "Common.key36"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 36")
+
+warning: "Common.key37"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 37")
+
+warning: "Common.key38"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 38")
+
+warning: "Common.key39"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 39")
+
+warning: "Common.key4"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 4")
+
+warning: "Common.key40"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 40")
+
+warning: "Common.key41"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 41")
+
+warning: "Common.key42"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 42")
+
+warning: "Common.key43"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 43")
+
+warning: "Common.key44"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 44")
+
+warning: "Common.key45"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 45")
+
+warning: "Common.key46"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 46")
+
+warning: "Common.key47"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 47")
+
+warning: "Common.key48"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 48")
+
+warning: "Common.key49"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 49")
+
+warning: "Common.key5"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 5")
+
+warning: "Common.key50"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 50")
+
+warning: "Common.key51"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 51")
+
+warning: "Common.key52"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 52")
+
+warning: "Common.key53"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 53")
+
+warning: "Common.key54"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 54")
+
+warning: "Common.key55"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 55")
+
+warning: "Common.key56"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 56")
+
+warning: "Common.key57"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 57")
+
+warning: "Common.key58"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 58")
+
+warning: "Common.key59"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 59")
+
+warning: "Common.key6"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 6")
+
+warning: "Common.key60"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 60")
+
+warning: "Common.key61"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 61")
+
+warning: "Common.key62"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 62")
+
+warning: "Common.key63"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 63")
+
+warning: "Common.key64"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 64")
+
+warning: "Common.key65"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 65")
+
+warning: "Common.key66"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 66")
+
+warning: "Common.key67"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 67")
+
+warning: "Common.key68"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 68")
+
+warning: "Common.key69"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 69")
+
+warning: "Common.key7"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 7")
+
+warning: "Common.key70"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 70")
+
+warning: "Common.key71"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 71")
+
+warning: "Common.key72"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 72")
+
+warning: "Common.key73"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 73")
+
+warning: "Common.key74"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 74")
+
+warning: "Common.key75"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 75")
+
+warning: "Common.key76"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 76")
+
+warning: "Common.key77"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 77")
+
+warning: "Common.key78"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 78")
+
+warning: "Common.key79"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 79")
+
+warning: "Common.key8"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 8")
+
+warning: "Common.key80"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 80")
+
+warning: "Common.key81"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 81")
+
+warning: "Common.key82"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 82")
+
+warning: "Common.key83"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 83")
+
+warning: "Common.key84"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 84")
+
+warning: "Common.key85"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 85")
+
+warning: "Common.key86"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 86")
+
+warning: "Common.key87"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 87")
+
+warning: "Common.key88"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 88")
+
+warning: "Common.key89"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 89")
+
+warning: "Common.key9"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 9")
+
+warning: "Common.key90"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 90")
+
+warning: "Common.key91"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 91")
+
+warning: "Common.key92"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 92")
+
+warning: "Common.key93"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 93")
+
+warning: "Common.key94"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 94")
+
+warning: "Common.key95"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 95")
+
+warning: "Common.key96"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 96")
+
+warning: "Common.key97"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 97")
+
+warning: "Common.key98"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 98")
+
+warning: "Common.key99"  unused-key
+  --> ./messages/en.json:1:1
+  = note: ("Value 99")
+
+
+✘ 249 problems (0 errors, 249 warnings)
+
+----- stderr -----

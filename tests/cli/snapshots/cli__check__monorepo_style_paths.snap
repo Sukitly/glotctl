@@ -1,0 +1,20 @@
+---
+source: tests/cli/check.rs
+info:
+  program: glot
+  args:
+    - check
+    - "--source-root"
+    - packages/web/src
+    - "--messages-root"
+    - packages/web/messages
+  env:
+    NO_COLOR: "1"
+---
+success: false
+exit_code: 2
+----- stdout -----
+
+----- stderr -----
+Error: Messages directory 'packages/web/src/packages/web/messages' does not exist.
+Hint: Check your .glotrc.json 'messagesDir' setting.
