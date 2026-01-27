@@ -1,0 +1,10 @@
+{
+  "common": {
+    "button": "Submit",
+    "unused": ["Array value instead of string"],
+    "another_unused": "也未使用"
+  },
+  "legacy": {
+    "old": "旧的键"
+  }
+}
