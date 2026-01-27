@@ -50,6 +50,7 @@ pub struct CleanSummary {
 #[derive(Debug)]
 pub struct InitSummary {
     pub created: bool,
+    pub error: Option<String>,
 }
 
 /// Result of running glot commands

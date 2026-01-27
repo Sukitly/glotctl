@@ -19,7 +19,10 @@ mod tests {
         exit_on_errors: bool,
     ) -> CommandResult {
         CommandResult {
-            summary: CommandSummary::Init(InitSummary { created: true }),
+            summary: CommandSummary::Init(InitSummary {
+                created: true,
+                error: None,
+            }),
             error_count,
             exit_on_errors,
             issues: Vec::new(),

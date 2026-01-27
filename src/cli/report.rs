@@ -340,7 +340,8 @@ fn compare_issues(a: &Issue, b: &Issue) -> std::cmp::Ordering {
 pub fn print(result: &CommandResult, verbose: bool) {
     print_command_output(result);
 
-    if result.issues.is_empty() {
+    // Only print success message for commands that actually check files
+    if result.issues.is_empty() && matches!(result.summary, CommandSummary::Check) {
         print_success(result.source_files_checked, result.locale_files_checked);
     }
 
@@ -562,7 +563,9 @@ fn print_clean(summary: &CleanSummary) {
 }
 
 fn print_init(summary: &InitSummary) {
-    if summary.created {
+    if let Some(error) = &summary.error {
+        eprintln!("Error: {}", error);
+    } else if summary.created {
         println!(
             "{} {}",
             SUCCESS_MARK.green(),
