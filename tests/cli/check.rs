@@ -598,6 +598,8 @@ fn test_subcommand_hardcoded() -> Result<()> {
   "#,
     )?;
 
+    test.write_file("messages/en.json", r#"{"Common": {"submit": "Submit"}}"#)?;
+
     assert_cmd_snapshot!(test.check_command().arg("hardcoded"));
 
     Ok(())
@@ -671,6 +673,8 @@ fn test_subcommand_with_path_arg() -> Result<()> {
   }
   "#,
     )?;
+
+    test.write_file("messages/en.json", r#"{"Common": {"submit": "Submit"}}"#)?;
 
     // Without --path, should find nothing (default is "." which has no tsx files at root)
     assert_cmd_snapshot!(test.check_command().arg("hardcoded"));
@@ -1850,7 +1854,7 @@ export default function App() {
     )?;
 
     // Should show usage location for replica-lag
-    assert_cmd_snapshot!(test.check_command().arg("missing"));
+    assert_cmd_snapshot!(test.check_command().arg("replica-lag"));
 
     Ok(())
 }
