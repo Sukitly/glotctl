@@ -1,0 +1,456 @@
+---
+title: Type Mismatch
+description: Understanding type mismatch detection
+---
+
+Glot detects when translation keys have different value types across locales (e.g., string in one locale, array in another), which causes runtime errors in next-intl.
+
+## Detection Rule
+
+A key is flagged as type mismatch if:
+
+1. The key exists in **both primary and replica locales**
+2. The **value type differs** between locales:
+   - String vs Object
+   - String vs Array
+   - Object vs Array
+   - etc.
+
+This check prevents runtime crashes caused by type inconsistencies.
+
+## What Gets Detected
+
+### String vs Array
+
+The most common type mismatch:
+
+```json messages/en.json (primary)
+{
+  "items": ["Apple", "Banana", "Orange"]  // Array
+}
+```
+
+```json messages/zh.json (replica)
+{
+  "items": "苹果, 香蕉, 橙子"  // String - WRONG!
+}
+```
+
+**Runtime error:**
+```
+TypeError: items.map is not a function
+```
+
+### Object vs String
+
+Nested translations vs flat strings:
+
+```json messages/en.json (primary)
+{
+  "user": {
+    "name": "Name",
+    "email": "Email"
+  }
+}
+```
+
+```json messages/es.json (replica)
+{
+  "user": "Usuario"  // String instead of object - WRONG!
+}
+```
+
+**Runtime error:**
+```
+TypeError: Cannot read property 'name' of string
+```
+
+### Array vs Object
+
+Arrays used as dictionaries vs objects:
+
+```json messages/en.json (primary)
+{
+  "statuses": {
+    "active": "Active",
+    "inactive": "Inactive"
+  }
+}
+```
+
+```json messages/fr.json (replica)
+{
+  "statuses": ["Actif", "Inactif"]  // Array instead of object - WRONG!
+}
+```
+
+## Output Format
+
+```
+error: items  type-mismatch
+  --> ./messages/en.json
+  |
+  | Type mismatch: primary locale (en) has array, but zh has string
+  |
+```
+
+The error indicates which locales have incompatible types.
+
+## Severity
+
+**Error** - Type mismatches cause runtime crashes and must be fixed before deployment. They result in:
+- `TypeError` exceptions at runtime
+- Application crashes when accessing translations
+- Broken user experience for affected locales
+
+## Why This Happens
+
+### 1. Manual Translation Errors
+
+Translators might not understand the data structure:
+
+```json
+// Translator sees this in primary locale
+{
+  "colors": ["Red", "Green", "Blue"]
+}
+
+// Translator mistakenly creates a string
+{
+  "colors": "Rouge, Vert, Bleu"
+}
+```
+
+### 2. Copy-Paste Mistakes
+
+Copying from wrong part of the file:
+
+```json messages/en.json
+{
+  "product": {
+    "name": "Product Name",
+    "features": ["Feature 1", "Feature 2"]
+  }
+}
+```
+
+```json messages/de.json
+{
+  "product": {
+    "name": "Produktname",
+    "features": "Funktion 1, Funktion 2"  // Copied as string
+  }
+}
+```
+
+### 3. Incomplete Refactoring
+
+Code changed from string to array but translations not updated:
+
+```tsx
+// Old code
+<div>{t('description')}</div>
+
+// New code (expects array)
+{t('features').map(f => <li>{f}</li>)}
+```
+
+```json
+// Primary locale updated
+{
+  "features": ["Feature 1", "Feature 2"]  // Changed to array
+}
+
+// Replica locales not updated
+{
+  "features": "Fonctionnalité"  // Still a string!
+}
+```
+
+## How to Fix
+
+### Step 1: Identify the Correct Type
+
+Check how the key is used in your code:
+
+```tsx
+// If code uses .map(), it expects an array
+{t('items').map(item => <li>{item}</li>)}
+
+// If code uses dot notation, it expects an object
+<div>{t('user.name')}</div>
+
+// If code just displays it, it expects a string
+<p>{t('description')}</p>
+```
+
+### Step 2: Update All Replica Locales
+
+Ensure all locales use the same type:
+
+**Example: Fix string-to-array**
+
+```json messages/zh.json (before)
+{
+  "items": "苹果, 香蕉, 橙子"
+}
+```
+
+```json messages/zh.json (after)
+{
+  "items": ["苹果", "香蕉", "橙子"]
+}
+```
+
+**Example: Fix string-to-object**
+
+```json messages/es.json (before)
+{
+  "user": "Usuario"
+}
+```
+
+```json messages/es.json (after)
+{
+  "user": {
+    "name": "Nombre",
+    "email": "Correo electrónico"
+  }
+}
+```
+
+### Step 3: Verify
+
+Run glot check again:
+
+```bash
+npx glot check type-mismatch
+```
+
+All type mismatch errors should be resolved.
+
+## Common Patterns
+
+### Plurals (Keep as Strings)
+
+Don't use arrays for plurals in next-intl:
+
+```json
+// WRONG
+{
+  "items": ["1 item", "{count} items"]
+}
+
+// CORRECT - use ICU message format
+{
+  "items": "{count, plural, =1 {1 item} other {# items}}"
+}
+```
+
+All locales should use the same ICU format string.
+
+### Lists (Use Arrays)
+
+Use arrays for fixed lists:
+
+```json messages/en.json
+{
+  "weekdays": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+}
+```
+
+```json messages/es.json
+{
+  "weekdays": ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
+}
+```
+
+All locales must have arrays with the same length.
+
+### Nested Structures (Use Objects)
+
+Use objects for nested namespaces:
+
+```json messages/en.json
+{
+  "form": {
+    "email": "Email",
+    "password": "Password",
+    "submit": "Submit"
+  }
+}
+```
+
+All locales must have the same object structure.
+
+## Prevention
+
+### 1. Documentation
+
+Document the expected type for each key:
+
+```json
+// schema.json
+{
+  "items": "array",
+  "user": "object",
+  "description": "string"
+}
+```
+
+### 2. Validation in CI
+
+Run type-mismatch checks in CI to catch errors early:
+
+```yaml
+- name: Check i18n types
+  run: npx glot check type-mismatch
+```
+
+Type mismatch checks exit with code 1, failing the build.
+
+### 3. Translation Guidelines
+
+Provide translators with:
+- Clear examples of data structures
+- Instructions to preserve JSON structure
+- Tools to validate JSON syntax
+
+### 4. Translation Management Systems
+
+Use TMS tools that:
+- Preserve JSON structure automatically
+- Validate translations before export
+- Provide visual editors for complex structures
+
+## Examples
+
+<Accordion title="Array Type Mismatch">
+
+**Code expecting array:**
+
+```tsx
+function ColorList() {
+  const t = useTranslations('colors');
+  return (
+    <ul>
+      {t('list').map(color => (
+        <li key={color}>{color}</li>
+      ))}
+    </ul>
+  );
+}
+```
+
+**Primary locale (correct):**
+
+```json messages/en.json
+{
+  "colors": {
+    "list": ["Red", "Green", "Blue"]
+  }
+}
+```
+
+**Replica locale (wrong):**
+
+```json messages/fr.json
+{
+  "colors": {
+    "list": "Rouge, Vert, Bleu"  // String instead of array!
+  }
+}
+```
+
+**Runtime error:**
+```
+TypeError: t(...).map is not a function
+```
+
+**Fix:**
+
+```json messages/fr.json
+{
+  "colors": {
+    "list": ["Rouge", "Vert", "Bleu"]
+  }
+}
+```
+
+</Accordion>
+
+<Accordion title="Object Type Mismatch">
+
+**Code expecting object:**
+
+```tsx
+function UserProfile() {
+  const t = useTranslations('profile');
+  return (
+    <div>
+      <label>{t('fields.name')}</label>
+      <label>{t('fields.email')}</label>
+    </div>
+  );
+}
+```
+
+**Primary locale (correct):**
+
+```json messages/en.json
+{
+  "profile": {
+    "fields": {
+      "name": "Name",
+      "email": "Email"
+    }
+  }
+}
+```
+
+**Replica locale (wrong):**
+
+```json messages/de.json
+{
+  "profile": {
+    "fields": "Felder"  // String instead of object!
+  }
+}
+```
+
+**Runtime error:**
+```
+TypeError: Cannot read property 'name' of string
+```
+
+**Fix:**
+
+```json messages/de.json
+{
+  "profile": {
+    "fields": {
+      "name": "Name",
+      "email": "E-Mail"
+    }
+  }
+}
+```
+
+</Accordion>
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Check Command" icon="terminal" href="/commands/check">
+    Run type mismatch detection
+  </Card>
+  <Card title="Configuration" icon="gear" href="/configuration">
+    Configure locales and paths
+  </Card>
+  <Card title="Replica Lag" icon="clock" href="/detection/replica-lag">
+    Missing keys in replica locales
+  </Card>
+  <Card title="Missing Keys" icon="triangle-exclamation" href="/detection/missing-keys">
+    Keys used but not defined
+  </Card>
+</CardGroup>

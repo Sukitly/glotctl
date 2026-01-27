@@ -30,12 +30,16 @@ bunx glot check [CHECK_TYPES...] [OPTIONS]
 
 You can run specific checks or all checks at once:
 
-| Type           | Description                                                          |
-| -------------- | -------------------------------------------------------------------- |
-| `hardcoded`    | Find untranslated text in JSX/TSX files                              |
-| `missing`      | Identify translation keys used in code but missing from locale files |
-| `orphan`       | Find unused translation keys defined in locale files                 |
-| `untranslated` | Find values identical to primary locale that may need translation    |
+| Type            | Description                                                                  |
+| --------------- | ---------------------------------------------------------------------------- |
+| `hardcoded`     | Find untranslated text in JSX/TSX files                                      |
+| `missing`       | Identify translation keys used in code but missing from locale files         |
+| `orphan`        | Find keys in non-primary locales not present in primary locale               |
+| `untranslated`  | Find values identical to primary locale that may need translation            |
+| `unused`        | Find keys in primary locale that are not used in code                        |
+| `replica-lag`   | Find keys in primary locale missing from other locales                       |
+| `type-mismatch` | Find type conflicts between primary and replica locales (string vs array)    |
+| `unresolved`    | Find keys that cannot be statically resolved (variables, template literals)  |
 
 <CodeGroup>
 ```bash npm
@@ -43,14 +47,16 @@ You can run specific checks or all checks at once:
 npx glot check
 
 # Run specific checks
-
 npx glot check hardcoded
 npx glot check missing
 npx glot check orphan
 npx glot check untranslated
+npx glot check unused
+npx glot check replica-lag
+npx glot check type-mismatch
+npx glot check unresolved
 
 # Run multiple specific checks
-
 npx glot check hardcoded missing
 
 ````
@@ -64,6 +70,10 @@ pnpm exec glot check hardcoded
 pnpm exec glot check missing
 pnpm exec glot check orphan
 pnpm exec glot check untranslated
+pnpm exec glot check unused
+pnpm exec glot check replica-lag
+pnpm exec glot check type-mismatch
+pnpm exec glot check unresolved
 
 # Run multiple specific checks
 pnpm exec glot check hardcoded missing
@@ -78,6 +88,10 @@ yarn glot check hardcoded
 yarn glot check missing
 yarn glot check orphan
 yarn glot check untranslated
+yarn glot check unused
+yarn glot check replica-lag
+yarn glot check type-mismatch
+yarn glot check unresolved
 
 # Run multiple specific checks
 yarn glot check hardcoded missing
@@ -92,6 +106,10 @@ bunx glot check hardcoded
 bunx glot check missing
 bunx glot check orphan
 bunx glot check untranslated
+bunx glot check unused
+bunx glot check replica-lag
+bunx glot check type-mismatch
+bunx glot check unresolved
 
 # Run multiple specific checks
 bunx glot check hardcoded missing
@@ -101,8 +119,16 @@ bunx glot check hardcoded missing
 
 ## Options
 
-<ParamField path="--path" type="string" default=".">
-  Directory to check. Defaults to current directory.
+<ParamField path="--source-root" type="string">
+  Override the source code root directory. Defaults to the value from configuration file.
+</ParamField>
+
+<ParamField path="--messages-root" type="string">
+  Override the messages directory path. Defaults to the value from configuration file.
+</ParamField>
+
+<ParamField path="--primary-locale" type="string">
+  Override the primary locale. Defaults to the value from configuration file.
 </ParamField>
 
 <ParamField path="-v, --verbose" type="boolean" default="false">
@@ -134,25 +160,25 @@ bunx glot check
 
 </CodeGroup>
 
-### Check Specific Directory
+### Override Source Root
 
-Check only the `src` directory:
+Check a specific source directory:
 
 <CodeGroup>
 ```bash npm
-npx glot check --path ./src
+npx glot check --source-root ./src
 ```
 
 ```bash pnpm
-pnpm exec glot check --path ./src
+pnpm exec glot check --source-root ./src
 ```
 
 ```bash yarn
-yarn glot check --path ./src
+yarn glot check --source-root ./src
 ```
 
 ```bash bun
-bunx glot check --path ./src
+bunx glot check --source-root ./src
 ```
 
 </CodeGroup>
@@ -246,10 +272,10 @@ warning: common.oldKey  orphan-key
 
 ### Issue Severity
 
-| Severity | Exit Code | Description                                    |
-| -------- | --------- | ---------------------------------------------- |
-| Error    | 1         | Hardcoded text, missing keys                   |
-| Warning  | 0         | Orphan keys, untranslated values               |
+| Severity | Exit Code | Description                                                       |
+| -------- | --------- | ----------------------------------------------------------------- |
+| Error    | 1         | Hardcoded text, missing keys, type mismatches                     |
+| Warning  | 0         | Orphan keys, untranslated values, unused keys, replica-lag, unresolved keys |
 
 ## Understanding Issues
 
@@ -539,34 +565,9 @@ For more details on dynamic keys and namespace handling, see [Missing Keys Detec
 
 ### Orphan Keys (`orphan-key`)
 
-Orphan keys are translations defined in your locale files but never used in your code.
+Orphan keys are translations that exist in non-primary locale files but are not present in the primary locale. This typically indicates a synchronization issue between locales.
 
-<Accordion title="Example: Unused translation">
-
-**Locale file with unused key:**
-
-```json messages/en.json
-{
-  "common": {
-    "submit": "Submit",
-    "oldButtonText": "Click Me"  // Never used in code
-  }
-}
-```
-
-**Glot output:**
-
-```
-warning: common.oldButtonText  orphan-key
-  --> ./messages/en.json
-  |
-  | Key exists in locale file but is not used in code
-  |
-```
-
-</Accordion>
-
-<Accordion title="Example: Replica orphan (sync issue)">
+<Accordion title="Example: Key in replica locale not in primary">
 
 **Primary locale (en.json):**
 
@@ -603,39 +604,33 @@ warning: common.legacyText  orphan-key
 
 <Accordion title="How to fix orphan keys">
 
-**Option 1: Remove with `glot clean` (Recommended)**
+**Option 1: Add to primary locale (Recommended)**
 
-Preview orphan keys:
+If the key should exist, add it to the primary locale:
 
-```bash
-npx glot clean
+```json messages/en.json
+{
+  "common": {
+    "submit": "Submit",
+    "legacyText": "Legacy Text"
+  }
+}
 ```
 
-Remove them:
+**Option 2: Remove from non-primary locale**
+
+If the key is truly unused, remove it from the replica locale:
 
 ```bash
+# Use glot clean to remove orphan keys
 npx glot clean --apply
 ```
 
-**Option 2: Keep intentionally**
+**Option 3: Accept the warning**
 
-If you're keeping keys for future use, you can:
-- Accept the warnings (they don't fail builds)
-- The `orphan` check is just informational
-
-**Option 3: Reference the key somewhere**
-
-If the key should be used, add it to your code:
-
-```tsx
-<button>{t('oldButtonText')}</button>
-```
+Orphan keys don't cause build failures, so you can accept them temporarily while working on synchronization.
 
 </Accordion>
-
-<Warning>
-If your code uses dynamic translation keys, glot cannot determine if a key is truly unused. In this case, `clean` will refuse to run to prevent accidental deletion. Use `glot-message-keys` to declare dynamic keys explicitly.
-</Warning>
 
 <Info>
 For more details on orphan key types and cleanup, see [Orphan Keys Detection](/detection/orphan-keys).
@@ -714,6 +709,268 @@ Some values legitimately remain the same across locales (brand names, technical 
 For more details on untranslated detection, see [Untranslated Values Detection](/detection/untranslated).
 </Info>
 
+### Unused Keys (`unused-key`)
+
+Unused keys are translations defined in your primary locale file but never referenced in your code.
+
+<Accordion title="Example: Unused translation in primary locale">
+
+**Primary locale with unused key:**
+
+```json messages/en.json
+{
+  "common": {
+    "submit": "Submit",
+    "oldButtonText": "Click Me"  // Never used in code
+  }
+}
+```
+
+**Glot output:**
+
+```
+warning: common.oldButtonText  unused-key
+  --> ./messages/en.json
+  |
+  | Key exists in primary locale but is not used in code
+  |
+```
+
+</Accordion>
+
+<Accordion title="How to fix unused keys">
+
+**Option 1: Remove with `glot clean` (Recommended)**
+
+Preview unused keys:
+
+```bash
+npx glot clean
+```
+
+Remove them:
+
+```bash
+npx glot clean --apply
+```
+
+**Option 2: Use the key in code**
+
+If the key should be used, add it to your code:
+
+```tsx
+<button>{t('oldButtonText')}</button>
+```
+
+**Option 3: Keep intentionally**
+
+If you're keeping keys for future use, you can accept the warnings (they don't fail builds).
+
+</Accordion>
+
+<Warning>
+If your code uses dynamic translation keys, glot cannot determine if a key is truly unused. In this case, `clean` will refuse to run to prevent accidental deletion. Use `glot-message-keys` to declare dynamic keys explicitly.
+</Warning>
+
+<Info>
+For more details on unused key detection, see [Unused Keys Detection](/detection/unused-keys).
+</Info>
+
+### Replica Lag (`replica-lag`)
+
+Replica lag occurs when keys exist in the primary locale but are missing from other locales, indicating incomplete translations.
+
+<Accordion title="Example: Missing translations in replica locales">
+
+**Primary locale (en.json):**
+
+```json messages/en.json
+{
+  "common": {
+    "submit": "Submit",
+    "newFeature": "New Feature"
+  }
+}
+```
+
+**Non-primary locale missing keys:**
+
+```json messages/zh.json
+{
+  "common": {
+    "submit": "提交"
+    // "newFeature" is missing!
+  }
+}
+```
+
+**Glot output:**
+
+```
+warning: common.newFeature  replica-lag
+  --> ./messages/en.json
+  |
+  | Key exists in primary locale (en) but is missing from: zh
+  |
+```
+
+</Accordion>
+
+<Accordion title="How to fix replica lag">
+
+**Option 1: Add missing translations (Recommended)**
+
+Add the missing keys to all replica locales:
+
+```json messages/zh.json
+{
+  "common": {
+    "submit": "提交",
+    "newFeature": "新功能"
+  }
+}
+```
+
+**Option 2: Accept the warning**
+
+If you're still working on translations, you can accept these warnings temporarily. They don't cause build failures.
+
+</Accordion>
+
+<Info>
+For more details on replica lag detection, see [Replica Lag Detection](/detection/replica-lag).
+</Info>
+
+### Type Mismatch (`type-mismatch`)
+
+Type mismatches occur when the same key has different value types across locales (e.g., string in one locale, array in another). This causes runtime errors.
+
+<Accordion title="Example: String vs array type conflict">
+
+**Primary locale (en.json):**
+
+```json messages/en.json
+{
+  "items": ["Apple", "Banana", "Orange"]  // Array
+}
+```
+
+**Non-primary locale with wrong type:**
+
+```json messages/zh.json
+{
+  "items": "苹果, 香蕉, 橙子"  // String - WRONG!
+}
+```
+
+**Glot output:**
+
+```
+error: items  type-mismatch
+  --> ./messages/en.json
+  |
+  | Type mismatch: primary locale has array, but zh has string
+  |
+```
+
+</Accordion>
+
+<Accordion title="How to fix type mismatches">
+
+**Solution: Ensure consistent types across all locales**
+
+Update the replica locale to use the same type:
+
+```json messages/zh.json
+{
+  "items": ["苹果", "香蕉", "橙子"]  // Now an array like primary
+}
+```
+
+Type mismatches will cause your application to crash at runtime, so these are reported as errors.
+
+</Accordion>
+
+<Info>
+For more details on type mismatch detection, see [Type Mismatch Detection](/detection/type-mismatch).
+</Info>
+
+### Unresolved Keys (`unresolved-key`)
+
+Unresolved keys are translation keys that cannot be statically analyzed because they use variables or template literals with dynamic expressions.
+
+<Accordion title="Example: Dynamic keys that cannot be resolved">
+
+**Problem code:**
+
+```tsx
+// Variable key
+const key = getKeyName();
+<button>{t(key)}</button>
+
+// Template literal with expression
+<button>{t(`status.${statusCode}`)}</button>
+
+// Computed property
+<span>{t(keys[index])}</span>
+```
+
+**Glot output:**
+
+```
+warning: (unresolved)  unresolved-key
+  --> ./src/components/Button.tsx:3:15
+  |
+  | Cannot statically resolve translation key (uses variable or template literal)
+  |
+```
+
+</Accordion>
+
+<Accordion title="How to fix unresolved keys">
+
+**Option 1: Add `glot-message-keys` annotation (Recommended)**
+
+Declare the possible keys explicitly:
+
+```tsx
+// glot-message-keys "items.book", "items.video", "items.audio"
+return <span>{t(`items.${item.type}`)}</span>;
+```
+
+Or use glob patterns:
+
+```tsx
+// glot-message-keys "items.*"
+return <span>{t(`items.${item.type}`)}</span>;
+```
+
+**Option 2: Use `glot fix` to auto-insert annotations**
+
+Run the fix command to automatically analyze and insert declarations:
+
+```bash
+npx glot fix --apply
+```
+
+**Option 3: Refactor to use static keys**
+
+If possible, use static keys with conditionals:
+
+```tsx
+// Before
+<span>{t(`status.${code}`)}</span>
+
+// After
+<span>{code === 'active' ? t('status.active') : t('status.inactive')}</span>
+```
+
+</Accordion>
+
+<Info>
+For more details on unresolved key detection, see [Unresolved Keys Detection](/detection/unresolved-keys).
+</Info>
+
 ## Exit Codes
 
 | Code | Meaning                              |
@@ -756,10 +1013,22 @@ error: "Submit"  hardcoded-text
     Find keys used but not defined
   </Card>
   <Card title="Orphan Keys" icon="broom" href="/detection/orphan-keys">
-    Find unused translation keys
+    Find unused translation keys in non-primary locales
   </Card>
   <Card title="Untranslated Values" icon="language" href="/detection/untranslated">
     Find values that may need translation
+  </Card>
+  <Card title="Unused Keys" icon="trash" href="/detection/unused-keys">
+    Find keys in primary locale not used in code
+  </Card>
+  <Card title="Replica Lag" icon="clock" href="/detection/replica-lag">
+    Find keys missing from replica locales
+  </Card>
+  <Card title="Type Mismatch" icon="exclamation-triangle" href="/detection/type-mismatch">
+    Find type conflicts between locales
+  </Card>
+  <Card title="Unresolved Keys" icon="question" href="/detection/unresolved-keys">
+    Find keys that cannot be statically resolved
   </Card>
   <Card title="Directives" icon="code" href="/directives">
     Suppress specific warnings

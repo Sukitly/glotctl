@@ -1,0 +1,485 @@
+---
+title: Unresolved Keys
+description: Understanding unresolved key detection
+---
+
+Glot detects translation keys that cannot be statically analyzed because they use variables, template literals with expressions, or other dynamic patterns.
+
+## Detection Rule
+
+A translation key is flagged as unresolved if it:
+
+1. Uses a **variable** as the key argument: `t(variableName)`
+2. Uses a **template literal with expressions**: ``t(`prefix.${dynamic}`)``
+3. Uses **computed properties**: `t(keys[index])`
+4. Uses **function calls**: `t(getKey())`
+5. Is **not covered** by a `glot-message-keys` annotation
+
+Unresolved keys can't be checked for existence, potentially causing missing-key errors at runtime.
+
+## What Gets Detected
+
+### Variable Keys
+
+Keys stored in variables:
+
+```tsx
+// Unresolved
+const key = getUserPreference();
+<button>{t(key)}</button>
+
+// Also unresolved
+const statusKey = `status.${code}`;
+<span>{t(statusKey)}</span>
+```
+
+### Template Literals
+
+Template strings with dynamic expressions:
+
+```tsx
+// Unresolved
+<div>{t(`notifications.${type}`)}</div>
+
+// Also unresolved
+<span>{t(`errors.${errorCode}.message`)}</span>
+```
+
+### Computed Properties
+
+Array or object access:
+
+```tsx
+// Unresolved
+const keys = ['home', 'about', 'contact'];
+<a>{t(keys[0])}</a>
+
+// Also unresolved
+const translations = { title: 'page.title' };
+<h1>{t(translations.title)}</h1>
+```
+
+### Function Calls
+
+Keys returned from functions:
+
+```tsx
+// Unresolved
+function getGreeting(time) {
+  return time < 12 ? 'greetings.morning' : 'greetings.evening';
+}
+
+<h1>{t(getGreeting(hour))}</h1>
+```
+
+## Output Format
+
+```
+warning: (unresolved)  unresolved-key
+  --> ./src/components/Status.tsx:12:15
+  |
+  | Cannot statically resolve translation key (uses variable or template literal)
+  |
+```
+
+The warning indicates the location but can't show the actual key since it's computed at runtime.
+
+## Severity
+
+**Warning** - Unresolved keys are informational because:
+- They might be valid at runtime
+- They could lead to missing-key errors
+- Glot cannot verify if the keys exist in locale files
+- They prevent other checks like `unused` and `orphan` from running safely
+
+## Why This Matters
+
+### Static Analysis Limitations
+
+Glot can't verify unresolved keys exist:
+
+```tsx
+// Glot can verify this
+<button>{t('common.submit')}</button>  // ✓ Checked
+
+// Glot cannot verify this
+<button>{t(`common.${action}`)}</button>  // ⚠ Unresolved
+```
+
+If `action` is "submit", the key works. If it's "submet" (typo), you get a runtime error that glot can't detect.
+
+### Prevents Cleanup
+
+Unresolved keys block `glot clean`:
+
+```bash
+$ npx glot clean
+Error: Cannot safely clean unused keys because some keys are resolved dynamically.
+Use glot-message-keys annotations to declare dynamic keys.
+```
+
+This is a safety feature to prevent accidentally deleting keys that are used dynamically.
+
+### Incomplete Coverage
+
+Other checks can't analyze unresolved keys:
+
+```tsx
+// glot can't check if these keys exist
+const status = getStatus();
+<span>{t(`status.${status}`)}</span>
+```
+
+Missing keys only appear at runtime, not during static analysis.
+
+## How to Fix
+
+### Option 1: Add `glot-message-keys` Annotation (Recommended)
+
+Declare the possible keys explicitly:
+
+```tsx
+// Before (unresolved)
+<span>{t(`status.${code}`)}</span>
+
+// After (resolved)
+// glot-message-keys "status.active", "status.inactive", "status.pending"
+<span>{t(`status.${code}`)}</span>
+```
+
+Now glot can verify these keys exist and track their usage.
+
+### Option 2: Use Glob Patterns
+
+For many similar keys, use wildcards:
+
+```tsx
+// Before (unresolved)
+<div>{t(`errors.${errorCode}.message`)}</div>
+
+// After (resolved with pattern)
+// glot-message-keys "errors.*.message"
+<div>{t(`errors.${errorCode}.message`)}</div>
+```
+
+Glot will match any key like `errors.404.message`, `errors.500.message`, etc.
+
+### Option 3: Use `glot fix` Command
+
+Automatically insert annotations:
+
+```bash
+# Preview what will be added
+npx glot fix
+
+# Apply the fixes
+npx glot fix --apply
+```
+
+The `fix` command analyzes your code and template patterns to suggest appropriate annotations.
+
+### Option 4: Refactor to Static Keys
+
+When possible, use static keys with conditionals:
+
+```tsx
+// Before (dynamic)
+<span>{t(`status.${status}`)}</span>
+
+// After (static)
+<span>
+  {status === 'active' && t('status.active')}
+  {status === 'inactive' && t('status.inactive')}
+  {status === 'pending' && t('status.pending')}
+</span>
+
+// Or with object lookup
+const statusKeys = {
+  active: 'status.active',
+  inactive: 'status.inactive',
+  pending: 'status.pending'
+} as const;
+
+<span>{t(statusKeys[status])}</span>
+```
+
+While the object lookup is still dynamic, you can annotate it once:
+
+```tsx
+// glot-message-keys "status.active", "status.inactive", "status.pending"
+const statusKeys = { /* ... */ };
+```
+
+## glot-message-keys Annotation
+
+### Exact Keys
+
+List specific keys:
+
+```tsx
+// glot-message-keys "auth.login", "auth.logout", "auth.register"
+const action = getAction();
+<button>{t(`auth.${action}`)}</button>
+```
+
+### Glob Patterns
+
+Use `*` for wildcards:
+
+```tsx
+// glot-message-keys "pages.*"
+<title>{t(`pages.${pageName}`)}</title>
+
+// glot-message-keys "errors.*.title", "errors.*.message"
+<div>
+  <h2>{t(`errors.${code}.title`)}</h2>
+  <p>{t(`errors.${code}.message`)}</p>
+</div>
+```
+
+### Multiple Annotations
+
+Use multiple comments for complex patterns:
+
+```tsx
+// glot-message-keys "user.*.name", "user.*.email"
+// glot-message-keys "admin.*.name", "admin.*.email"
+function renderProfile(role, userId) {
+  return (
+    <div>
+      <span>{t(`${role}.${userId}.name`)}</span>
+      <span>{t(`${role}.${userId}.email`)}</span>
+    </div>
+  );
+}
+```
+
+### Placement
+
+Place annotations **before** the dynamic key usage:
+
+```tsx
+// ✓ Correct - before the usage
+// glot-message-keys "status.*"
+return <span>{t(`status.${code}`)}</span>;
+
+// ✗ Wrong - after the usage
+return <span>{t(`status.${code}`)}</span>;
+// glot-message-keys "status.*"
+```
+
+## Common Patterns
+
+### Status Messages
+
+```tsx
+// glot-message-keys "status.loading", "status.success", "status.error"
+function StatusMessage({ status }: { status: 'loading' | 'success' | 'error' }) {
+  return <div>{t(`status.${status}`)}</div>;
+}
+```
+
+### Error Messages
+
+```tsx
+// glot-message-keys "errors.*.title", "errors.*.description"
+function ErrorDisplay({ code }: { code: number }) {
+  return (
+    <div>
+      <h1>{t(`errors.${code}.title`)}</h1>
+      <p>{t(`errors.${code}.description`)}</p>
+    </div>
+  );
+}
+```
+
+### Dynamic Pages
+
+```tsx
+// glot-message-keys "pages.home.title", "pages.about.title", "pages.contact.title"
+function PageTitle({ page }: { page: string }) {
+  return <title>{t(`pages.${page}.title`)}</title>;
+}
+```
+
+### Pluralization (Avoid Dynamic Keys)
+
+Don't use dynamic keys for plurals:
+
+```tsx
+// ❌ Bad - uses dynamic keys
+const key = count === 1 ? 'item' : 'items';
+<span>{t(key)}</span>
+
+// ✅ Good - use ICU message format
+<span>{t('items', { count })}</span>
+
+// In locale file:
+// "items": "{count, plural, =1 {1 item} other {# items}}"
+```
+
+## Examples
+
+<Accordion title="Before and After: Status Component">
+
+**Before (unresolved):**
+
+```tsx
+function OrderStatus({ status }: { status: string }) {
+  // ⚠ Unresolved - glot can't verify these keys exist
+  return (
+    <div className={`status-${status}`}>
+      <span>{t(`order.status.${status}`)}</span>
+      <p>{t(`order.description.${status}`)}</p>
+    </div>
+  );
+}
+```
+
+**After (resolved):**
+
+```tsx
+// glot-message-keys "order.status.*", "order.description.*"
+function OrderStatus({ status }: { status: string }) {
+  // ✓ Resolved - glot can verify keys match this pattern
+  return (
+    <div className={`status-${status}`}>
+      <span>{t(`order.status.${status}`)}</span>
+      <p>{t(`order.description.${status}`)}</p>
+    </div>
+  );
+}
+```
+
+Now glot can:
+- Verify `order.status.pending`, `order.status.shipped`, etc. exist
+- Check that keys aren't orphaned
+- Enable `glot clean` to safely remove unused keys
+
+</Accordion>
+
+<Accordion title="Complex Dynamic Pattern">
+
+**Before (unresolved):**
+
+```tsx
+function Notification({ type, priority }: Props) {
+  // Multiple unresolved keys
+  return (
+    <div className={`notification-${priority}`}>
+      <Icon>{t(`icons.${type}`)}</Icon>
+      <h3>{t(`notifications.${type}.${priority}.title`)}</h3>
+      <p>{t(`notifications.${type}.${priority}.message`)}</p>
+      <button>{t(`actions.${type}.dismiss`)}</button>
+    </div>
+  );
+}
+```
+
+**After (resolved):**
+
+```tsx
+// glot-message-keys "icons.info", "icons.warning", "icons.error"
+// glot-message-keys "notifications.*.*.title", "notifications.*.*.message"
+// glot-message-keys "actions.*.dismiss"
+function Notification({ type, priority }: Props) {
+  return (
+    <div className={`notification-${priority}`}>
+      <Icon>{t(`icons.${type}`)}</Icon>
+      <h3>{t(`notifications.${type}.${priority}.title`)}</h3>
+      <p>{t(`notifications.${type}.${priority}.message`)}</p>
+      <button>{t(`actions.${type}.dismiss`)}</button>
+    </div>
+  );
+}
+```
+
+</Accordion>
+
+## Best Practices
+
+### 1. Minimize Dynamic Keys
+
+Prefer static keys when possible:
+
+```tsx
+// Instead of:
+t(`color.${color}`)
+
+// Consider:
+const colorKeys = {
+  red: 'color.red',
+  blue: 'color.blue',
+  green: 'color.green'
+} as const;
+t(colorKeys[color])
+```
+
+### 2. Document Patterns
+
+Explain complex patterns in comments:
+
+```tsx
+// Dynamic routing pattern for blog posts
+// glot-message-keys "blog.*.title", "blog.*.excerpt", "blog.*.content"
+function BlogPost({ slug }: { slug: string }) {
+  return (
+    <article>
+      <h1>{t(`blog.${slug}.title`)}</h1>
+      <p>{t(`blog.${slug}.excerpt`)}</p>
+      <div>{t(`blog.${slug}.content`)}</div>
+    </article>
+  );
+}
+```
+
+### 3. Keep Annotations Close
+
+Place annotations near the code they describe:
+
+```tsx
+// ✓ Good - annotation right before usage
+function Component() {
+  // glot-message-keys "prefix.*"
+  return <div>{t(`prefix.${key}`)}</div>;
+}
+
+// ✗ Bad - annotation far from usage
+// glot-message-keys "prefix.*"
+function Component() {
+  const [state, setState] = useState();
+  useEffect(() => { /* ... */ });
+
+  return <div>{t(`prefix.${key}`)}</div>;  // Easy to miss
+}
+```
+
+### 4. Use TypeScript for Safety
+
+Combine with TypeScript for type-safe keys:
+
+```tsx
+type StatusKey = 'active' | 'inactive' | 'pending';
+
+// glot-message-keys "status.active", "status.inactive", "status.pending"
+function Status({ status }: { status: StatusKey }) {
+  return <span>{t(`status.${status}`)}</span>;
+}
+```
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Check Command" icon="terminal" href="/commands/check">
+    Run unresolved key detection
+  </Card>
+  <Card title="Fix Command" icon="wrench" href="/commands/fix">
+    Auto-insert message key annotations
+  </Card>
+  <Card title="Directives" icon="code" href="/directives">
+    glot-message-keys syntax reference
+  </Card>
+  <Card title="Missing Keys" icon="triangle-exclamation" href="/detection/missing-keys">
+    Keys used but not defined
+  </Card>
+</CardGroup>

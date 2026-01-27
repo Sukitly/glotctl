@@ -1,0 +1,367 @@
+---
+title: Replica Lag
+description: Understanding replica lag detection
+---
+
+Glot detects when translation keys exist in the primary locale but are missing from replica (non-primary) locales, indicating incomplete translations.
+
+## Detection Rule
+
+A key is flagged with replica lag if it:
+
+1. Exists in the **primary locale** (e.g., `messages/en.json`)
+2. Is **missing** from one or more **replica locales** (e.g., `messages/zh.json`, `messages/es.json`)
+
+This check ensures all locales have complete translations and helps track translation progress.
+
+## What Gets Detected
+
+### Missing Translations in Replica Locales
+
+Keys added to the primary locale but not yet translated:
+
+```json messages/en.json (primary)
+{
+  "features": {
+    "search": "Search",
+    "filter": "Filter",
+    "export": "Export"  // New feature
+  }
+}
+```
+
+```json messages/zh.json (replica)
+{
+  "features": {
+    "search": "搜索",
+    "filter": "筛选"
+    // "export" is missing!
+  }
+}
+```
+
+```json messages/es.json (replica)
+{
+  "features": {
+    "search": "Buscar"
+    // "filter" and "export" are missing!
+  }
+}
+```
+
+### Nested Keys Missing
+
+Entire sections missing from replica locales:
+
+```json messages/en.json (primary)
+{
+  "common": {
+    "submit": "Submit",
+    "cancel": "Cancel"
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "stats": "Statistics"
+  }
+}
+```
+
+```json messages/fr.json (replica)
+{
+  "common": {
+    "submit": "Soumettre",
+    "cancel": "Annuler"
+  }
+  // Entire "dashboard" section is missing!
+}
+```
+
+## Output Format
+
+```
+warning: features.export  replica-lag
+  --> ./messages/en.json
+  |
+  | Key exists in primary locale (en) but is missing from: zh, es
+  |
+```
+
+The warning shows which replica locales are missing the key, helping you prioritize translation work.
+
+## Severity
+
+**Warning** - Replica lag doesn't cause build failures, but it results in:
+- Fallback to primary locale at runtime (users see untranslated text)
+- Incomplete user experience for non-primary locales
+- next-intl may show console warnings about missing translations
+
+## How to Fix
+
+### Option 1: Add Missing Translations (Recommended)
+
+Add the missing keys to all replica locales:
+
+```json messages/zh.json
+{
+  "features": {
+    "search": "搜索",
+    "filter": "筛选",
+    "export": "导出"  // Added
+  }
+}
+```
+
+```json messages/es.json
+{
+  "features": {
+    "search": "Buscar",
+    "filter": "Filtrar",  // Added
+    "export": "Exportar"  // Added
+  }
+}
+```
+
+### Option 2: Use Translation Tools
+
+For large projects, consider:
+- **Translation Management Systems** (TMS) like Crowdin, Lokalise, or Phrase
+- **AI Translation** as a starting point (then review/refine)
+- **Translation Services** for professional translations
+
+### Option 3: Accept Temporarily
+
+During active development:
+- Replica lag warnings are informational
+- They don't fail builds
+- You can track translation debt and address it before release
+
+### Option 4: Sync Script
+
+Create a script to copy untranslated keys from primary to replica locales as TODO markers:
+
+```bash
+# Example: Copy missing keys with TODO markers
+npx glot check replica-lag --json | jq -r '.issues[].key' | while read key; do
+  # Add key with "TODO: Translate" to replica locales
+done
+```
+
+## Real-World Workflow
+
+### Development Phase
+
+1. **Add new feature** to your app
+2. **Add translation keys** to primary locale only
+3. **Replica lag warnings appear** (expected)
+4. **Continue development** without blocking
+
+### Pre-Release Phase
+
+1. **Review replica lag warnings**
+2. **Prioritize translations** for target locales
+3. **Add translations** or use TMS
+4. **Verify** with `glot check replica-lag`
+
+### CI/CD Integration
+
+```yaml
+# Allow replica-lag in development
+- name: Check i18n (allow replica-lag)
+  run: npx glot check hardcoded missing type-mismatch
+
+# Enforce all checks before release
+- name: Check i18n (strict)
+  if: github.ref == 'refs/heads/main'
+  run: npx glot check  # includes replica-lag
+```
+
+## Configuration
+
+### Locale Settings
+
+Ensure your configuration includes all locales:
+
+```json .glotrc.json
+{
+  "primaryLocale": "en",
+  "locales": ["en", "zh", "es", "fr", "ja"],
+  "messagesRoot": "./messages"
+}
+```
+
+Glot checks that all locales in the `locales` array have complete translations matching the primary locale.
+
+### Ignoring Specific Locales
+
+If you're not ready to support certain locales, remove them from the `locales` array:
+
+```json .glotrc.json
+{
+  "primaryLocale": "en",
+  "locales": ["en", "zh"],  // Only checking zh
+  "messagesRoot": "./messages"
+}
+```
+
+## Related Checks
+
+### Replica Lag vs Other Checks
+
+| Check         | What it finds                                             | Direction       |
+| ------------- | --------------------------------------------------------- | --------------- |
+| `replica-lag` | Keys in **primary** missing from **replicas**             | Primary → Replica |
+| `orphan`      | Keys in **replicas** not in **primary**                   | Replica → Primary |
+| `untranslated`| Keys in **replicas** with same value as **primary**       | Value comparison  |
+
+**Example scenario:**
+
+```json messages/en.json (primary)
+{
+  "common": {
+    "submit": "Submit",
+    "newButton": "New Button"
+  }
+}
+```
+
+```json messages/zh.json (replica)
+{
+  "common": {
+    "submit": "Submit",  // untranslated (same value)
+    "oldButton": "Old Button"  // orphan (not in primary)
+    // "newButton" missing - replica-lag!
+  }
+}
+```
+
+- **replica-lag**: `common.newButton` (in primary, missing from replica)
+- **orphan**: `common.oldButton` (in replica, not in primary)
+- **untranslated**: `common.submit` (same value in both)
+
+## Examples
+
+<Accordion title="Multi-Locale Project">
+
+**Primary locale (en):**
+
+```json messages/en.json
+{
+  "navigation": {
+    "home": "Home",
+    "about": "About",
+    "contact": "Contact",
+    "blog": "Blog"  // New page added
+  }
+}
+```
+
+**Replica locales:**
+
+```json messages/zh.json
+{
+  "navigation": {
+    "home": "首页",
+    "about": "关于",
+    "contact": "联系我们"
+    // "blog" missing
+  }
+}
+```
+
+```json messages/es.json
+{
+  "navigation": {
+    "home": "Inicio",
+    "about": "Acerca de",
+    "contact": "Contacto",
+    "blog": "Blog"  // Translated!
+  }
+}
+```
+
+**Glot output:**
+
+```
+warning: navigation.blog  replica-lag
+  --> ./messages/en.json
+  |
+  | Key exists in primary locale (en) but is missing from: zh
+  |
+```
+
+Only `zh` needs the translation; `es` already has it.
+
+</Accordion>
+
+<Accordion title="Tracking Translation Progress">
+
+Use glot to track how complete your translations are:
+
+```bash
+# Check replica lag for all locales
+npx glot check replica-lag
+
+# Count missing translations
+npx glot check replica-lag --json | jq '.issues | length'
+
+# See which locales are behind
+npx glot check replica-lag | grep "missing from"
+```
+
+This helps you prioritize translation work and track progress toward 100% coverage.
+
+</Accordion>
+
+## Best Practices
+
+### 1. Translate in Batches
+
+Don't translate every key immediately:
+- Add keys to primary locale as you develop
+- Batch translation work before releases
+- Use replica-lag warnings to track what needs translation
+
+### 2. Primary Locale First
+
+Always complete the primary locale before translating:
+- Finalize English (or your primary) text first
+- Avoid translating keys that might change
+- Use replica-lag to ensure primary is complete
+
+### 3. Automate When Possible
+
+Use tools to streamline translation:
+- TMS integration (Crowdin, Lokalise)
+- AI-assisted translation (review before committing)
+- Scripts to detect and batch missing keys
+
+### 4. Document Translation Status
+
+Add comments to track translation status:
+
+```json messages/zh.json
+{
+  "features": {
+    "search": "搜索",
+    "filter": "筛选"
+    // TODO: Translate "export" (added 2024-03-15)
+  }
+}
+```
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Check Command" icon="terminal" href="/commands/check">
+    Run replica lag detection
+  </Card>
+  <Card title="Orphan Keys" icon="file-code" href="/detection/orphan-keys">
+    Keys in replicas not in primary
+  </Card>
+  <Card title="Untranslated Values" icon="language" href="/detection/untranslated">
+    Same values across locales
+  </Card>
+  <Card title="Configuration" icon="gear" href="/configuration">
+    Configure locales and paths
+  </Card>
+</CardGroup>
