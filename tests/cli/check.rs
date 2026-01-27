@@ -2304,3 +2304,1279 @@ fn test_subcommand_type_mismatch() -> Result<()> {
 
     Ok(())
 }
+
+// ============================================================
+// Group A: Multiple Rules & Default Behavior Tests
+// ============================================================
+
+#[test]
+fn test_multiple_rules_hardcoded_missing() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    test.write_file("messages/en.json", r#"{"Common": {"cancel": "Cancel"}}"#)?;
+
+    test.write_file(
+        "src/app.tsx",
+        r#"
+const t = useTranslations("Common");
+export function Button() {
+    return (
+        <div>
+            <button>{t("submit")}</button>
+            <span>Hardcoded</span>
+        </div>
+    );
+}
+"#,
+    )?;
+
+    // Both hardcoded text and missing key errors should appear
+    assert_cmd_snapshot!(test.check_command().arg("hardcoded").arg("missing"));
+
+    Ok(())
+}
+
+#[test]
+fn test_multiple_rules_unused_orphan() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    // Primary (en): submit + unused
+    test.write_file(
+        "messages/en.json",
+        r#"{"Common": {"submit": "Submit", "unused": "Unused"}}"#,
+    )?;
+
+    // Secondary (zh): submit + orphan
+    test.write_file(
+        "messages/zh.json",
+        r#"{"Common": {"submit": "提交", "orphan": "孤儿"}}"#,
+    )?;
+
+    // Only uses "submit"
+    test.write_file(
+        "src/app.tsx",
+        r#"
+const t = useTranslations("Common");
+export function Button() {
+    return <button>{t("submit")}</button>;
+}
+"#,
+    )?;
+
+    // Both unused key (en) and orphan key (zh) warnings
+    assert_cmd_snapshot!(test.check_command().arg("unused").arg("orphan"));
+
+    Ok(())
+}
+
+#[test]
+fn test_multiple_rules_all_eight() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    // Primary (en): key1 (array), key2, key3, unused_key
+    test.write_file(
+        "messages/en.json",
+        r#"{
+            "Common": {
+                "key1": ["item1", "item2"],
+                "key2": "Value 2",
+                "key3": "Value 3",
+                "unused_key": "Unused"
+            }
+        }"#,
+    )?;
+
+    // Secondary (zh): key1 (string - type mismatch), key2 (untranslated), orphan_key, missing key3 (replica lag)
+    test.write_file(
+        "messages/zh.json",
+        r#"{
+            "Common": {
+                "key1": "item1, item2",
+                "key2": "Value 2",
+                "orphan_key": "孤儿"
+            }
+        }"#,
+    )?;
+
+    test.write_file(
+        "src/app.tsx",
+        r#"
+const t = useTranslations("Common");
+export function Component({ dynamicKey }) {
+    return (
+        <div>
+            <span>Hardcoded</span>
+            <button>{t("missing_key")}</button>
+            <div>{t("key1")}</div>
+            <div>{t("key2")}</div>
+            <div>{t("key3")}</div>
+            <div>{t(dynamicKey)}</div>
+        </div>
+    );
+}
+"#,
+    )?;
+
+    // All 8 rule violations should be reported
+    assert_cmd_snapshot!(
+        test.check_command()
+            .arg("hardcoded")
+            .arg("missing")
+            .arg("unused")
+            .arg("orphan")
+            .arg("replica-lag")
+            .arg("untranslated")
+            .arg("type-mismatch")
+            .arg("unresolved")
+    );
+
+    Ok(())
+}
+
+#[test]
+fn test_default_runs_all_rules() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    // Same setup as test_multiple_rules_all_eight
+    test.write_file(
+        "messages/en.json",
+        r#"{
+            "Common": {
+                "key1": ["item1", "item2"],
+                "key2": "Value 2",
+                "key3": "Value 3",
+                "unused_key": "Unused"
+            }
+        }"#,
+    )?;
+
+    test.write_file(
+        "messages/zh.json",
+        r#"{
+            "Common": {
+                "key1": "item1, item2",
+                "key2": "Value 2",
+                "orphan_key": "孤儿"
+            }
+        }"#,
+    )?;
+
+    test.write_file(
+        "src/app.tsx",
+        r#"
+const t = useTranslations("Common");
+export function Component({ dynamicKey }) {
+    return (
+        <div>
+            <span>Hardcoded</span>
+            <button>{t("missing_key")}</button>
+            <div>{t("key1")}</div>
+            <div>{t("key2")}</div>
+            <div>{t("key3")}</div>
+            <div>{t(dynamicKey)}</div>
+        </div>
+    );
+}
+"#,
+    )?;
+
+    // No rule arguments - should run all rules
+    assert_cmd_snapshot!(test.check_command());
+
+    Ok(())
+}
+
+#[test]
+fn test_multiple_rules_no_issues() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    test.write_file("messages/en.json", r#"{"Common": {"submit": "Submit"}}"#)?;
+    test.write_file("messages/zh.json", r#"{"Common": {"submit": "提交"}}"#)?;
+
+    test.write_file(
+        "src/app.tsx",
+        r#"
+const t = useTranslations("Common");
+export function Button() {
+    return <button>{t("submit")}</button>;
+}
+"#,
+    )?;
+
+    // Clean project - should have success exit code
+    assert_cmd_snapshot!(
+        test.check_command()
+            .arg("hardcoded")
+            .arg("missing")
+            .arg("unused")
+    );
+
+    Ok(())
+}
+
+#[test]
+fn test_rule_order_does_not_matter() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    test.write_file("messages/en.json", r#"{"Common": {"cancel": "Cancel"}}"#)?;
+
+    test.write_file(
+        "src/app.tsx",
+        r#"
+const t = useTranslations("Common");
+export function Button() {
+    return (
+        <div>
+            <button>{t("submit")}</button>
+            <span>Hardcoded</span>
+        </div>
+    );
+}
+"#,
+    )?;
+
+    // Order 1: missing then hardcoded
+    assert_cmd_snapshot!(
+        "order1",
+        test.check_command().arg("missing").arg("hardcoded")
+    );
+
+    // Order 2: hardcoded then missing (should be identical)
+    assert_cmd_snapshot!(
+        "order2",
+        test.check_command().arg("hardcoded").arg("missing")
+    );
+
+    Ok(())
+}
+
+// ============================================================
+// Group B: Unresolved Rule Tests
+// ============================================================
+
+#[test]
+fn test_subcommand_unresolved() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    test.write_file("messages/en.json", r#"{"Common": {"key1": "Value 1"}}"#)?;
+
+    test.write_file(
+        "src/app.tsx",
+        r#"
+const t = useTranslations("Common");
+export function Dynamic({ keyName }) {
+    return <div>{t(keyName)}</div>;
+}
+"#,
+    )?;
+
+    // Unresolved - variable reference
+    assert_cmd_snapshot!(test.check_command().arg("unresolved"));
+
+    Ok(())
+}
+
+#[test]
+fn test_unresolved_with_glot_message_keys_resolves() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    test.write_file(
+        "messages/en.json",
+        r#"{"Common": {"key1": "K1", "key2": "K2"}}"#,
+    )?;
+
+    test.write_file(
+        "src/app.tsx",
+        r#"
+const t = useTranslations("Common");
+// glot-message-keys "key1" "key2"
+export function Dynamic({ keyName }) {
+    return <div>{t(keyName)}</div>;
+}
+"#,
+    )?;
+
+    // No unresolved warnings - keys resolved by annotation
+    assert_cmd_snapshot!(test.check_command().arg("unresolved"));
+
+    Ok(())
+}
+
+#[test]
+fn test_unresolved_template_literal_static() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    test.write_file("messages/en.json", r#"{"Common": {"static": "Static"}}"#)?;
+
+    test.write_file(
+        "src/app.tsx",
+        r#"
+const t = useTranslations("Common");
+export function Component() {
+    return <div>{t(`static`)}</div>;
+}
+"#,
+    )?;
+
+    // Static template literal should resolve
+    assert_cmd_snapshot!(test.check_command().arg("unresolved"));
+
+    Ok(())
+}
+
+#[test]
+fn test_unresolved_ternary_with_variables() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    test.write_file(
+        "messages/en.json",
+        r#"{"Common": {"k1": "K1", "k2": "K2"}}"#,
+    )?;
+
+    test.write_file(
+        "src/app.tsx",
+        r#"
+const t = useTranslations("Common");
+export function Component({ condition }) {
+    const key1 = "k1";
+    const key2 = "k2";
+    return <div>{t(condition ? key1 : key2)}</div>;
+}
+"#,
+    )?;
+
+    // Ternary with variable branches is unresolved
+    assert_cmd_snapshot!(test.check_command().arg("unresolved"));
+
+    Ok(())
+}
+
+#[test]
+fn test_unresolved_method_call_result() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    test.write_file("messages/en.json", r#"{"Common": {"key": "Value"}}"#)?;
+
+    test.write_file(
+        "src/app.tsx",
+        r#"
+const t = useTranslations("Common");
+const obj = { getKey: () => "key" };
+export function Component() {
+    return <div>{t(obj.getKey())}</div>;
+}
+"#,
+    )?;
+
+    // Method call result is unresolved
+    assert_cmd_snapshot!(test.check_command().arg("unresolved"));
+
+    Ok(())
+}
+
+// ============================================================
+// Group C: Common Arguments Tests
+// ============================================================
+
+#[test]
+fn test_primary_locale_override() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    test.write_file("messages/en.json", r#"{"Common": {"submit": "Submit"}}"#)?;
+    test.write_file("messages/ja.json", r#"{}"#)?;
+
+    test.write_file("src/app.tsx", r#"const x = 1;"#)?;
+
+    // Override primary locale to "ja" - should report "en" has replica lag
+    assert_cmd_snapshot!(
+        test.check_command()
+            .arg("replica-lag")
+            .arg("--primary-locale")
+            .arg("ja")
+    );
+
+    Ok(())
+}
+
+#[test]
+fn test_source_root_override() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    test.write_file("messages/en.json", r#"{}"#)?;
+
+    test.write_file("custom-src/app.tsx", r#"<div>Hardcoded</div>"#)?;
+
+    // Override source directory
+    assert_cmd_snapshot!(
+        test.check_command()
+            .arg("hardcoded")
+            .arg("--source-root")
+            .arg("custom-src")
+    );
+
+    Ok(())
+}
+
+#[test]
+fn test_messages_root_override() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    test.write_file(
+        "custom-messages/en.json",
+        r#"{"Common": {"cancel": "Cancel"}}"#,
+    )?;
+
+    test.write_file(
+        "src/app.tsx",
+        r#"
+const t = useTranslations("Common");
+export function Button() {
+    return <button>{t("submit")}</button>;
+}
+"#,
+    )?;
+
+    // Override messages directory
+    assert_cmd_snapshot!(
+        test.check_command()
+            .arg("missing")
+            .arg("--messages-root")
+            .arg("custom-messages")
+    );
+
+    Ok(())
+}
+
+#[test]
+fn test_all_three_args_combined() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "messagesDir": "./messages",
+            "primaryLocale": "zh"
+        }"#,
+    )?;
+
+    test.write_file("i18n/en.json", r#"{"Common": {"cancel": "Cancel"}}"#)?;
+
+    test.write_file(
+        "custom-src/app.tsx",
+        r#"
+const t = useTranslations("Common");
+export function Button() {
+    return <button>{t("submit")}</button>;
+}
+"#,
+    )?;
+
+    // All three overrides together
+    assert_cmd_snapshot!(
+        test.check_command()
+            .arg("missing")
+            .arg("--primary-locale")
+            .arg("en")
+            .arg("--source-root")
+            .arg("custom-src")
+            .arg("--messages-root")
+            .arg("i18n")
+    );
+
+    Ok(())
+}
+
+#[test]
+fn test_verbose_shows_scan_info() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    test.write_file("messages/en.json", r#"{"Common": {}}"#)?;
+    test.write_file("src/app.tsx", r#"<div>Hardcoded</div>"#)?;
+
+    // Verbose flag should show diagnostic info
+    assert_cmd_snapshot!(test.check_command().arg("hardcoded").arg("--verbose"));
+
+    Ok(())
+}
+
+#[test]
+fn test_verbose_with_parse_error() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    test.write_file("messages/en.json", r#"{}"#)?;
+    test.write_file("src/broken.tsx", "<div>Unclosed")?;
+
+    // Verbose should show parse error details
+    assert_cmd_snapshot!(test.check_command().arg("--verbose"));
+
+    Ok(())
+}
+
+#[test]
+fn test_common_args_with_multiple_rules() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "messagesDir": "./messages",
+            "primaryLocale": "zh"
+        }"#,
+    )?;
+
+    test.write_file("i18n/en.json", r#"{"Common": {"cancel": "Cancel"}}"#)?;
+
+    test.write_file(
+        "custom-src/app.tsx",
+        r#"
+const t = useTranslations("Common");
+export function Button() {
+    return (
+        <div>
+            <button>{t("submit")}</button>
+            <span>Hardcoded</span>
+        </div>
+    );
+}
+"#,
+    )?;
+
+    // Common args with multiple rules
+    assert_cmd_snapshot!(
+        test.check_command()
+            .arg("hardcoded")
+            .arg("missing")
+            .arg("--verbose")
+            .arg("--primary-locale")
+            .arg("en")
+            .arg("--source-root")
+            .arg("custom-src")
+            .arg("--messages-root")
+            .arg("i18n")
+    );
+
+    Ok(())
+}
+
+// ============================================================
+// Group D: Edge Cases Tests
+// ============================================================
+
+#[test]
+fn test_empty_project_no_source_files() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    test.write_file("messages/en.json", r#"{}"#)?;
+
+    // Empty directory - no source files
+    // Should succeed with "No problems found"
+    assert_cmd_snapshot!(test.check_command());
+
+    Ok(())
+}
+
+#[test]
+fn test_no_messages_files() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    // No messages files at all
+
+    test.write_file(
+        "src/app.tsx",
+        r#"
+const t = useTranslations("Common");
+export function Button() {
+    return <button>{t("submit")}</button>;
+}
+"#,
+    )?;
+
+    // All keys should be reported as missing
+    assert_cmd_snapshot!(test.check_command().arg("missing"));
+
+    Ok(())
+}
+
+#[test]
+fn test_all_files_ignored_by_pattern() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "ignores": ["**/*"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    test.write_file("messages/en.json", r#"{}"#)?;
+    test.write_file("src/app.tsx", r#"<div>Hardcoded</div>"#)?;
+
+    // All files ignored - should find no problems
+    assert_cmd_snapshot!(test.check_command().arg("hardcoded"));
+
+    Ok(())
+}
+
+#[test]
+fn test_parse_error_in_tsx() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    test.write_file("messages/en.json", r#"{}"#)?;
+    test.write_file("src/broken.tsx", "<div>Unclosed")?;
+
+    // Parse error should be reported
+    assert_cmd_snapshot!(test.check_command());
+
+    Ok(())
+}
+
+#[test]
+fn test_invalid_json_in_messages() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    test.write_file("messages/en.json", "{invalid}")?;
+    test.write_file("src/app.tsx", r#"const x = 1;"#)?;
+
+    // JSON parse error should be reported
+    assert_cmd_snapshot!(test.check_command().arg("missing"));
+
+    Ok(())
+}
+
+#[test]
+fn test_mixed_issues_across_rules() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    test.write_file(
+        "messages/en.json",
+        r#"{"Common": {"key1": "Value 1", "unused": "Unused"}}"#,
+    )?;
+
+    test.write_file(
+        "messages/zh.json",
+        r#"{"Common": {"key1": "Value 1", "orphan": "孤儿"}}"#,
+    )?;
+
+    test.write_file(
+        "src/app.tsx",
+        r#"
+const t = useTranslations("Common");
+export function Component() {
+    return (
+        <div>
+            <span>Hardcoded Text</span>
+            <button>{t("key1")}</button>
+            <button>{t("missing")}</button>
+        </div>
+    );
+}
+"#,
+    )?;
+
+    // Multiple issue types: hardcoded, missing, unused, orphan, untranslated
+    assert_cmd_snapshot!(test.check_command());
+
+    Ok(())
+}
+
+#[test]
+fn test_multiple_locales_replica_lag_and_orphan() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    // en (primary): a, b
+    test.write_file("messages/en.json", r#"{"Common": {"a": "A", "b": "B"}}"#)?;
+
+    // zh: missing "b" (replica lag)
+    test.write_file("messages/zh.json", r#"{"Common": {"a": "A"}}"#)?;
+
+    // ja: has extra "c" (orphan)
+    test.write_file(
+        "messages/ja.json",
+        r#"{"Common": {"a": "A", "b": "B", "c": "C"}}"#,
+    )?;
+
+    test.write_file("src/app.tsx", r#"const x = 1;"#)?;
+
+    // Both zh replica-lag and ja orphan should be reported
+    assert_cmd_snapshot!(test.check_command().arg("replica-lag").arg("orphan"));
+
+    Ok(())
+}
+
+#[test]
+fn test_deeply_nested_key_paths() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    test.write_file(
+        "messages/en.json",
+        r#"{"Form": {"validation": {"errors": {"email": {}}}}}"#,
+    )?;
+
+    test.write_file(
+        "src/app.tsx",
+        r#"
+const t = useTranslations("Form");
+export function Component() {
+    return <div>{t("validation.errors.email.invalid")}</div>;
+}
+"#,
+    )?;
+
+    // Deep nested missing key should be reported
+    assert_cmd_snapshot!(test.check_command().arg("missing"));
+
+    Ok(())
+}
+
+#[test]
+fn test_empty_namespace() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    test.write_file("messages/en.json", r#"{"Empty": {}}"#)?;
+
+    test.write_file(
+        "src/app.tsx",
+        r#"
+const t = useTranslations("Empty");
+export function Component() {
+    return <div>Test</div>;
+}
+"#,
+    )?;
+
+    // Empty namespace should be handled gracefully
+    assert_cmd_snapshot!(test.check_command().arg("unused"));
+
+    Ok(())
+}
+
+#[test]
+fn test_special_characters_in_keys() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    test.write_file(
+        "messages/en.json",
+        r#"{
+            "Common": {
+                "key-with-dash_and_underscore": "Value",
+                "123numeric": "Numeric"
+            }
+        }"#,
+    )?;
+
+    test.write_file(
+        "src/app.tsx",
+        r#"
+const t = useTranslations("Common");
+export function Component() {
+    return (
+        <div>
+            <span>{t("key-with-dash_and_underscore")}</span>
+            <span>{t("123numeric")}</span>
+            <span>{t("missing-special")}</span>
+        </div>
+    );
+}
+"#,
+    )?;
+
+    // Special characters should be handled, missing key reported
+    assert_cmd_snapshot!(test.check_command().arg("missing"));
+
+    Ok(())
+}
+
+// ============================================================
+// Group E: Help & CLI Validation Tests
+// ============================================================
+
+#[test]
+fn test_help_shows_all_eight_rules() -> Result<()> {
+    let test = CliTest::new()?;
+
+    // Help should list all 8 rule names
+    assert_cmd_snapshot!(test.check_command().arg("--help"));
+
+    Ok(())
+}
+
+#[test]
+fn test_invalid_rule_name_error() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    test.write_file("messages/en.json", r#"{}"#)?;
+    test.write_file("src/app.tsx", r#"const x = 1;"#)?;
+
+    // Invalid rule name should show error
+    assert_cmd_snapshot!(test.check_command().arg("invalid-rule"));
+
+    Ok(())
+}
+
+// ============================================================
+// Group F: Verbose & Exit Codes Tests
+// ============================================================
+
+#[test]
+fn test_verbose_shows_config_source() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    test.write_file("messages/en.json", r#"{}"#)?;
+    test.write_file("src/app.tsx", r#"const x = 1;"#)?;
+
+    // Verbose should show config file path
+    assert_cmd_snapshot!(test.check_command().arg("--verbose"));
+
+    Ok(())
+}
+
+#[test]
+fn test_exit_code_on_errors() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    test.write_file("messages/en.json", r#"{}"#)?;
+    test.write_file("src/app.tsx", r#"<div>Hardcoded</div>"#)?;
+
+    // Errors should return exit code 1
+    assert_cmd_snapshot!(test.check_command().arg("hardcoded"));
+
+    Ok(())
+}
+
+#[test]
+fn test_exit_code_on_success() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    test.write_file("messages/en.json", r#"{"Common": {"submit": "Submit"}}"#)?;
+
+    test.write_file(
+        "src/app.tsx",
+        r#"
+const t = useTranslations("Common");
+export function Button() {
+    return <button>{t("submit")}</button>;
+}
+"#,
+    )?;
+
+    // Clean project should return exit code 0
+    assert_cmd_snapshot!(test.check_command());
+
+    Ok(())
+}
+
+// ============================================================
+// Group G: Integration Scenarios Tests
+// ============================================================
+
+#[test]
+fn test_real_world_nextjs_structure() -> Result<()> {
+    let test = CliTest::new()?;
+
+    // No explicit config - should use defaults
+
+    test.write_file("messages/en.json", r#"{"Common": {"submit": "Submit"}}"#)?;
+    test.write_file("messages/zh.json", r#"{"Common": {"submit": "提交"}}"#)?;
+
+    test.write_file(
+        "src/app/[locale]/page.tsx",
+        r#"
+const t = useTranslations("Common");
+export default function Page() {
+    return <button>{t("submit")}</button>;
+}
+"#,
+    )?;
+
+    test.write_file(
+        "src/app/[locale]/layout.tsx",
+        r#"
+export default function Layout({ children }) {
+    return <html><body>{children}</body></html>;
+}
+"#,
+    )?;
+
+    // Defaults should work without explicit config
+    assert_cmd_snapshot!(test.check_command());
+
+    Ok(())
+}
+
+#[test]
+fn test_monorepo_style_paths() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    test.write_file(
+        "packages/web/messages/en.json",
+        r#"{"Common": {"submit": "Submit"}}"#,
+    )?;
+
+    test.write_file(
+        "packages/web/src/app.tsx",
+        r#"
+const t = useTranslations("Common");
+export function Button() {
+    return <button>{t("submit")}</button>;
+}
+"#,
+    )?;
+
+    // Nested paths should work correctly
+    assert_cmd_snapshot!(
+        test.check_command()
+            .arg("--source-root")
+            .arg("packages/web/src")
+            .arg("--messages-root")
+            .arg("packages/web/messages")
+    );
+
+    Ok(())
+}
+
+#[test]
+fn test_ignore_test_files() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    test.write_file("messages/en.json", r#"{}"#)?;
+
+    test.write_file(
+        "src/app.tsx",
+        r#"
+const t = useTranslations("Common");
+export function Button() {
+    return <button>{t("submit")}</button>;
+}
+"#,
+    )?;
+
+    test.write_file(
+        "src/app.test.tsx",
+        r#"
+test("should render", () => {
+    render(<div>Hardcoded in test</div>);
+});
+"#,
+    )?;
+
+    // Test files should be scanned by default (no default ignore)
+    assert_cmd_snapshot!(test.check_command().arg("hardcoded"));
+
+    Ok(())
+}
+
+#[test]
+fn test_large_message_file() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    // Generate 200+ keys
+    let mut keys = Vec::new();
+    for i in 0..250 {
+        keys.push(format!(r#""key{}": "Value {}""#, i, i));
+    }
+    let large_json = format!(r#"{{"Common": {{{}}}}}"#, keys.join(", "));
+    test.write_file("messages/en.json", &large_json)?;
+
+    test.write_file(
+        "src/app.tsx",
+        r#"
+const t = useTranslations("Common");
+export function Component() {
+    return <div>{t("key0")}</div>;
+}
+"#,
+    )?;
+
+    // Should complete successfully and report many unused keys
+    assert_cmd_snapshot!(test.check_command().arg("unused"));
+
+    Ok(())
+}
