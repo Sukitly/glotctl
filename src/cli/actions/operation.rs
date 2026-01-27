@@ -349,19 +349,12 @@ impl Operation {
         // Key and value
         println!("     {}", "|".blue());
         println!(
-            " {:>3} {} \"{}\": \"{}\"",
+            " {:>3} {} \"{}\": \"{}\" {}",
             line.to_string().blue(),
             "|".blue(),
             key,
-            value
-        );
-
-        // Deletion indicator
-        println!(
-            "  {} delete key \"{}\"  [{}]",
-            "-".red().bold(),
-            key.red(),
-            reason.label()
+            value,
+            format!("[{}]", reason.label()).cyan()
         );
         println!();
     }
