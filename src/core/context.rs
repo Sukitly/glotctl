@@ -99,6 +99,41 @@ impl CheckContext {
 
         let ignore_texts = config.ignore_texts.iter().cloned().collect();
 
+        // Initialize messages early to catch errors during context creation
+        let message_dir = {
+            let p = Path::new(&config.messages_dir);
+            if p.is_absolute() {
+                p.to_path_buf()
+            } else {
+                let is_cur_dir = root_dir
+                    .components()
+                    .all(|c| matches!(c, Component::CurDir));
+                if is_cur_dir {
+                    p.to_path_buf()
+                } else {
+                    let rel = p.strip_prefix(Path::new(".")).unwrap_or(p);
+                    root_dir.join(rel)
+                }
+            }
+        };
+        let scan_results = scan_message_files(&message_dir)?;
+
+        let primary_messages = scan_results
+            .messages
+            .get(&config.primary_locale)
+            .ok_or_else(|| anyhow!(
+                "Primary locale '{}' messages not found in '{}'",
+                config.primary_locale,
+                message_dir.display()
+            ))?
+            .clone();
+
+        let messages = OnceCell::new();
+        let _ = messages.set(MessageData {
+            all_messages: scan_results.messages,
+            primary_messages,
+        });
+
         Ok(Self {
             config,
             root_dir,
@@ -109,7 +144,7 @@ impl CheckContext {
             parsed_files_errors: OnceCell::new(),
             source_metadata: OnceCell::new(),
             resolved_data: OnceCell::new(),
-            messages: OnceCell::new(),
+            messages,
             used_keys: OnceCell::new(),
         })
     }
@@ -169,21 +204,8 @@ impl CheckContext {
     }
 
     pub fn messages(&self) -> &MessageData {
-        self.messages.get_or_init(|| {
-            let message_dir = self.resolved_messages_dir();
-            let scan_results = scan_message_files(&message_dir).expect("Failed to scan messages");
-
-            let primary_messages = scan_results
-                .messages
-                .get(&self.config.primary_locale)
-                .expect("Primary locale messages not found")
-                .clone();
-
-            MessageData {
-                all_messages: scan_results.messages,
-                primary_messages,
-            }
-        })
+        // Messages are initialized in new(), so this should never fail
+        self.messages.get().expect("Messages should be initialized in CheckContext::new()")
     }
 
     pub fn all_key_usages(&self) -> &AllKeyUsages {
