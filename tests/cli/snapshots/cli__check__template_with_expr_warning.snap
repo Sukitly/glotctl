@@ -11,7 +11,7 @@ success: true
 exit_code: 0
 ----- stdout -----
 warning: "Common.submit"  unused-key
-  --> ./messages/en.json:1:0
+  --> ./messages/en.json:1:1
   = note: ("Submit")
 
 warning: "template with expression"  unresolved-key
@@ -19,7 +19,7 @@ warning: "template with expression"  unresolved-key
   |
 4 |       return <button>{t(`${prefix}.submit`)}</button>;
   |                       ^
-  = hint: add `{/* glot-message-keys "Common.*.submit" */}` to declare expected keys
+  = hint: add `// glot-message-keys "Common.*.submit"` to declare expected keys
 
 
 ✘ 2 problems (0 errors, 2 warnings)

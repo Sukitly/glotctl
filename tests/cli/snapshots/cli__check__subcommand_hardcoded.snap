@@ -11,7 +11,7 @@ info:
 success: false
 exit_code: 1
 ----- stdout -----
-error: "Submit"  hardcoded-text
+error: "Submit"  hardcoded
   --> ./src/app/[locale]/app.tsx:3:22
   |
 3 |       return <button>Submit</button>;

@@ -11,5 +11,6 @@ info:
 success: true
 exit_code: 0
 ----- stdout -----
+✓ Checked 0 source files, 1 locale file - no issues found
 
 ----- stderr -----

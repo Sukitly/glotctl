@@ -11,15 +11,15 @@ success: true
 exit_code: 0
 ----- stdout -----
 warning: "Common.submit"  unused-key
-  --> ./messages/en.json:1:0
+  --> ./messages/en.json:1:1
   = note: ("Submit")
 
 warning: "Common.orphan2"  orphan-key
-  --> ./messages/ja.json:1:0
+  --> ./messages/ja.json:1:1
   = note: in ja ("孤児2")
 
 warning: "Common.orphan1"  orphan-key
-  --> ./messages/zh.json:1:0
+  --> ./messages/zh.json:1:1
   = note: in zh ("孤儿1")
 
 

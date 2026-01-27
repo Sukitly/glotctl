@@ -11,11 +11,11 @@ success: true
 exit_code: 0
 ----- stdout -----
 warning: "Common.submit"  unused-key
-  --> ./messages/en.json:1:0
+  --> ./messages/en.json:1:1
   = note: ("Submit")
 
 warning: "Common.oldKey"  orphan-key
-  --> ./messages/zh.json:1:0
+  --> ./messages/zh.json:1:1
   = note: in zh ("旧的按钮")
 
 
