@@ -475,11 +475,11 @@ impl GlotMcpServer {
             ));
         }
 
-        // Load config to get messages_dir
+        // Load config to get messages_root
         let config = load_config(Path::new(path))
             .map_err(|e| McpError::internal_error(format!("Failed to load config: {}", e), None))?;
 
-        let messages_dir = resolve_messages_dir(Path::new(path), &config.config.messages_dir);
+        let messages_dir = resolve_messages_dir(Path::new(path), &config.config.messages_root);
 
         let mut results = Vec::new();
         let mut total_keys_added = 0;
@@ -537,11 +537,11 @@ impl GlotMcpServer {
     ) -> Result<CallToolResult, McpError> {
         let path = &params.0.project_root_path;
 
-        // Load config to get messages_dir and primary_locale
+        // Load config to get messages_root and primary_locale
         let config = load_config(Path::new(path))
             .map_err(|e| McpError::internal_error(format!("Failed to load config: {}", e), None))?;
 
-        let messages_dir = resolve_messages_dir(Path::new(path), &config.config.messages_dir);
+        let messages_dir = resolve_messages_dir(Path::new(path), &config.config.messages_root);
         let messages_dir_str = messages_dir.to_string_lossy().to_string();
 
         let scan_result = scan_message_files(&messages_dir).map_err(|e| {
@@ -598,7 +598,13 @@ impl GlotMcpServer {
 }
 
 fn create_context(path: &str) -> Result<CheckContext, McpError> {
-    CheckContext::new(&PathBuf::from(path), false)
+    let common_args = crate::cli::args::CommonArgs {
+        source_root: Some(PathBuf::from(path)),
+        primary_locale: None,
+        messages_root: None,
+        verbose: false,
+    };
+    CheckContext::new(&common_args)
         .map_err(|e| McpError::internal_error(format!("Failed to initialize: {}", e), None))
 }
 
@@ -616,8 +622,8 @@ fn to_usage_locations(usages: &[ResolvedKeyUsage]) -> (Vec<KeyUsageLocation>, us
     (items, total)
 }
 
-fn resolve_messages_dir(root_dir: &Path, messages_dir: &str) -> PathBuf {
-    let p = Path::new(messages_dir);
+fn resolve_messages_dir(root_dir: &Path, messages_root: &str) -> PathBuf {
+    let p = Path::new(messages_root);
     if p.is_absolute() {
         p.to_path_buf()
     } else {

@@ -38,9 +38,17 @@ impl Arguments {
 /// Common arguments shared by all commands.
 #[derive(Debug, Clone, Args)]
 pub struct CommonArgs {
-    /// Path to check (default: current directory)
-    #[arg(long, default_value = ".")]
-    pub path: PathBuf,
+    /// Primary locale (overrides config file)
+    #[arg(long)]
+    pub primary_locale: Option<String>,
+
+    /// Source code root directory (overrides config file)
+    #[arg(long)]
+    pub source_root: Option<PathBuf>,
+
+    /// Messages directory path (overrides config file)
+    #[arg(long)]
+    pub messages_root: Option<PathBuf>,
 
     /// Enable verbose output
     #[arg(short, long)]

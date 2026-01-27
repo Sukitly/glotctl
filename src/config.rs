@@ -32,10 +32,12 @@ pub struct Config {
     pub checked_attributes: Vec<String>,
     #[serde(default)]
     pub ignore_texts: Vec<String>,
-    #[serde(default = "default_messages_dir")]
-    pub messages_dir: String,
+    #[serde(default = "default_messages_root", alias = "messagesDir")]
+    pub messages_root: String,
     #[serde(default = "default_primary_locale")]
     pub primary_locale: String,
+    #[serde(default = "default_source_root")]
+    pub source_root: String,
     #[serde(default = "default_ignore_test_files")]
     pub ignore_test_files: bool,
 }
@@ -73,8 +75,12 @@ fn default_checked_attributes() -> Vec<String> {
     .to_vec()
 }
 
-fn default_messages_dir() -> String {
+fn default_messages_root() -> String {
     "./messages".to_string()
+}
+
+fn default_source_root() -> String {
+    "./".to_string()
 }
 
 fn default_primary_locale() -> String {
@@ -92,8 +98,9 @@ impl Default for Config {
             includes: default_includes(),
             checked_attributes: default_checked_attributes(),
             ignore_texts: Vec::new(),
-            messages_dir: default_messages_dir(),
+            messages_root: default_messages_root(),
             primary_locale: default_primary_locale(),
+            source_root: default_source_root(),
             ignore_test_files: default_ignore_test_files(),
         }
     }
@@ -307,5 +314,33 @@ mod tests {
 
         let result = load_config(dir.path());
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_backward_compatibility_messages_dir() {
+        let json = r#"{ "messagesDir": "./locales" }"#;
+        let config: Config = serde_json::from_str(json).unwrap();
+        assert_eq!(config.messages_root, "./locales");
+    }
+
+    #[test]
+    fn test_new_messages_root_field() {
+        let json = r#"{ "messagesRoot": "./i18n" }"#;
+        let config: Config = serde_json::from_str(json).unwrap();
+        assert_eq!(config.messages_root, "./i18n");
+    }
+
+    #[test]
+    fn test_source_root_default() {
+        let config = Config::default();
+        assert_eq!(config.source_root, "./");
+    }
+
+    #[test]
+    fn test_serialization_uses_new_names() {
+        let config = Config::default();
+        let json = serde_json::to_string(&config).unwrap();
+        assert!(json.contains("messagesRoot"));
+        assert!(!json.contains("messagesDir"));
     }
 }

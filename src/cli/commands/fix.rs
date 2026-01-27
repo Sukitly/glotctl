@@ -16,7 +16,7 @@ use crate::{
 
 pub fn fix(cmd: FixCommand, verbose: bool) -> Result<ExitStatus> {
     let args = &cmd.args;
-    let ctx = CheckContext::new(&args.common.path, args.common.verbose)?;
+    let ctx = CheckContext::new(&args.common)?;
     let apply = args.apply;
 
     let unresolved_issues: Vec<UnresolvedKeyIssue> = check_unresolved_keys_issues(&ctx);

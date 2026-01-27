@@ -26,7 +26,7 @@ impl CleanRule {
 
 pub fn clean(cmd: CleanCommand, verbose: bool) -> Result<ExitStatus> {
     let args = &cmd.args;
-    let ctx = CheckContext::new(&args.common.path, args.common.verbose)?;
+    let ctx = CheckContext::new(&args.common)?;
     let apply = args.apply;
 
     // Check for message parse errors - block clean if any message files failed to parse

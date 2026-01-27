@@ -8,6 +8,7 @@ use anyhow::{Context as _, Result, anyhow};
 use swc_ecma_visit::VisitWith;
 
 use crate::{
+    cli::args::CommonArgs,
     config::{Config, load_config},
     core::{
         AllKeyUsages, AllLocaleMessages, LocaleMessages,
@@ -68,12 +69,22 @@ pub struct CheckContext {
 
 impl CheckContext {
     /// Create a new CheckContext with basic data from command line args.
-    pub fn new(path: &PathBuf, verbose: bool) -> Result<Self> {
-        let root_dir = path.clone();
-        let path = path
-            .to_str()
-            .with_context(|| anyhow!("Invalid path: {:?}", path))?;
+    pub fn new(common_args: &CommonArgs) -> Result<Self> {
+        let verbose = common_args.verbose;
 
+        // 1. Determine source_root for config file search
+        // Priority: CLI arg > current directory
+        let source_root = common_args
+            .source_root
+            .clone()
+            .unwrap_or_else(|| PathBuf::from("."));
+
+        let root_dir = source_root.clone();
+        let path = source_root
+            .to_str()
+            .with_context(|| anyhow!("Invalid path: {:?}", source_root))?;
+
+        // 2. Load config from source_root
         let config_result = load_config(Path::new(path))?;
 
         // In verbose mode, inform user if using default config
@@ -81,7 +92,20 @@ impl CheckContext {
             eprintln!("Note: No .glotrc.json found, using default configuration");
         }
 
-        let config = config_result.config;
+        let mut config = config_result.config;
+
+        // 3. Apply CLI overrides (CLI > config)
+        if let Some(ref primary_locale) = common_args.primary_locale {
+            config.primary_locale = primary_locale.clone();
+        }
+
+        if let Some(ref messages_root) = common_args.messages_root {
+            config.messages_root = messages_root.to_string_lossy().to_string();
+        }
+
+        // Note: source_root from config is used for file scanning
+        // but CLI's source_root already determined where to find the config
+
         let scan_result = scan_files(
             path,
             &config.includes,
@@ -102,7 +126,7 @@ impl CheckContext {
 
         // Initialize messages early to catch errors during context creation
         let message_dir = {
-            let p = Path::new(&config.messages_dir);
+            let p = Path::new(&config.messages_root);
             if p.is_absolute() {
                 p.to_path_buf()
             } else {
@@ -308,11 +332,11 @@ impl CheckContext {
 
     /// Resolve the messages directory path relative to root_dir.
     pub fn resolved_messages_dir(&self) -> PathBuf {
-        let p = Path::new(&self.config.messages_dir);
+        let p = Path::new(&self.config.messages_root);
         if p.is_absolute() {
             p.to_path_buf()
         } else {
-            // If user runs with `--path .`, keep the original relative path (e.g. "./messages")
+            // If user runs with `--source-root .`, keep the original relative path (e.g. "./messages")
             // to avoid noisy paths like "././messages" in output/snapshots.
             let is_cur_dir = self
                 .root_dir
@@ -533,10 +557,10 @@ mod tests {
     use crate::{config::Config, core::*};
 
     /// Create a minimal CheckContext for testing without file system dependencies.
-    fn create_test_context(root_dir: &str, messages_dir: &str) -> CheckContext {
+    fn create_test_context(root_dir: &str, messages_root: &str) -> CheckContext {
         CheckContext {
             config: Config {
-                messages_dir: messages_dir.to_string(),
+                messages_root: messages_root.to_string(),
                 ..Config::default()
             },
             root_dir: PathBuf::from(root_dir),
