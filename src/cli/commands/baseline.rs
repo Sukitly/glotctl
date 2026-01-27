@@ -1,18 +1,21 @@
 use std::collections::HashSet;
 
+use anyhow::Result;
+use colored::Colorize;
+
 use super::super::{
-    actions::{Action, ActionStats, InsertDisableComment, execute_operations},
+    actions::{execute_operations, Action, ActionStats, InsertDisableComment},
     args::BaselineCommand,
+    exit_status::ExitStatus,
+    report,
 };
-use super::{BaselineSummary, CommandResult, CommandSummary, helper::finish};
 use crate::{
-    core::{CheckContext, collect::SuppressibleRule},
-    issues::{HardcodedTextIssue, Issue, UntranslatedIssue},
+    core::{collect::SuppressibleRule, CheckContext},
+    issues::{HardcodedTextIssue, UntranslatedIssue},
     rules::{hardcoded::check_hardcoded_text_issues, untranslated::check_untranslated_issues},
 };
-use anyhow::{Ok, Result};
 
-pub fn baseline(cmd: BaselineCommand) -> Result<CommandResult> {
+pub fn baseline(cmd: BaselineCommand, verbose: bool) -> Result<ExitStatus> {
     let args = &cmd.args;
     let rules = &cmd.args.rules;
     let ctx = CheckContext::new(&args.common.path, args.common.verbose)?;
@@ -42,6 +45,7 @@ pub fn baseline(cmd: BaselineCommand) -> Result<CommandResult> {
     let hardcoded_count = hardcoded_issues.len();
     let untranslated_usage_count: usize = untranslated_issues.iter().map(|u| u.usages.len()).sum();
     let untranslated_key_count = untranslated_issues.len();
+    let total = hardcoded_count + untranslated_usage_count;
 
     let (file_count, applied_hardcoded_count, applied_untranslated_count, applied_total_count) =
         if apply {
@@ -81,33 +85,73 @@ pub fn baseline(cmd: BaselineCommand) -> Result<CommandResult> {
             (files.len(), 0, 0, 0)
         };
 
-    let hardcoded_issues_summary = hardcoded_issues.clone();
-    let untranslated_issues_summary = untranslated_issues.clone();
-    let parse_errors = ctx.parsed_files_errors();
+    // Print output
+    if total == 0 {
+        report::print_no_issue(ctx.files.len(), ctx.messages().all_messages.len());
+    } else {
+        // Show preview in dry-run mode
+        if !apply {
+            if !hardcoded_issues.is_empty() {
+                InsertDisableComment::preview(&hardcoded_issues);
+            }
+            if !untranslated_issues.is_empty() {
+                InsertDisableComment::preview(&untranslated_issues);
+            }
+        }
 
-    let mut all_issues: Vec<Issue> = Vec::new();
-    all_issues.extend(hardcoded_issues.into_iter().map(Issue::HardcodedText));
-    all_issues.extend(untranslated_issues.into_iter().map(Issue::Untranslated));
-    all_issues.extend(parse_errors.iter().map(|i| Issue::ParseError(i.clone())));
+        if apply {
+            println!(
+                "{} {} comment(s) in {} file(s) (processed {} issue(s)):",
+                "Inserted".green().bold(),
+                applied_total_count,
+                file_count,
+                total
+            );
+            if hardcoded_count > 0 {
+                println!(
+                    "  - hardcoded: {} comment(s) (from {} issue(s))",
+                    applied_hardcoded_count, hardcoded_count
+                );
+            }
+            if untranslated_usage_count > 0 {
+                println!(
+                    "  - untranslated: {} comment(s), {} key(s) (from {} usage(s))",
+                    applied_untranslated_count, untranslated_key_count, untranslated_usage_count
+                );
+            }
+        } else {
+            println!(
+                "{} {} comment(s) in {} file(s):",
+                "Would insert".yellow().bold(),
+                total,
+                file_count
+            );
+            if hardcoded_count > 0 {
+                println!("  - hardcoded: {} comment(s)", hardcoded_count);
+            }
+            if untranslated_usage_count > 0 {
+                println!(
+                    "  - untranslated: {} comment(s), {} key(s)",
+                    untranslated_usage_count, untranslated_key_count
+                );
+            }
+            println!("Run with {} to insert these comments.", "--apply".cyan());
+        }
+    }
 
-    Ok(finish(
-        CommandSummary::Baseline(BaselineSummary {
-            hardcoded_count,
-            untranslated_usage_count,
-            untranslated_key_count,
-            applied_hardcoded_count,
-            applied_untranslated_count,
-            applied_total_count,
-            file_count,
-            is_apply: apply,
-            hardcoded_issues: hardcoded_issues_summary,
-            untranslated_issues: untranslated_issues_summary,
-        }),
-        all_issues,
-        ctx.files.len(),
-        ctx.messages().all_messages.len(),
-        false,
-    ))
+    let parse_error_count = ctx.parsed_files_errors().len();
+    report::print_parse_error(parse_error_count, verbose);
+
+    // Determine exit status
+    // In dry-run mode, finding issues is considered "Failure" (exit 1)
+    // to signal that there's work to be done
+    if parse_error_count > 0 {
+        Ok(ExitStatus::Error)
+    } else if total > 0 && !apply {
+        Ok(ExitStatus::Failure)
+    } else {
+        Ok(ExitStatus::Success)
+    }
 }
 
 fn unique_hardcoded_lines(issues: &[HardcodedTextIssue]) -> usize {

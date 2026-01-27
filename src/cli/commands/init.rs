@@ -1,37 +1,26 @@
 use std::{fs, path::Path};
 
-use super::{CommandResult, CommandSummary, InitSummary};
-use crate::config::{CONFIG_FILE_NAME, default_config_json};
 use anyhow::Result;
+use colored::Colorize;
 
-pub fn init() -> Result<CommandResult> {
+use super::super::exit_status::ExitStatus;
+use super::super::report::SUCCESS_MARK;
+use crate::config::{default_config_json, CONFIG_FILE_NAME};
+
+pub fn init() -> Result<ExitStatus> {
     let config_path = Path::new(CONFIG_FILE_NAME);
+
     if config_path.exists() {
-        return Ok(CommandResult {
-            summary: CommandSummary::Init(InitSummary {
-                created: false,
-                error: Some(format!("{} already exists", CONFIG_FILE_NAME)),
-            }),
-            error_count: 1,
-            exit_on_errors: true,
-            issues: Vec::new(),
-            parse_error_count: 0,
-            source_files_checked: 0,
-            locale_files_checked: 0,
-        });
+        eprintln!("Error: {} already exists", CONFIG_FILE_NAME);
+        return Ok(ExitStatus::Failure);
     }
 
     fs::write(config_path, default_config_json()?)?;
-    Ok(CommandResult {
-        summary: CommandSummary::Init(InitSummary {
-            created: true,
-            error: None,
-        }),
-        error_count: 0,
-        exit_on_errors: true,
-        issues: Vec::new(),
-        parse_error_count: 0,
-        source_files_checked: 0,
-        locale_files_checked: 0,
-    })
+    println!(
+        "{} {}",
+        SUCCESS_MARK.green(),
+        format!("Created {}", CONFIG_FILE_NAME).green()
+    );
+
+    Ok(ExitStatus::Success)
 }

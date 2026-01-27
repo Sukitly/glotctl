@@ -1,15 +1,13 @@
-use anyhow::{Ok, Result};
+use anyhow::Result;
 use clap::ValueEnum;
 
 use super::super::args::CheckCommand;
-use super::{
-    helper::finish,
-    {CommandResult, CommandSummary},
-};
+use super::super::exit_status::ExitStatus;
+use super::super::report;
 
 use crate::{
     core::CheckContext,
-    issues::Issue,
+    issues::{Issue, Severity},
     rules::{
         hardcoded::check_hardcoded_text_issues, missing::check_missing_keys_issues,
         orphan::check_orphan_keys_issues, replica_lag::check_replica_lag_issues,
@@ -45,7 +43,7 @@ impl CheckRule {
     }
 }
 
-pub fn check(cmd: CheckCommand) -> Result<CommandResult> {
+pub fn check(cmd: CheckCommand, verbose: bool) -> Result<ExitStatus> {
     let args = &cmd.args;
     let checks = &cmd.checks;
     let ctx = CheckContext::new(&args.common.path, args.common.verbose)?;
@@ -97,12 +95,25 @@ pub fn check(cmd: CheckCommand) -> Result<CommandResult> {
 
     let parse_errors = ctx.parsed_files_errors();
     all_issues.extend(parse_errors.iter().map(|i| Issue::ParseError(i.clone())));
+    all_issues.sort();
 
-    Ok(finish(
-        CommandSummary::Check,
-        all_issues,
-        ctx.files.len(),
-        ctx.messages().all_messages.len(),
-        true,
-    ))
+    let parse_error_count = parse_errors.len();
+    let has_errors = all_issues.iter().any(|i| i.severity() == Severity::Error);
+
+    // Print output
+    if all_issues.is_empty() {
+        report::print_no_issue(ctx.files.len(), ctx.messages().all_messages.len());
+    } else {
+        report::report(&all_issues);
+    }
+    report::print_parse_error(parse_error_count, verbose);
+
+    // Determine exit status
+    if parse_error_count > 0 {
+        Ok(ExitStatus::Error)
+    } else if has_errors {
+        Ok(ExitStatus::Failure)
+    } else {
+        Ok(ExitStatus::Success)
+    }
 }

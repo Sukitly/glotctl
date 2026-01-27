@@ -7,8 +7,8 @@ info:
   env:
     NO_COLOR: "1"
 ---
-success: true
-exit_code: 0
+success: false
+exit_code: 1
 ----- stdout -----
   --> ./src/app.tsx:4:18
      |

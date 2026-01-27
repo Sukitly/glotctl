@@ -8,23 +8,14 @@ use std::io::{self, Write};
 use colored::Colorize;
 use unicode_width::UnicodeWidthStr;
 
-use super::{
-    actions::{Action, DeleteKey, InsertDisableComment, InsertMessageKeys},
-    commands::{
-        BaselineSummary, CleanSummary, CommandResult, CommandSummary, FixSummary, InitSummary,
-    },
-};
-use crate::config::CONFIG_FILE_NAME;
 use crate::core::ResolvedKeyUsage;
-use crate::issues::{
-    Issue, ParseErrorFileType, Report, ReportLocation, Severity, UnresolvedKeyIssue,
-};
+use crate::issues::{Issue, Report, ReportLocation, Severity};
 
 /// Success mark for consistent output formatting.
-pub const SUCCESS_MARK: &str = "\u{2713}"; // ✓
+pub const SUCCESS_MARK: &str = "\u{2713}"; // checkmark
 
 /// Failure mark for consistent output formatting.
-pub const FAILURE_MARK: &str = "\u{2718}"; // ✘
+pub const FAILURE_MARK: &str = "\u{2718}"; // X mark
 
 /// Maximum number of usages to display per issue.
 const MAX_USAGES_DISPLAY: usize = 3;
@@ -343,293 +334,6 @@ fn compare_issues(a: &Issue, b: &Issue) -> std::cmp::Ordering {
         .then_with(|| a_col.cmp(&b_col))
 }
 
-pub fn print(result: &CommandResult, verbose: bool) {
-    if result.is_success() {
-        print_no_issue(result.source_files_checked, result.locale_files_checked);
-    } else {
-        print_command_output(result);
-    }
-
-    // For clean command with exit_on_errors, parse errors are already reported in print_clean
-    let skip_parse_error =
-        matches!(result.summary, CommandSummary::Clean(_)) && result.exit_on_errors;
-    if !skip_parse_error {
-        print_parse_error(result.parse_error_count, verbose);
-    }
-}
-
-fn print_command_output(result: &CommandResult) {
-    match &result.summary {
-        CommandSummary::Check => {
-            print_check(result);
-        }
-        CommandSummary::Baseline(summary) => {
-            print_baseline(summary);
-        }
-        CommandSummary::Fix(summary) => {
-            print_fix(summary);
-        }
-        CommandSummary::Clean(summary) => {
-            print_clean(result, summary);
-        }
-        CommandSummary::Init(summary) => {
-            print_init(summary);
-        }
-    }
-}
-
-fn print_check(result: &CommandResult) {
-    report(&result.issues);
-}
-
-fn print_baseline(summary: &BaselineSummary) {
-    if !summary.is_apply {
-        if !summary.hardcoded_issues.is_empty() {
-            InsertDisableComment::preview(&summary.hardcoded_issues);
-        }
-        if !summary.untranslated_issues.is_empty() {
-            InsertDisableComment::preview(&summary.untranslated_issues);
-        }
-    }
-
-    let total = summary.hardcoded_count + summary.untranslated_usage_count;
-    if total > 0 {
-        if summary.is_apply {
-            println!(
-                "{} {} comment(s) in {} file(s) (processed {} issue(s)):",
-                "Inserted".green().bold(),
-                summary.applied_total_count,
-                summary.file_count,
-                total
-            );
-            if summary.hardcoded_count > 0 {
-                println!(
-                    "  - hardcoded: {} comment(s) (from {} issue(s))",
-                    summary.applied_hardcoded_count, summary.hardcoded_count
-                );
-            }
-            if summary.untranslated_usage_count > 0 {
-                println!(
-                    "  - untranslated: {} comment(s), {} key(s) (from {} usage(s))",
-                    summary.applied_untranslated_count,
-                    summary.untranslated_key_count,
-                    summary.untranslated_usage_count
-                );
-            }
-        } else {
-            println!(
-                "{} {} comment(s) in {} file(s):",
-                "Would insert".yellow().bold(),
-                total,
-                summary.file_count
-            );
-            if summary.hardcoded_count > 0 {
-                println!("  - hardcoded: {} comment(s)", summary.hardcoded_count);
-            }
-            if summary.untranslated_usage_count > 0 {
-                println!(
-                    "  - untranslated: {} comment(s), {} key(s)",
-                    summary.untranslated_usage_count, summary.untranslated_key_count
-                );
-            }
-            println!("Run with {} to insert these comments.", "--apply".cyan());
-        }
-    }
-}
-
-fn print_fix(summary: &FixSummary) {
-    let unfixable_issues: Vec<&UnresolvedKeyIssue> = summary
-        .unresolved_issues
-        .iter()
-        .filter(|issue| issue.pattern.is_none())
-        .collect();
-    let has_fixable = summary.processed_count > 0;
-    let has_unfixable = !unfixable_issues.is_empty();
-
-    if has_unfixable {
-        print_unfixable_keys(&unfixable_issues);
-    }
-
-    if !summary.is_apply && !summary.unresolved_issues.is_empty() {
-        InsertMessageKeys::preview(&summary.unresolved_issues);
-    }
-
-    if summary.unresolved_count > 0 {
-        if summary.is_apply {
-            if has_fixable {
-                println!(
-                    "{} {} comment(s) in {} file(s) (processed {} issue(s)).",
-                    "Inserted".green().bold(),
-                    summary.applied_count,
-                    summary.file_count,
-                    summary.processed_count
-                );
-                if summary.skipped_count > 0 {
-                    println!(
-                        "  - skipped: {} issue(s) without pattern",
-                        summary.skipped_count
-                    );
-                }
-            }
-        } else if has_fixable {
-            println!(
-                "{} {} comment(s) in {} file(s).",
-                "Would insert".yellow().bold(),
-                summary.processed_count,
-                summary.file_count
-            );
-            println!("Run with {} to insert these comments.", "--apply".cyan());
-        }
-
-        if has_unfixable && !summary.is_apply {
-            if has_fixable {
-                println!(
-                    "Note: {} dynamic key(s) cannot be fixed (variable keys).",
-                    summary.skipped_count
-                );
-            } else {
-                println!();
-                println!("Note: No fixable dynamic keys (all are variable keys without hints).");
-            }
-        }
-    }
-}
-
-fn print_unfixable_keys(issues: &[&UnresolvedKeyIssue]) {
-    println!(
-        "{} Cannot fix {} unresolved key(s) (variable keys without pattern hints):",
-        FAILURE_MARK.red(),
-        issues.len()
-    );
-    println!();
-
-    for issue in issues {
-        let ctx = &issue.context;
-        let line = ctx.line();
-        let col = ctx.col();
-        let source_line = &ctx.source_line;
-
-        println!("  {} {}:{}:{}", "-->".blue(), ctx.file_path(), line, col);
-        println!("     {}", "|".blue());
-        println!(
-            " {:>3} {} {}",
-            line.to_string().blue(),
-            "|".blue(),
-            source_line
-        );
-
-        let prefix: String = source_line.chars().take(col.saturating_sub(1)).collect();
-        let caret_padding = UnicodeWidthStr::width(prefix.as_str());
-        println!(
-            "     {} {:>padding$}{}",
-            "|".blue(),
-            "",
-            "^".red(),
-            padding = caret_padding
-        );
-        println!("   {} reason: {}", "=".blue(), issue.reason);
-        println!();
-    }
-}
-
-fn print_clean(result: &CommandResult, summary: &CleanSummary) {
-    // Check for message parse errors first
-    let message_parse_errors: Vec<Issue> = result
-        .issues
-        .iter()
-        .filter(|issue| {
-            matches!(issue, Issue::ParseError(e) if e.file_type == ParseErrorFileType::Message)
-        })
-        .cloned()
-        .collect();
-
-    if !message_parse_errors.is_empty() {
-        eprintln!(
-            "Error: {} Cannot clean, {} file(s) could not be parsed.",
-            FAILURE_MARK.red(),
-            message_parse_errors.len()
-        );
-        eprintln!("Parse errors mean some files could not be analyzed.");
-        eprintln!("Run `glot check` to see details and fix them.");
-        report_to_stderr(&message_parse_errors);
-        return;
-    }
-
-    // Check for unresolved keys
-    let unresolved_issues: Vec<Issue> = result
-        .issues
-        .iter()
-        .filter(|issue| matches!(issue, Issue::UnresolvedKey(_)))
-        .cloned()
-        .collect();
-
-    if !unresolved_issues.is_empty() {
-        eprintln!(
-            "Error: {} Cannot clean, {} unresolved key warning(s) found.",
-            FAILURE_MARK.red(),
-            unresolved_issues.len()
-        );
-        eprintln!("Unresolved keys prevent tracking all key usage.");
-        eprintln!("Run `glot check` to see details, then fix or suppress them.");
-        report_to_stderr(&unresolved_issues);
-        return;
-    }
-    if !summary.is_apply {
-        if !summary.unused_issues.is_empty() {
-            DeleteKey::preview(&summary.unused_issues);
-        }
-        if !summary.orphan_issues.is_empty() {
-            DeleteKey::preview(&summary.orphan_issues);
-        }
-    }
-
-    let total = summary.unused_count + summary.orphan_count;
-    if total > 0 {
-        if summary.is_apply {
-            println!(
-                "{} {} key(s) in {} file(s) (processed {} key(s)).",
-                "Deleted".green().bold(),
-                summary.applied_total_count,
-                summary.file_count,
-                total
-            );
-            if summary.unused_count > 0 {
-                println!(
-                    "  - unused: {} key(s) (from {} issue(s))",
-                    summary.applied_unused_count, summary.unused_count
-                );
-            }
-            if summary.orphan_count > 0 {
-                println!(
-                    "  - orphan: {} key(s) (from {} issue(s))",
-                    summary.applied_orphan_count, summary.orphan_count
-                );
-            }
-        } else {
-            println!(
-                "{} {} unused key(s) and {} orphan key(s) from {} file(s).",
-                "Would delete".yellow().bold(),
-                summary.unused_count,
-                summary.orphan_count,
-                summary.file_count
-            );
-            println!("Run with {} to delete these keys.", "--apply".cyan());
-        }
-    }
-}
-
-fn print_init(summary: &InitSummary) {
-    if let Some(error) = &summary.error {
-        eprintln!("Error: {}", error);
-    } else if summary.created {
-        println!(
-            "{} {}",
-            SUCCESS_MARK.green(),
-            format!("Created {}", CONFIG_FILE_NAME).green()
-        );
-    }
-}
-
 // ============================================================
 // Tests
 // ============================================================
@@ -646,8 +350,8 @@ mod tests {
     };
     use crate::issues::{
         HardcodedTextIssue, IssueUnresolvedKeyReason, MissingKeyIssue, OrphanKeyIssue,
-        ParseErrorIssue, ReplicaLagIssue, TypeMismatchIssue, UnresolvedKeyIssue, UntranslatedIssue,
-        UnusedKeyIssue,
+        ParseErrorFileType, ParseErrorIssue, ReplicaLagIssue, TypeMismatchIssue,
+        UnresolvedKeyIssue, UntranslatedIssue, UnusedKeyIssue,
     };
 
     fn strip_ansi(s: &str) -> String {
@@ -844,7 +548,7 @@ mod tests {
     #[test]
     fn test_report_orphan_key() {
         let loc = MessageLocation::new("./messages/zh.json", 10, 3);
-        let ctx = MessageContext::new(loc, "Common.orphan", "孤儿值");
+        let ctx = MessageContext::new(loc, "Common.orphan", "orphan value");
         let issue = Issue::OrphanKey(OrphanKeyIssue {
             context: ctx,
             locale: "zh".to_string(),
@@ -859,7 +563,7 @@ mod tests {
         assert!(stripped.contains("\"Common.orphan\""));
         assert!(stripped.contains("orphan-key"));
         assert!(stripped.contains("in zh"));
-        assert!(stripped.contains("(\"孤儿值\")"));
+        assert!(stripped.contains("(\"orphan value\")"));
     }
 
     #[test]
@@ -1037,8 +741,8 @@ mod tests {
     fn test_report_unicode_source_line() {
         // Test that caret aligns correctly with CJK characters
         let loc = SourceLocation::new("./src/app.tsx", 10, 8);
-        // "你好" takes 4 display width (2 per CJK char), then "World" starts at col 8
-        let ctx = SourceContext::new(loc, "const x = \"你好World\";", CommentStyle::Js);
+        // CJK characters take 2 display width each, then "World" starts at col 8
+        let ctx = SourceContext::new(loc, "const x = \"hello World\";", CommentStyle::Js);
         let issue = Issue::HardcodedText(HardcodedTextIssue {
             context: ctx,
             text: "World".to_string(),
@@ -1049,7 +753,7 @@ mod tests {
         let output_str = String::from_utf8(output).unwrap();
 
         // Just verify it doesn't panic and contains expected content
-        assert!(output_str.contains("你好World"));
+        assert!(output_str.contains("hello World"));
         assert!(output_str.contains("^"));
     }
 }

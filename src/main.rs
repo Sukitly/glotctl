@@ -1,22 +1,24 @@
-use clap::Parser;
-use glot::cli::{Arguments, Command};
+use std::process::ExitCode;
 
-fn main() {
+use clap::Parser;
+use glot::cli::{Arguments, Command, ExitStatus};
+
+fn main() -> ExitCode {
     let args = Arguments::parse();
 
     if matches!(args.command, Some(Command::Serve)) {
         if let Err(err) = glot::mcp::run_server() {
             eprintln!("Error: {}", err);
-            std::process::exit(2);
+            return ExitStatus::Error.into();
         }
-        return;
+        return ExitStatus::Success.into();
     }
 
     match glot::cli::run_cli(args) {
-        Ok(code) => std::process::exit(code),
+        Ok(code) => code,
         Err(err) => {
             eprintln!("Error: {}", err);
-            std::process::exit(1);
+            ExitStatus::Error.into()
         }
     }
 }

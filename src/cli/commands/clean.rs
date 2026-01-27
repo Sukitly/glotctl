@@ -1,11 +1,14 @@
 use std::collections::HashSet;
 
+use anyhow::Result;
+use colored::Colorize;
+
 use super::super::{
     actions::{Action, ActionStats, DeleteKey},
     args::{CleanCommand, CleanRule},
+    exit_status::ExitStatus,
+    report::{self, FAILURE_MARK},
 };
-use super::helper::finish;
-use super::{CleanSummary, CommandResult, CommandSummary};
 use crate::{
     core::CheckContext,
     issues::{Issue, OrphanKeyIssue, UnresolvedKeyIssue, UnusedKeyIssue},
@@ -14,7 +17,6 @@ use crate::{
         unused::check_unused_keys_issues,
     },
 };
-use anyhow::{Ok, Result};
 
 impl CleanRule {
     pub fn all() -> HashSet<Self> {
@@ -22,7 +24,7 @@ impl CleanRule {
     }
 }
 
-pub fn clean(cmd: CleanCommand) -> Result<CommandResult> {
+pub fn clean(cmd: CleanCommand, verbose: bool) -> Result<ExitStatus> {
     let args = &cmd.args;
     let ctx = CheckContext::new(&args.common.path, args.common.verbose)?;
     let apply = args.apply;
@@ -30,66 +32,41 @@ pub fn clean(cmd: CleanCommand) -> Result<CommandResult> {
     // Check for message parse errors - block clean if any message files failed to parse
     let message_parse_errors = ctx.message_parse_errors();
     if !message_parse_errors.is_empty() {
-        let mut all_issues: Vec<Issue> = Vec::new();
-        all_issues.extend(
-            message_parse_errors
-                .iter()
-                .map(|i| Issue::ParseError(i.clone())),
+        eprintln!(
+            "Error: {} Cannot clean, {} file(s) could not be parsed.",
+            FAILURE_MARK.red(),
+            message_parse_errors.len()
         );
+        eprintln!("Parse errors mean some files could not be analyzed.");
+        eprintln!("Run `glot check` to see details and fix them.");
 
-        let mut result = finish(
-            CommandSummary::Clean(CleanSummary {
-                unused_count: 0,
-                orphan_count: 0,
-                applied_unused_count: 0,
-                applied_orphan_count: 0,
-                applied_total_count: 0,
-                file_count: 0,
-                is_apply: apply,
-                unused_issues: Vec::new(),
-                orphan_issues: Vec::new(),
-            }),
-            all_issues,
-            ctx.files.len(),
-            ctx.messages().all_messages.len(),
-            false,
-        );
+        let issues: Vec<Issue> = message_parse_errors
+            .iter()
+            .map(|i| Issue::ParseError(i.clone()))
+            .collect();
+        report::report_to_stderr(&issues);
 
-        result.exit_on_errors = true;
-        result.error_count = 1;
-        return Ok(result);
+        return Ok(ExitStatus::Error);
     }
 
     // Check for unresolved keys - block clean if any keys cannot be statically resolved
     let unresolved_issues: Vec<UnresolvedKeyIssue> = check_unresolved_keys_issues(&ctx);
     if !unresolved_issues.is_empty() {
-        let parse_errors = ctx.parsed_files_errors();
-
-        let mut all_issues: Vec<Issue> = Vec::new();
-        all_issues.extend(unresolved_issues.into_iter().map(Issue::UnresolvedKey));
-        all_issues.extend(parse_errors.iter().map(|i| Issue::ParseError(i.clone())));
-
-        let mut result = finish(
-            CommandSummary::Clean(CleanSummary {
-                unused_count: 0,
-                orphan_count: 0,
-                applied_unused_count: 0,
-                applied_orphan_count: 0,
-                applied_total_count: 0,
-                file_count: 0,
-                is_apply: apply,
-                unused_issues: Vec::new(),
-                orphan_issues: Vec::new(),
-            }),
-            all_issues,
-            ctx.files.len(),
-            ctx.messages().all_messages.len(),
-            false,
+        eprintln!(
+            "Error: {} Cannot clean, {} unresolved key warning(s) found.",
+            FAILURE_MARK.red(),
+            unresolved_issues.len()
         );
+        eprintln!("Unresolved keys prevent tracking all key usage.");
+        eprintln!("Run `glot check` to see details, then fix or suppress them.");
 
-        result.exit_on_errors = true;
-        result.error_count = 1;
-        return Ok(result);
+        let issues: Vec<Issue> = unresolved_issues
+            .into_iter()
+            .map(Issue::UnresolvedKey)
+            .collect();
+        report::report_to_stderr(&issues);
+
+        return Ok(ExitStatus::Error);
     }
 
     let rules = if args.rules.is_empty() {
@@ -116,6 +93,7 @@ pub fn clean(cmd: CleanCommand) -> Result<CommandResult> {
 
     let unused_count = unused_issues.len();
     let orphan_count = orphan_issues.len();
+    let total = unused_count + orphan_count;
 
     let (file_count, applied_unused_count, applied_orphan_count, applied_total_count) = if apply {
         let mut stats = ActionStats::default();
@@ -148,30 +126,63 @@ pub fn clean(cmd: CleanCommand) -> Result<CommandResult> {
         (files.len(), 0, 0, 0)
     };
 
-    let unused_issues_summary = unused_issues.clone();
-    let orphan_issues_summary = orphan_issues.clone();
-    let parse_errors = ctx.parsed_files_errors();
+    // Print output
+    if total == 0 {
+        report::print_no_issue(ctx.files.len(), ctx.messages().all_messages.len());
+    } else {
+        // Show preview in dry-run mode
+        if !apply {
+            if !unused_issues.is_empty() {
+                DeleteKey::preview(&unused_issues);
+            }
+            if !orphan_issues.is_empty() {
+                DeleteKey::preview(&orphan_issues);
+            }
+        }
 
-    let mut all_issues: Vec<Issue> = Vec::new();
-    all_issues.extend(unused_issues.into_iter().map(Issue::UnusedKey));
-    all_issues.extend(orphan_issues.into_iter().map(Issue::OrphanKey));
-    all_issues.extend(parse_errors.iter().map(|i| Issue::ParseError(i.clone())));
+        if apply {
+            println!(
+                "{} {} key(s) in {} file(s) (processed {} key(s)).",
+                "Deleted".green().bold(),
+                applied_total_count,
+                file_count,
+                total
+            );
+            if unused_count > 0 {
+                println!(
+                    "  - unused: {} key(s) (from {} issue(s))",
+                    applied_unused_count, unused_count
+                );
+            }
+            if orphan_count > 0 {
+                println!(
+                    "  - orphan: {} key(s) (from {} issue(s))",
+                    applied_orphan_count, orphan_count
+                );
+            }
+        } else {
+            println!(
+                "{} {} unused key(s) and {} orphan key(s) from {} file(s).",
+                "Would delete".yellow().bold(),
+                unused_count,
+                orphan_count,
+                file_count
+            );
+            println!("Run with {} to delete these keys.", "--apply".cyan());
+        }
+    }
 
-    Ok(finish(
-        CommandSummary::Clean(CleanSummary {
-            unused_count,
-            orphan_count,
-            applied_unused_count,
-            applied_orphan_count,
-            applied_total_count,
-            file_count,
-            is_apply: apply,
-            unused_issues: unused_issues_summary,
-            orphan_issues: orphan_issues_summary,
-        }),
-        all_issues,
-        ctx.files.len(),
-        ctx.messages().all_messages.len(),
-        false,
-    ))
+    let parse_error_count = ctx.parsed_files_errors().len();
+    report::print_parse_error(parse_error_count, verbose);
+
+    // Determine exit status
+    // In dry-run mode, finding issues to clean is considered "Failure" (exit 1)
+    // to signal that there's work to be done
+    if parse_error_count > 0 {
+        Ok(ExitStatus::Error)
+    } else if total > 0 && !apply {
+        Ok(ExitStatus::Failure)
+    } else {
+        Ok(ExitStatus::Success)
+    }
 }
