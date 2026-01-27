@@ -5,7 +5,7 @@ use colored::Colorize;
 
 use super::super::exit_status::ExitStatus;
 use super::super::report::SUCCESS_MARK;
-use crate::config::{default_config_json, CONFIG_FILE_NAME};
+use crate::config::{CONFIG_FILE_NAME, default_config_json};
 
 pub fn init() -> Result<ExitStatus> {
     let config_path = Path::new(CONFIG_FILE_NAME);

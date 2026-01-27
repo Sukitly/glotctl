@@ -4,13 +4,13 @@ use anyhow::Result;
 use colored::Colorize;
 
 use super::super::{
-    actions::{execute_operations, Action, ActionStats, InsertDisableComment},
+    actions::{Action, ActionStats, InsertDisableComment, execute_operations},
     args::BaselineCommand,
     exit_status::ExitStatus,
     report,
 };
 use crate::{
-    core::{collect::SuppressibleRule, CheckContext},
+    core::{CheckContext, collect::SuppressibleRule},
     issues::{HardcodedTextIssue, UntranslatedIssue},
     rules::{hardcoded::check_hardcoded_text_issues, untranslated::check_untranslated_issues},
 };
