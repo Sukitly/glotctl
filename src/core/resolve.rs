@@ -1,9 +1,15 @@
-//! Translation call resolution (Phase 3).
+//! Phase 3: Resolution - Resolving raw calls to final key usages.
 //!
-//! This module resolves raw translation calls collected in Phase 2 into
-//! final ResolvedKeyUsage and UnresolvedKeyUsage results.
+//! This module handles the third and final phase of the analysis pipeline:
+//! resolving raw translation calls collected in Phase 2 into final ResolvedKeyUsage
+//! and UnresolvedKeyUsage results.
 //!
-//! It also handles schema calls expansion.
+//! Resolution includes:
+//! - Static key extraction from literals and conditionals
+//! - Dynamic key resolution from object access and array iteration
+//! - Schema function expansion
+//! - glot-message-keys pattern expansion
+//! - Unresolved key warning generation
 
 use std::collections::HashSet;
 
@@ -21,10 +27,10 @@ use crate::core::{
 
 /// Resolve translation calls and schema calls to key usages.
 ///
-/// This is Phase 3 of extraction, processing the raw calls and schema calls
+/// This is Phase 3 of the analysis pipeline, processing the raw calls and schema calls
 /// collected in Phase 2. It produces:
-/// - `resolved`: All keys that were successfully resolved (static, dynamic, schema)
-/// - `unresolved`: Keys that could not be statically resolved (warnings)
+/// - `resolved`: All keys that were successfully resolved (static, dynamic, schema, glot-message-keys)
+/// - `unresolved`: Keys that could not be statically resolved (dynamic key warnings)
 pub fn resolve_translation_calls(
     raw_calls: &[RawTranslationCall],
     schema_calls: &[SchemaCallInfo],

@@ -1,3 +1,14 @@
+//! Baseline command - Suppress existing issues with disable comments.
+//!
+//! This command inserts `glot-disable-next-line` comments to suppress existing issues,
+//! allowing you to establish a baseline and fix issues incrementally.
+//!
+//! Supported rules:
+//! - `hardcoded`: Suppress hardcoded text warnings
+//! - `untranslated`: Suppress untranslated value warnings
+//!
+//! Use `--apply` to actually insert comments (default is dry-run mode).
+
 use std::collections::HashSet;
 
 use anyhow::Result;

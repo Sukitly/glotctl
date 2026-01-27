@@ -8,8 +8,8 @@
 //! By combining these into a single visitor, we reduce the number of AST traversals per file
 //! from 3-4 to just 1, significantly improving performance.
 //!
-//! The actual resolution of translation calls to UsedKey/DynamicKeyWarning happens
-//! in the resolve phase (see `crate::analysis::resolve`).
+//! The actual resolution of translation calls to ResolvedKeyUsage/UnresolvedKeyUsage
+//! happens in Phase 3 (see `crate::core::resolve`).
 
 use std::collections::HashSet;
 

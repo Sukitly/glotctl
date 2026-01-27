@@ -30,26 +30,44 @@ use crate::{
 
 use std::collections::HashMap;
 
-/// Type alias for all hardcoded issues (one vec per file).
+/// Type alias for all hardcoded text issues (one vec per file).
 pub type AllHardcodedTextIssues = HashMap<String, Vec<HardcodedTextIssue>>;
 
 /// Aggregated message data from all locale files.
+///
+/// Contains both the primary locale messages (used for validation) and
+/// all locale messages (used for untranslated value detection).
 pub struct MessageData {
     pub all_messages: AllLocaleMessages,
     pub primary_messages: LocaleMessages,
 }
 
+/// Source metadata collected during Phase 1: Collection.
+///
+/// This includes cross-file dependency registries, import resolution data,
+/// and comment annotations (disable directives, glot-message-keys).
 pub struct SourceMetadata {
     pub registries: Registries,
     pub file_imports: AllFileImports,
     pub file_comments: AllFileComments,
 }
 
+/// Resolved data from Phase 2 (Extraction) and Phase 3 (Resolution).
+///
+/// Contains the final key usages (resolved and unresolved) and hardcoded text issues.
 pub struct ResolvedData {
     pub key_usages: AllKeyUsages,
     pub hardcoded_issues: AllHardcodedTextIssues,
 }
 
+/// Core analysis context orchestrating the three-phase pipeline.
+///
+/// CheckContext manages all analysis phases:
+/// - **Phase 1: Collection** - Cross-file registries and comments (source_metadata)
+/// - **Phase 2: Extraction** - Raw translation calls per file
+/// - **Phase 3: Resolution** - Final resolved/unresolved key usages (resolved_data)
+///
+/// Uses lazy initialization (OnceCell) for each phase to compute data only when needed.
 pub struct CheckContext {
     // Basic data (set at initialization)
     pub config: Config,
@@ -58,6 +76,7 @@ pub struct CheckContext {
     pub ignore_texts: HashSet<String>,
     pub verbose: bool,
 
+    // Lazily initialized pipeline data
     parsed_files: OnceCell<HashMap<String, ParsedJSX>>,
     parsed_files_errors: OnceCell<Vec<ParseErrorIssue>>,
     source_metadata: OnceCell<SourceMetadata>,
@@ -286,7 +305,7 @@ impl CheckContext {
 
             let parsed_files = self.parsed_files();
 
-            // Phase 1: Collect registries AND comments (Biome-style: comments collected first)
+            // Phase 1: Collection - Collect registries and comments in single AST pass
             let (registries, file_imports, file_comments) =
                 collect_registries_and_comments(parsed_files, &available_keys);
 
@@ -353,6 +372,14 @@ impl CheckContext {
     }
 }
 
+/// Phase 1: Collection - Collect cross-file registries and comments.
+///
+/// This performs the first AST pass to collect:
+/// - Schema function registries
+/// - Key object/array registries
+/// - Translation prop/function call registries
+/// - Import resolution data
+/// - Comment annotations (disable directives, glot-message-keys)
 fn collect_registries_and_comments(
     parsed_files: &HashMap<String, ParsedJSX>,
     _available_keys: &std::collections::HashSet<String>,
@@ -493,10 +520,12 @@ fn resolve_component_name_for_prop(
         .unwrap_or_else(|| component_name.to_string())
 }
 
-/// Phase 2 & 3: Extract and resolve translation keys from all files.
+/// Phase 2 & 3: Extraction and Resolution.
 ///
-/// - Phase 2: Collect raw translation calls and hardcoded issues
-/// - Phase 3: Resolve raw calls to ResolvedKeyUsage/UnresolvedKeyUsage
+/// For each file:
+/// - **Phase 2 (Extraction)**: Collect raw translation calls and detect hardcoded text
+/// - **Phase 3 (Resolution)**: Resolve ValueSource to static keys, expand schema calls,
+///   apply glot-message-keys, and generate final ResolvedKeyUsage/UnresolvedKeyUsage
 #[allow(clippy::too_many_arguments)]
 fn extract_from_files(
     files: &std::collections::HashSet<String>,
@@ -519,9 +548,9 @@ fn extract_from_files(
         let imports = file_imports.get(file_path).cloned().unwrap_or_default();
         let comments = file_comments
             .get(file_path)
-            .expect("comments should be collected in Phase 1");
+            .expect("Comments should be collected in Phase 1");
 
-        // Phase 2: Collect raw translation calls and hardcoded text
+        // Phase 2: Extraction - Collect raw translation calls and hardcoded text
         let analyzer = FileAnalyzer::new(
             file_path,
             &parsed.source_map,
@@ -533,7 +562,7 @@ fn extract_from_files(
         );
         let result = analyzer.analyze(&parsed.module);
 
-        // Phase 3: Resolve raw calls and schema calls to key usages
+        // Phase 3: Resolution - Resolve raw calls and schema calls to key usages
         let file_key_usages = resolve_translation_calls(
             &result.raw_calls,
             &result.schema_calls,

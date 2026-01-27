@@ -1,3 +1,9 @@
+//! Glot CLI application entry point.
+//!
+//! This binary handles command dispatch for the Glot i18n checker tool.
+//! It routes to either the CLI commands or the MCP server based on the
+//! command-line arguments.
+
 use std::process::ExitCode;
 
 use clap::Parser;
