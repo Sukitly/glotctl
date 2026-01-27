@@ -12,12 +12,12 @@ success: true
 exit_code: 0
 ----- stdout -----
 warning: "Common.cancel"  untranslated
-  --> ./messages/en.json:1:0
+  --> ./messages/en.json:1:1
   = note: ("Cancel") identical in: zh
   = used: (no usages found)
 
 warning: "Common.submit"  untranslated
-  --> ./messages/en.json:1:0
+  --> ./messages/en.json:1:1
   = note: ("Submit") identical in: zh
   = used: ./src/app.tsx:6:21
 

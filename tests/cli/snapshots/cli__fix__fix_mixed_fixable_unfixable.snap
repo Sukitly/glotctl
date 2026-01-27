@@ -7,8 +7,8 @@ info:
   env:
     NO_COLOR: "1"
 ---
-success: true
-exit_code: 0
+success: false
+exit_code: 1
 ----- stdout -----
 ✘ Cannot fix 1 unresolved key(s) (variable keys without pattern hints):
 
@@ -22,7 +22,7 @@ exit_code: 0
      |
    8 |             <span>{t(`${prefix}.title`)}</span>
      |                    ^
-   +             {/* glot-message-keys "Common.*.title" */}
+  +             {/* glot-message-keys "Common.*.title" */}
 
 Would insert 1 comment(s) in 1 file(s).
 Run with --apply to insert these comments.

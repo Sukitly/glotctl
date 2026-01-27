@@ -11,111 +11,268 @@
 //! - Shows which locales have type mismatches with their file locations
 //! - Shows where the key is used in code
 
-use anyhow::Result;
-
 use crate::{
-    commands::{check::build_key_usage_map, context::CheckContext},
-    issue::{Issue, LocaleTypeMismatch, MessageLocation, TypeMismatchIssue},
-    rules::Checker,
+    core::CheckContext,
+    core::{
+        AllLocaleMessages, LocaleMessages, LocaleTypeMismatch, MessageContext, MessageLocation,
+    },
+    issues::TypeMismatchIssue,
+    rules::{
+        build_key_usage_map,
+        helpers::{KeyUsageMap, get_usages_for_key},
+    },
 };
 
-pub struct TypeMismatchRule;
+pub fn check_type_mismatch_issues(ctx: &CheckContext) -> Vec<TypeMismatchIssue> {
+    let primary_locale = &ctx.config.primary_locale;
+    let primary_messages = &ctx.messages().primary_messages;
+    let all_messages = &ctx.messages().all_messages;
+    let key_usages = ctx.all_key_usages();
+    let key_usages_map = build_key_usage_map(key_usages);
+    check_type_mismatch(
+        primary_locale,
+        primary_messages,
+        all_messages,
+        &key_usages_map,
+    )
+}
 
-impl Checker for TypeMismatchRule {
-    fn name(&self) -> &str {
-        "type_mismatch"
-    }
+/// Check for type mismatches between locales.
+///
+/// Finds all keys where the value type (string vs array) differs between
+/// the primary locale and other locales.
+///
+/// # Arguments
+/// * `primary_locale` - The primary locale code (e.g., "en")
+/// * `primary_messages` - Messages from the primary locale
+/// * `all_messages` - All messages from all locales
+/// * `key_usages` - Map of key to usage locations (for showing where keys are used)
+///
+/// # Returns
+/// Vector of TypeMismatchIssue for keys with type mismatches
+pub fn check_type_mismatch(
+    primary_locale: &str,
+    primary_messages: &LocaleMessages,
+    all_messages: &AllLocaleMessages,
+    key_usages: &KeyUsageMap,
+) -> Vec<TypeMismatchIssue> {
+    let mut issues = Vec::new();
 
-    fn needs_registries(&self) -> bool {
-        // Need registries to build extractions for key usages
-        true
-    }
-
-    fn needs_messages(&self) -> bool {
-        true
-    }
-
-    fn check(&self, ctx: &CheckContext) -> Result<Vec<Issue>> {
-        ctx.ensure_messages()?;
-        // Need extractions to get key usage locations
-        ctx.ensure_extractions()?;
-
-        let messages = ctx.messages().expect("messages must be loaded");
-        let extractions = ctx.extractions().expect("extractions must be loaded");
-        let primary_locale = &ctx.config.primary_locale;
-
-        let Some(primary_messages) = &messages.primary_messages else {
-            // No primary locale found, skip check (runner will report error)
-            return Ok(Vec::new());
-        };
-
-        // Build key usage map for showing where keys are used
-        let key_usages = build_key_usage_map(extractions);
-
-        let mut issues = Vec::new();
-
-        // Iterate over primary locale keys
-        for (key, primary_entry) in primary_messages {
-            // Collect locales with type mismatch
-            let mut mismatched_in: Vec<LocaleTypeMismatch> = messages
-                .all_messages
-                .iter()
-                .filter_map(|(locale, msgs)| {
-                    if locale == primary_locale {
-                        return None;
+    for (key, primary_entry) in &primary_messages.entries {
+        // Collect locales with type mismatch
+        let mut mismatched_in: Vec<LocaleTypeMismatch> = all_messages
+            .iter()
+            .filter_map(|(locale, msgs)| {
+                if locale == primary_locale {
+                    return None;
+                }
+                msgs.get(key).and_then(|entry| {
+                    let primary_type = primary_entry.value_type;
+                    let entry_type = entry.value_type;
+                    if entry_type != primary_type {
+                        Some(LocaleTypeMismatch::new(
+                            locale.clone(),
+                            entry_type,
+                            MessageLocation::new(
+                                &entry.context.location.file_path,
+                                entry.context.location.line,
+                                1,
+                            ),
+                        ))
+                    } else {
+                        None
                     }
-                    msgs.get(key).and_then(|entry| {
-                        if entry.value_type != primary_entry.value_type {
-                            Some(LocaleTypeMismatch {
-                                locale: locale.clone(),
-                                actual_type: entry.value_type,
-                                file_path: entry.file_path.clone(),
-                                line: entry.line,
-                            })
-                        } else {
-                            None
-                        }
-                    })
                 })
-                .collect();
-            mismatched_in.sort();
+            })
+            .collect();
+        mismatched_in.sort();
 
-            if !mismatched_in.is_empty() {
-                // Store all usages (no limit) so we can show where the key is used
-                let usages = key_usages.get(key).cloned().unwrap_or_default();
-                let total_usages = usages.len();
+        if !mismatched_in.is_empty() {
+            let usages = get_usages_for_key(key_usages, key);
 
-                issues.push(Issue::TypeMismatch(TypeMismatchIssue {
-                    location: MessageLocation::new(&primary_entry.file_path, primary_entry.line),
-                    key: key.clone(),
-                    expected_type: primary_entry.value_type,
-                    primary_locale: primary_locale.clone(),
-                    mismatched_in,
-                    usages,
-                    total_usages,
-                }));
-            }
+            issues.push(TypeMismatchIssue {
+                context: MessageContext::new(
+                    MessageLocation::new(
+                        &primary_entry.context.location.file_path,
+                        primary_entry.context.location.line,
+                        1,
+                    ),
+                    key.clone(),
+                    primary_entry.context.value.clone(),
+                ),
+                expected_type: primary_entry.value_type,
+                primary_locale: primary_locale.to_string(),
+                mismatched_in,
+                usages,
+            });
         }
-
-        issues.sort();
-        Ok(issues)
     }
+
+    // Sort by file path, then line for deterministic output
+    issues.sort_by(|a, b| {
+        a.context
+            .location
+            .file_path
+            .cmp(&b.context.location.file_path)
+            .then_with(|| a.context.location.line.cmp(&b.context.location.line))
+            .then_with(|| a.context.key.cmp(&b.context.key))
+    });
+
+    issues
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use std::collections::HashMap;
 
-    #[test]
-    fn test_type_mismatch_rule_name() {
-        let rule = TypeMismatchRule;
-        assert_eq!(rule.name(), "type_mismatch");
+    use crate::core::{LocaleMessages, MessageContext, MessageEntry, MessageLocation, ValueType};
+    use crate::rules::type_mismatch::*;
+
+    fn create_message_map_with_types(
+        file: &str,
+        entries: &[(&str, &str, ValueType)],
+    ) -> LocaleMessages {
+        let locale = file.trim_end_matches(".json");
+        let mut messages = LocaleMessages::new(locale, file);
+        for (i, (k, v, vt)) in entries.iter().enumerate() {
+            messages.entries.insert(
+                k.to_string(),
+                MessageEntry {
+                    context: MessageContext::new(
+                        MessageLocation::with_line(file, i + 1),
+                        k.to_string(),
+                        v.to_string(),
+                    ),
+                    value_type: *vt,
+                },
+            );
+        }
+        messages
     }
 
     #[test]
-    fn test_type_mismatch_rule_needs() {
-        let rule = TypeMismatchRule;
-        assert!(rule.needs_registries());
-        assert!(rule.needs_messages());
+    fn test_check_type_mismatch_none() {
+        let primary_messages = create_message_map_with_types(
+            "en.json",
+            &[("Common.items", "[\"a\", \"b\"]", ValueType::StringArray)],
+        );
+        let mut all_messages = HashMap::new();
+        all_messages.insert("en".to_string(), primary_messages.clone());
+        all_messages.insert(
+            "zh".to_string(),
+            create_message_map_with_types(
+                "zh.json",
+                &[("Common.items", "[\"甲\", \"乙\"]", ValueType::StringArray)],
+            ),
+        );
+
+        let key_usages = KeyUsageMap::new();
+        let issues = check_type_mismatch("en", &primary_messages, &all_messages, &key_usages);
+        assert!(issues.is_empty());
+    }
+
+    #[test]
+    fn test_check_type_mismatch_one_mismatch() {
+        let primary_messages = create_message_map_with_types(
+            "en.json",
+            &[("Common.items", "[\"a\", \"b\"]", ValueType::StringArray)],
+        );
+        let mut all_messages = HashMap::new();
+        all_messages.insert("en".to_string(), primary_messages.clone());
+        all_messages.insert(
+            "zh".to_string(),
+            create_message_map_with_types(
+                "zh.json",
+                &[("Common.items", "甲, 乙", ValueType::String)], // Wrong type
+            ),
+        );
+
+        let key_usages = KeyUsageMap::new();
+        let issues = check_type_mismatch("en", &primary_messages, &all_messages, &key_usages);
+
+        assert_eq!(issues.len(), 1);
+        assert_eq!(issues[0].context.key, "Common.items");
+        assert_eq!(issues[0].expected_type, ValueType::StringArray);
+        assert_eq!(issues[0].mismatched_in.len(), 1);
+        assert_eq!(issues[0].mismatched_in[0].locale, "zh");
+        assert_eq!(issues[0].mismatched_in[0].actual_type, ValueType::String);
+    }
+
+    #[test]
+    fn test_check_type_mismatch_multiple_locales() {
+        let primary_messages = create_message_map_with_types(
+            "en.json",
+            &[("Common.items", "[\"a\"]", ValueType::StringArray)],
+        );
+        let mut all_messages = HashMap::new();
+        all_messages.insert("en".to_string(), primary_messages.clone());
+        all_messages.insert(
+            "zh".to_string(),
+            create_message_map_with_types("zh.json", &[("Common.items", "甲", ValueType::String)]),
+        );
+        all_messages.insert(
+            "ja".to_string(),
+            create_message_map_with_types("ja.json", &[("Common.items", "あ", ValueType::String)]),
+        );
+
+        let key_usages = KeyUsageMap::new();
+        let issues = check_type_mismatch("en", &primary_messages, &all_messages, &key_usages);
+
+        assert_eq!(issues.len(), 1);
+        assert_eq!(issues[0].mismatched_in.len(), 2);
+        // Should be sorted by locale
+        assert_eq!(issues[0].mismatched_in[0].locale, "ja");
+        assert_eq!(issues[0].mismatched_in[1].locale, "zh");
+    }
+
+    #[test]
+    fn test_check_type_mismatch_partial() {
+        // Only one locale has mismatch
+        let primary_messages = create_message_map_with_types(
+            "en.json",
+            &[("Common.items", "[\"a\"]", ValueType::StringArray)],
+        );
+        let mut all_messages = HashMap::new();
+        all_messages.insert("en".to_string(), primary_messages.clone());
+        all_messages.insert(
+            "zh".to_string(),
+            create_message_map_with_types(
+                "zh.json",
+                &[("Common.items", "[\"甲\"]", ValueType::StringArray)], // Correct type
+            ),
+        );
+        all_messages.insert(
+            "ja".to_string(),
+            create_message_map_with_types(
+                "ja.json",
+                &[("Common.items", "あ", ValueType::String)], // Wrong type
+            ),
+        );
+
+        let key_usages = KeyUsageMap::new();
+        let issues = check_type_mismatch("en", &primary_messages, &all_messages, &key_usages);
+
+        assert_eq!(issues.len(), 1);
+        assert_eq!(issues[0].mismatched_in.len(), 1);
+        assert_eq!(issues[0].mismatched_in[0].locale, "ja");
+    }
+
+    #[test]
+    fn test_check_type_mismatch_ignores_missing_keys() {
+        // Key exists in primary but not in replica - not a type mismatch
+        let primary_messages = create_message_map_with_types(
+            "en.json",
+            &[("Common.items", "[\"a\"]", ValueType::StringArray)],
+        );
+        let mut all_messages = HashMap::new();
+        all_messages.insert("en".to_string(), primary_messages.clone());
+        all_messages.insert(
+            "zh".to_string(),
+            create_message_map_with_types("zh.json", &[]), // Key missing
+        );
+
+        let key_usages = KeyUsageMap::new();
+        let issues = check_type_mismatch("en", &primary_messages, &all_messages, &key_usages);
+        assert!(issues.is_empty());
     }
 }

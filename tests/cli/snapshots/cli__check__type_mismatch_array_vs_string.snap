@@ -12,8 +12,8 @@ success: false
 exit_code: 1
 ----- stdout -----
 error: "Page.benefits"  type-mismatch
-  --> ./messages/en.json:3:0
-  = note: (array) mismatched in: zh (string) at ./messages/zh.json:3
+  --> ./messages/en.json:3:1
+  = note: expected array, got: zh (string)
   = used: (no usages found)
 
 

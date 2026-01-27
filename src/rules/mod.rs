@@ -1,45 +1,30 @@
 //! Rule implementations for glot.
 //!
-//! This module contains the concrete checker implementations that detect
-//! various i18n issues in the codebase.
+//! This module contains pure functions that check for various i18n issues.
+//! Each function takes only the specific inputs it needs (not a full Context)
+//! and returns a specific issue type.
+//!
+//! ## Module Structure
+//!
+//! - `helpers`: Shared types and utility functions (KeyUsageMap, etc.)
+//! - `hardcoded`: Hardcoded text detection
+//! - `missing_key`: Missing translation key detection
+//! - `unresolved_key`: Unresolved (dynamic) key detection
+//! - `replica_lag`: Keys missing in non-primary locales
+//! - `unused_key`: Defined but unused keys
+//! - `orphan_key`: Keys in non-primary locales but not in primary
+//! - `untranslated`: Identical values across locales
+//! - `type_mismatch`: Type mismatches between locales
 
 pub mod hardcoded;
+pub mod helpers;
 pub mod missing;
 pub mod orphan;
+pub mod replica_lag;
 pub mod type_mismatch;
+pub mod unresolved;
 pub mod untranslated;
+pub mod unused;
 
-use anyhow::Result;
-
-use crate::{commands::context::CheckContext, issue::Issue};
-
-/// Trait for implementing a check rule.
-///
-/// Checkers are the core units of logic in glot. Each checker:
-/// 1. Declares its dependencies (registries, messages) via `needs_*` methods.
-/// 2. Implements the `check` method to inspect the code/project and return issues.
-pub trait Checker {
-    /// Unique identifier for the checker (e.g., "hardcoded", "missing-keys").
-    fn name(&self) -> &str;
-
-    /// Whether this checker needs registries (schemas, key objects) loaded.
-    /// Default: false
-    fn needs_registries(&self) -> bool {
-        false
-    }
-
-    /// Whether this checker needs locale messages loaded.
-    /// Default: false
-    fn needs_messages(&self) -> bool {
-        false
-    }
-
-    /// Execute the check logic using the provided context.
-    ///
-    /// # Arguments
-    /// * `ctx` - The CheckContext containing configuration and cached data.
-    ///
-    /// # Returns
-    /// A vector of found issues, or an error if the check failed to execute.
-    fn check(&self, ctx: &CheckContext) -> Result<Vec<Issue>>;
-}
+// Re-export all check functions for convenient access
+pub use helpers::build_key_usage_map;

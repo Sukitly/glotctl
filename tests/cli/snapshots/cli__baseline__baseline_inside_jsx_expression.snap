@@ -11,19 +11,7 @@ info:
 success: true
 exit_code: 0
 ----- stdout -----
-  --> ./src/app.tsx:5:20
-     |
-   5 |                 <p>No console output</p>
-     |                    ^
-  +                 // glot-disable-next-line hardcoded
-
-  --> ./src/app.tsx:7:23
-     |
-   7 |                 <span>Has output</span>
-     |                       ^
-  +                 // glot-disable-next-line hardcoded
-
-Inserted 2 comment(s) in 1 file(s):
-  - hardcoded: 2 comment(s)
+Inserted 2 comment(s) in 1 file(s) (processed 2 issue(s)):
+  - hardcoded: 2 comment(s) (from 2 issue(s))
 
 ----- stderr -----

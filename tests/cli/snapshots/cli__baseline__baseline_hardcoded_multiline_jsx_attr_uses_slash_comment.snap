@@ -11,13 +11,7 @@ info:
 success: true
 exit_code: 0
 ----- stdout -----
-  --> ./src/app.jsx:4:25
-     |
-   4 |             placeholder="Enter name"
-     |                         ^
-  +             // glot-disable-next-line hardcoded
-
-Inserted 1 comment(s) in 1 file(s):
-  - hardcoded: 1 comment(s)
+Inserted 1 comment(s) in 1 file(s) (processed 1 issue(s)):
+  - hardcoded: 1 comment(s) (from 1 issue(s))
 
 ----- stderr -----

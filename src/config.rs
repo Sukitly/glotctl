@@ -175,7 +175,7 @@ pub fn load_config(start_dir: &Path) -> Result<ConfigLoadResult> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::config::*;
     use std::fs::File;
     use tempfile::tempdir;
 

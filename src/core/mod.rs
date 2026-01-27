@@ -1,0 +1,54 @@
+//! Codebase and translation analysis pipeline.
+//!
+//! This module provides a three-phase analysis pipeline for translation keys:
+//!
+//! ## Module Structure
+//!
+//! - `collect`: Phase 1 - Cross-file dependency and comment collection
+//! - `extract`: Phase 2 - File-level raw data collection
+//! - `resolve`: Phase 3 - Resolution to final ResolvedKeyUsage/UnresolvedKeyUsage
+//! - `schema`: Schema function handling
+//! - `utils`: Helper functions and utilities
+//!
+//! ## Three-Phase Extraction Pipeline
+//!
+//! 1. **Collection Phase** (`collect::RegistryCollector` + `collect::CommentCollector`)
+//!    - First AST pass: collect schema functions, key objects, translation props
+//!    - Parse comments for disable directives and glot-message-keys annotations
+//!    - Build cross-file dependency registries
+//!
+//! 2. **Extraction Phase** (`extract::FileAnalyzer`)
+//!    - Second AST pass: collect raw translation calls and detect hardcoded text
+//!    - Output: RawTranslationCall with ValueSource (no resolution yet)
+//!
+//! 3. **Resolution Phase** (`resolve::resolve_translation_calls`)
+//!    - Resolve ValueSource to static keys
+//!    - Expand schema calls
+//!    - Apply glot-message-keys expansion
+//!    - Generate warnings for unresolvable dynamic keys
+//!    - Output: Final ResolvedKeyUsage/UnresolvedKeyUsage results
+
+pub mod collect;
+pub mod context;
+mod data;
+pub mod extract;
+mod file_scanner;
+pub mod key_usage;
+pub mod parsers;
+pub mod resolve;
+pub mod schema;
+pub mod utils;
+
+pub use key_usage::{
+    AllKeyUsages, FileKeyUsages, FullKey, HardcodedText, ResolvedKeyUsage, SchemaSource,
+    UnresolvedKeyUsage, UsageUnresolvedKeyReason,
+};
+
+pub use data::{
+    AllLocaleMessages, CommentStyle, LocaleMessages, LocaleTypeMismatch, MessageContext,
+    MessageEntry, MessageLocation, SourceContext, SourceLocation, ValueType,
+};
+
+pub use context::{
+    AllHardcodedTextIssues, CheckContext, MessageData, ResolvedData, SourceMetadata,
+};

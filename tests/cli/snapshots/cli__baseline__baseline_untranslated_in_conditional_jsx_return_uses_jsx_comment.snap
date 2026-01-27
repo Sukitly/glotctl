@@ -11,13 +11,7 @@ info:
 success: true
 exit_code: 0
 ----- stdout -----
-  --> ./src/app.tsx:8:22
-     |
-   8 |                     {t("message")}
-     |                      ^
-  +                     {/* glot-disable-next-line untranslated */}
-
-Inserted 1 comment(s) in 1 file(s):
-  - untranslated: 1 comment(s), 1 key(s)
+Inserted 1 comment(s) in 1 file(s) (processed 1 issue(s)):
+  - untranslated: 1 comment(s), 1 key(s) (from 1 usage(s))
 
 ----- stderr -----

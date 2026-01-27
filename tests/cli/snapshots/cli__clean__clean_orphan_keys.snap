@@ -4,15 +4,17 @@ info:
   program: glot
   args:
     - clean
-    - "--orphan"
+    - "--rules"
+    - orphan
   env:
     NO_COLOR: "1"
 ---
-success: true
-exit_code: 0
+success: false
+exit_code: 1
 ----- stdout -----
-./messages/zh.json:
-  - Common.orphan (line 4): in zh ("Orphan Key")  [orphan]
+  --> ./messages/zh.json:4
+     |
+   4 | "Common.orphan": "Orphan Key" [orphan]
 
 Would delete 0 unused key(s) and 1 orphan key(s) from 1 file(s).
 Run with --apply to delete these keys.

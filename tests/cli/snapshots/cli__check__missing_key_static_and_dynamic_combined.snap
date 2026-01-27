@@ -11,7 +11,7 @@ success: false
 exit_code: 1
 ----- stdout -----
 warning: "Tools.create"  unused-key
-  --> ./messages/en.json:3:0
+  --> ./messages/en.json:3:1
    = note: ("Create")
 
 error: "Tools.delete"  missing-key

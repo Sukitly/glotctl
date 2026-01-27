@@ -12,8 +12,8 @@ success: false
 exit_code: 1
 ----- stdout -----
 error: "Page.items"  type-mismatch
-  --> ./messages/en.json:1:0
-  = note: (array) mismatched in: zh (string) at ./messages/zh.json:1
+  --> ./messages/en.json:1:1
+  = note: expected array, got: zh (string)
   = used: (no usages found)
 
 

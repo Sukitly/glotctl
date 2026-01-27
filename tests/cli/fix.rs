@@ -3,6 +3,74 @@ use insta_cmd::assert_cmd_snapshot;
 
 use crate::CliTest;
 
+const JSX_MESSAGE_KEYS: &str = "{/* glot-message-keys";
+const JS_MESSAGE_KEYS: &str = "// glot-message-keys";
+
+fn assert_comment_insertions(content: &str, comment_pattern: &str, line_contains: &[&str]) {
+    // Count occurrences of the comment pattern
+    let count = content.matches(comment_pattern).count();
+    assert_eq!(
+        count,
+        line_contains.len(),
+        "Expected {} comment(s) matching '{}' but found {}:\n{}",
+        line_contains.len(),
+        comment_pattern,
+        count,
+        content
+    );
+
+    let lines: Vec<&str> = content.lines().collect();
+    for target in line_contains {
+        let mut found = false;
+        for (idx, line) in lines.iter().enumerate() {
+            if line.contains(target) {
+                found = true;
+                assert!(
+                    idx > 0,
+                    "Expected comment before line containing '{}' but it is on the first line:\n{}",
+                    target,
+                    content
+                );
+                let indent: String = line.chars().take_while(|c| c.is_whitespace()).collect();
+                // Check if comment is on the previous line with matching indentation
+                let prev_line = lines[idx - 1];
+                assert!(
+                    prev_line.contains(comment_pattern),
+                    "Expected comment matching '{}' before line containing '{}', but previous line is '{}':\n{}",
+                    comment_pattern,
+                    target,
+                    prev_line,
+                    content
+                );
+                // Verify indentation matches
+                let prev_indent: String = prev_line
+                    .chars()
+                    .take_while(|c| c.is_whitespace())
+                    .collect();
+                assert_eq!(
+                    prev_indent, indent,
+                    "Expected comment indentation to match line containing '{}':\n{}",
+                    target, content
+                );
+                break;
+            }
+        }
+        assert!(
+            found,
+            "Expected line containing '{}' but it was not found:\n{}",
+            target, content
+        );
+    }
+}
+
+fn assert_no_comments(content: &str) {
+    assert!(
+        !content.contains("glot-message-keys"),
+        "Expected no 'glot-message-keys' comments, got:\n{}",
+        content
+    );
+}
+
 fn setup_config(test: &CliTest) -> Result<()> {
     test.write_file(
         ".glotrc.json",
@@ -40,6 +108,8 @@ export function Button({ prefix }: { prefix: string }) {
     )?;
 
     assert_cmd_snapshot!(test.fix_command());
+    let content = test.read_file("src/app.tsx")?;
+    assert_no_comments(&content);
     Ok(())
 }
 
@@ -72,12 +142,11 @@ export function Button({ prefix }: { prefix: string }) {
     cmd.arg("--apply");
     assert_cmd_snapshot!(cmd);
 
-    // Verify JSX comment was inserted (line starts with <)
     let content = test.read_file("src/app.tsx")?;
-    assert!(
-        content.contains("{/* glot-message-keys \"Common.*.submit\" */}"),
-        "Expected JSX comment, got:\n{}",
-        content
+    assert_comment_insertions(
+        &content,
+        JSX_MESSAGE_KEYS,
+        &["<button>{t(`${prefix}.submit`)}</button>"],
     );
     Ok(())
 }
@@ -110,12 +179,11 @@ export function Logger({ code }: { code: string }) {
     cmd.arg("--apply");
     assert_cmd_snapshot!(cmd);
 
-    // Verify JS comment was inserted
     let content = test.read_file("src/app.tsx")?;
-    assert!(
-        content.contains("// glot-message-keys \"Common.error.*\""),
-        "Expected JS comment, got:\n{}",
-        content
+    assert_comment_insertions(
+        &content,
+        JS_MESSAGE_KEYS,
+        &["console.log(t(`error.${code}`));"],
     );
     Ok(())
 }
@@ -140,6 +208,8 @@ export function App() {
     test.write_file("messages/en.json", r#"{"Common": {"hello": "Hello"}}"#)?;
 
     assert_cmd_snapshot!(test.fix_command());
+    let content = test.read_file("src/app.tsx")?;
+    assert_no_comments(&content);
     Ok(())
 }
 
@@ -164,6 +234,8 @@ export function Dynamic({ keyName }: { keyName: string }) {
     test.write_file("messages/en.json", r#"{"Common": {"hello": "Hello"}}"#)?;
 
     assert_cmd_snapshot!(test.fix_command());
+    let content = test.read_file("src/app.tsx")?;
+    assert_no_comments(&content);
     Ok(())
 }
 
@@ -196,6 +268,8 @@ export function Mixed({ prefix, keyName }: { prefix: string; keyName: string }) 
     )?;
 
     assert_cmd_snapshot!(test.fix_command());
+    let content = test.read_file("src/app.tsx")?;
+    assert_no_comments(&content);
     Ok(())
 }
 
@@ -232,13 +306,15 @@ export function Multi({ prefix, code }: { prefix: string; code: string }) {
     cmd.arg("--apply");
     assert_cmd_snapshot!(cmd);
 
-    // Verify all comments were inserted
     let content = test.read_file("src/app.tsx")?;
-    let comment_count = content.matches("glot-message-keys").count();
-    assert_eq!(
-        comment_count, 3,
-        "Expected 3 comments, got {}:\n{}",
-        comment_count, content
+    assert_comment_insertions(
+        &content,
+        JSX_MESSAGE_KEYS,
+        &[
+            "<span>{t(`${prefix}.title`)}</span>",
+            "<span>{t(`${prefix}.description`)}</span>",
+            "<span>{t(`error.${code}`)}</span>",
+        ],
     );
     Ok(())
 }
@@ -282,19 +358,18 @@ export function Button({ type }: { type: string }) {
     cmd.arg("--apply");
     assert_cmd_snapshot!(cmd);
 
-    // Verify both files were modified
     let app_content = test.read_file("src/app.tsx")?;
-    assert!(
-        app_content.contains("glot-message-keys"),
-        "Expected comment in app.tsx:\n{}",
-        app_content
+    assert_comment_insertions(
+        &app_content,
+        JS_MESSAGE_KEYS,
+        &["<div>{t(`${prefix}.title`)}</div>"],
     );
 
     let button_content = test.read_file("src/button.tsx")?;
-    assert!(
-        button_content.contains("glot-message-keys"),
-        "Expected comment in button.tsx:\n{}",
-        button_content
+    assert_comment_insertions(
+        &button_content,
+        JS_MESSAGE_KEYS,
+        &["<button>{t(`${type}.label`)}</button>"],
     );
     Ok(())
 }
@@ -332,12 +407,10 @@ export function App({ prefix }: { prefix: string }) {
     assert_cmd_snapshot!(cmd);
 
     let content = test.read_file("src/app.tsx")?;
-    // Comment should have matching indentation (16 spaces for the t() call line)
-    // Line starts with "{" and is in JSX context, so uses {/* */} comment
-    assert!(
-        content.contains("                {/* glot-message-keys"),
-        "Expected JSX comment with matching indentation, got:\n{}",
-        content
+    assert_comment_insertions(
+        &content,
+        JSX_MESSAGE_KEYS,
+        &["{t(`${prefix}.deeply.nested`)}"],
     );
     Ok(())
 }
@@ -373,13 +446,18 @@ export function Multi({ a, b }: { a: string; b: string }) {
     cmd.arg("--apply");
     assert_cmd_snapshot!(cmd);
 
-    // Verify single comment with both patterns was inserted
     let content = test.read_file("src/app.tsx")?;
+    // Should have single merged comment with both patterns
     let comment_count = content.matches("glot-message-keys").count();
     assert_eq!(
         comment_count, 1,
         "Expected 1 merged comment, got {}:\n{}",
         comment_count, content
+    );
+    assert_comment_insertions(
+        &content,
+        JSX_MESSAGE_KEYS,
+        &["<span>{t(`${a}.x`)} {t(`${b}.y`)}</span>"],
     );
     // Should contain both patterns
     assert!(
@@ -418,15 +496,14 @@ export function Button({ prefix }: { prefix: string }) {
     cmd.arg("--apply");
     assert_cmd_snapshot!(cmd);
 
-    // Verify JS comment was used (not JSX comment)
     let content = test.read_file("src/app.tsx")?;
-    assert!(
-        content.contains("// glot-message-keys"),
-        "Expected JS comment for single-line return, got:\n{}",
-        content
+    assert_comment_insertions(
+        &content,
+        JS_MESSAGE_KEYS,
+        &["return <button>{t(`${prefix}.label`)}</button>;"],
     );
     assert!(
-        !content.contains("{/* glot-message-keys"),
+        !content.contains(JSX_MESSAGE_KEYS),
         "Should NOT have JSX comment for single-line return, got:\n{}",
         content
     );
@@ -462,16 +539,72 @@ export function App({ prefix }: { prefix: string }) {
     cmd.arg("--apply");
     assert_cmd_snapshot!(cmd);
 
-    // Verify JS comment was used (comment goes before the JSX element, which is JS context)
     let content = test.read_file("src/app.tsx")?;
-    assert!(
-        content.contains("// glot-message-keys"),
-        "Expected JS comment for JSX attribute, got:\n{}",
-        content
+    assert_comment_insertions(
+        &content,
+        JS_MESSAGE_KEYS,
+        &["return <Button label={t(`${prefix}.label`)} />;"],
     );
     assert!(
-        !content.contains("{/* glot-message-keys"),
+        !content.contains(JSX_MESSAGE_KEYS),
         "Should NOT have JSX comment for JSX attribute, got:\n{}",
+        content
+    );
+    Ok(())
+}
+
+#[test]
+fn test_fix_relative_pattern_from_props() -> Result<()> {
+    let test = CliTest::new()?;
+    setup_config(&test)?;
+
+    // Parent component passes t to child
+    test.write_file(
+        "src/page.tsx",
+        r#"import { useTranslations } from "next-intl";
+import { Button } from "./button";
+
+export function Page() {
+    const t = useTranslations("Common");
+    return <Button t={t} prefix="test" />;
+}
+"#,
+    )?;
+
+    // Component receives t as prop (FromProps) - namespace unknown
+    // Should generate relative pattern ".*.submit" instead of "Common.*.submit"
+    test.write_file(
+        "src/button.tsx",
+        r#"type Props = {
+    t: ReturnType<typeof import("next-intl").useTranslations>;
+    prefix: string;
+};
+
+export function Button({ t, prefix }: Props) {
+    return <button>{t(`${prefix}.submit`)}</button>;
+}
+"#,
+    )?;
+
+    test.write_file(
+        "messages/en.json",
+        r#"{"Common": {"test": {"submit": "Submit"}}}"#,
+    )?;
+
+    let mut cmd = test.fix_command();
+    cmd.arg("--apply");
+    assert_cmd_snapshot!(cmd);
+
+    let content = test.read_file("src/button.tsx")?;
+    assert_comment_insertions(
+        &content,
+        JS_MESSAGE_KEYS,
+        &["<button>{t(`${prefix}.submit`)}</button>"],
+    );
+    // Should contain relative pattern ".*.submit" not absolute pattern "Common.*.submit"
+    assert!(
+        content.contains("\".*.submit\"") && !content.contains("\"Common.*.submit\""),
+        "Expected relative pattern '.*.submit' in comment, got:\n{}",
         content
     );
     Ok(())

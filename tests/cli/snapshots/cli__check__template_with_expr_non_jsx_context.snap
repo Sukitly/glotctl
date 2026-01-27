@@ -11,7 +11,7 @@ success: false
 exit_code: 1
 ----- stdout -----
 warning: "Common.error.unknown"  unused-key
-  --> ./messages/en.json:1:0
+  --> ./messages/en.json:1:1
   = note: ("Unknown error")
 
 warning: "template with expression"  unresolved-key
@@ -21,7 +21,7 @@ warning: "template with expression"  unresolved-key
   |                     ^
   = hint: add `// glot-message-keys "Common.error.*"` to declare expected keys
 
-error: "Click"  hardcoded-text
+error: "Click"  hardcoded
   --> ./src/app.tsx:8:59
   |
 8 |     return <button onClick={() => handleError('unknown')}>Click</button>;

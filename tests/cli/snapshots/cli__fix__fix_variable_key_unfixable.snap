@@ -7,8 +7,8 @@ info:
   env:
     NO_COLOR: "1"
 ---
-success: true
-exit_code: 0
+success: false
+exit_code: 1
 ----- stdout -----
 ✘ Cannot fix 1 unresolved key(s) (variable keys without pattern hints):
 

@@ -91,7 +91,7 @@ The server communicates over stdio using the MCP protocol.
 
 ## Available Tools
 
-The MCP server provides 8 tools. All tools require the `project_root_path` parameter.
+The MCP server provides 9 tools. All tools require the `project_root_path` parameter.
 
 ### `get_config`
 
@@ -171,6 +171,10 @@ Returns statistics of all i18n issues in the project. **Use this first** to unde
   "untranslated": {
     "totalCount": 3,
     "affectedLocales": ["es", "fr"]
+  },
+  "typeMismatch": {
+    "totalCount": 1,
+    "affectedLocales": ["es"]
   }
 }
 ```
@@ -265,7 +269,7 @@ Lists keys that exist in the primary locale but are missing from other locales. 
       "value": "New Feature",
       "filePath": "./messages/en.json",
       "line": 15,
-      "primaryLocale": "en",
+      "existsIn": "en",
       "missingIn": ["es", "fr"],
       "usages": [
         { "filePath": "./src/components/Feature.tsx", "line": 25, "col": 10 }
@@ -323,6 +327,52 @@ Lists translation values that are identical to the primary locale, which may ind
 ```
 
 The `identicalIn` array lists locales where the value is identical to the primary locale. The `usages` array contains up to 3 code locations where the key is used.
+
+### `scan_type_mismatch`
+
+Lists keys whose value type differs between the primary locale and other locales. These should be fixed first because they can cause runtime crashes.
+
+**Input:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `project_root_path` | string | Yes | Path to the project root directory |
+| `limit` | number | No | Results per page (default: 50, max: 100) |
+| `offset` | number | No | Offset for pagination (default: 0) |
+
+**Output:**
+
+```json
+{
+  "totalCount": 1,
+  "items": [
+    {
+      "key": "common.items",
+      "expectedType": "array",
+      "primaryFilePath": "./messages/en.json",
+      "primaryLine": 12,
+      "primaryLocale": "en",
+      "mismatchedIn": [
+        {
+          "locale": "es",
+          "actualType": "string",
+          "filePath": "./messages/es.json",
+          "line": 8
+        }
+      ],
+      "usages": [
+        { "filePath": "./src/components/List.tsx", "line": 18, "col": 9 }
+      ],
+      "totalUsages": 2
+    }
+  ],
+  "pagination": {
+    "offset": 0,
+    "limit": 50,
+    "hasMore": false
+  }
+}
+```
 
 ### `add_translations`
 
@@ -396,9 +446,10 @@ The MCP server instructions guide code agents to follow this workflow:
 
 ```
 1. scan_overview      → Understand the overall state
-2. Fix hardcoded     → Replace text with t() calls, add keys
-3. Fix primary_missing → Add missing keys to primary locale
-4. Fix replica_lag    → Sync keys to other locales
+2. Fix type_mismatch → Resolve type mismatches first
+3. Fix hardcoded     → Replace text with t() calls, add keys
+4. Fix primary_missing → Add missing keys to primary locale
+5. Fix replica_lag    → Sync keys to other locales
 ```
 
 <Note>

@@ -7,11 +7,12 @@ info:
   env:
     NO_COLOR: "1"
 ---
-success: true
-exit_code: 0
+success: false
+exit_code: 1
 ----- stdout -----
-./messages/en.json:
-  - Common.unused (line 4): ("Unused Key")  [unused]
+  --> ./messages/en.json:4
+     |
+   4 | "Common.unused": "Unused Key" [unused]
 
 Would delete 1 unused key(s) and 0 orphan key(s) from 1 file(s).
 Run with --apply to delete these keys.

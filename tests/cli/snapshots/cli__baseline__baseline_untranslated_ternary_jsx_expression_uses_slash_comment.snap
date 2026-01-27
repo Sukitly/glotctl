@@ -11,19 +11,7 @@ info:
 success: true
 exit_code: 0
 ----- stdout -----
-  --> ./src/app.tsx:7:19
-     |
-   7 |                 ? t("processing")
-     |                   ^
-  +                 // glot-disable-next-line untranslated
-
-  --> ./src/app.tsx:8:19
-     |
-   8 |                 : t("ready")}
-     |                   ^
-  +                 // glot-disable-next-line untranslated
-
-Inserted 2 comment(s) in 1 file(s):
-  - untranslated: 2 comment(s), 2 key(s)
+Inserted 2 comment(s) in 1 file(s) (processed 2 issue(s)):
+  - untranslated: 2 comment(s), 2 key(s) (from 2 usage(s))
 
 ----- stderr -----

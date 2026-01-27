@@ -1,117 +1,238 @@
-//! Missing translation keys detection rule.
+//! Missing translation key detection rule.
 //!
-//! Detects keys used in code but not defined in locale files, including:
-//! - Static keys passed to translation functions
-//! - Dynamic keys with resolvable values
-//! - Schema-based keys
-//! - Replica lag (keys missing in non-primary locales)
-
-use anyhow::Result;
+//! Detects translation keys used in code but not defined in the primary locale.
 
 use crate::{
-    commands::{
-        check::{build_key_usage_map, find_replica_lag},
-        context::CheckContext,
-    },
-    extraction::UnresolvedKeyReason,
-    issue::{Issue, MissingKeyIssue, SourceLocation, UnresolvedKeyIssue, UntrackedNamespaceIssue},
-    rules::Checker,
+    core::AllKeyUsages, core::CheckContext, core::LocaleMessages, core::SourceContext,
+    core::collect::Registries, issues::MissingKeyIssue,
 };
 
-pub struct MissingKeysRule;
+pub fn check_missing_keys_issues(ctx: &CheckContext) -> Vec<MissingKeyIssue> {
+    let all_key_usages = ctx.all_key_usages();
+    let primary_messages = &ctx.messages().primary_messages;
+    let registries = ctx.registries();
+    check_missing_keys(all_key_usages, primary_messages, registries)
+}
 
-impl Checker for MissingKeysRule {
-    fn name(&self) -> &str {
-        "missing_keys"
-    }
+/// Check for missing translation keys.
+///
+/// Finds all resolved translation keys that are not defined in the primary locale.
+///
+/// # Arguments
+/// * `extractions` - All key usages extracted from source files
+/// * `primary_messages` - Messages from the primary locale
+/// * `registries` - Registries containing schema information (for schema file lookup)
+///
+/// # Returns
+/// Vector of MissingKeyIssue for keys used but not defined
+pub fn check_missing_keys(
+    all_key_usages: &AllKeyUsages,
+    primary_messages: &LocaleMessages,
+    registries: &Registries,
+) -> Vec<MissingKeyIssue> {
+    let mut issues = Vec::new();
 
-    fn needs_registries(&self) -> bool {
-        true
-    }
+    for file_usages in all_key_usages.values() {
+        for resolved in &file_usages.resolved {
+            let key = resolved.key.as_str();
+            if !primary_messages.contains_key(key) {
+                let from_schema = resolved.from_schema.as_ref().map(|s| {
+                    let schema_file = registries
+                        .schema
+                        .get(&s.schema_name)
+                        .map(|sf| sf.file_path.as_str())
+                        .unwrap_or(&s.schema_file);
+                    (s.schema_name.clone(), schema_file.to_string())
+                });
 
-    fn needs_messages(&self) -> bool {
-        true
-    }
-
-    fn check(&self, ctx: &CheckContext) -> Result<Vec<Issue>> {
-        // Ensure extractions are loaded (this will load registries and messages first)
-        ctx.ensure_extractions()?;
-        let mut issues = Vec::new();
-
-        let extractions = ctx.extractions().expect("extractions must be loaded");
-        let registries = ctx.registries().expect("registries must be loaded");
-        let messages = ctx.messages().expect("messages must be loaded");
-
-        let primary_messages = match &messages.primary_messages {
-            Some(m) => m,
-            None => return Ok(issues),
-        };
-
-        // Process cached extractions (now FileKeyUsages)
-        for file_usages in extractions.values() {
-            // Check missing resolved keys
-            for resolved in &file_usages.resolved {
-                let key = resolved.key.as_str();
-                if !primary_messages.contains_key(key) {
-                    let loc = &resolved.context.location;
-                    let from_schema = resolved.from_schema.as_ref().map(|s| {
-                        let schema_file = registries
-                            .schema
-                            .get(&s.schema_name)
-                            .map(|sf| sf.file_path.as_str())
-                            .unwrap_or(&s.schema_file);
-                        (s.schema_name.clone(), schema_file.to_string())
-                    });
-
-                    issues.push(Issue::MissingKey(MissingKeyIssue {
-                        location: SourceLocation::new(&loc.file_path, loc.line).with_col(loc.col),
-                        key: key.to_string(),
-                        source_line: Some(resolved.context.source_line.clone()),
-                        from_schema,
-                    }));
-                }
-            }
-
-            // Process unresolved keys
-            for unresolved in &file_usages.unresolved {
-                let loc = &unresolved.context.location;
-                match &unresolved.reason {
-                    UnresolvedKeyReason::UnknownNamespace {
-                        schema_name,
-                        raw_key,
-                    } => {
-                        issues.push(Issue::UntrackedNamespace(UntrackedNamespaceIssue {
-                            location: SourceLocation::new(&loc.file_path, loc.line)
-                                .with_col(loc.col),
-                            raw_key: raw_key.clone(),
-                            schema_name: schema_name.clone(),
-                            source_line: Some(unresolved.context.source_line.clone()),
-                        }));
-                    }
-                    _ => {
-                        issues.push(Issue::UnresolvedKey(UnresolvedKeyIssue {
-                            location: SourceLocation::new(&loc.file_path, loc.line)
-                                .with_col(loc.col),
-                            reason: unresolved.reason.clone(),
-                            source_line: Some(unresolved.context.source_line.clone()),
-                            hint: unresolved.hint.clone(),
-                            pattern: unresolved.pattern.clone(),
-                        }));
-                    }
-                }
+                issues.push(MissingKeyIssue {
+                    context: SourceContext::new(
+                        resolved.context.location.clone(),
+                        resolved.context.source_line.clone(),
+                        resolved.context.comment_style,
+                    ),
+                    key: key.to_string(),
+                    from_schema,
+                });
             }
         }
+    }
 
-        // Build key usage map for replica lag usages
-        let key_usages = build_key_usage_map(extractions);
+    issues
+}
 
-        // Replica lag (keys missing in non-primary locales)
-        issues.extend(find_replica_lag(
-            &ctx.config.primary_locale,
-            &messages.all_messages,
-            &key_usages,
-        ));
+#[cfg(test)]
+mod tests {
+    use crate::rules::missing::*;
+    use crate::{
+        core::{CommentStyle, LocaleMessages, SourceLocation},
+        core::{FileKeyUsages, FullKey, ResolvedKeyUsage, SchemaSource},
+        core::{MessageContext, MessageEntry, MessageLocation, ValueType},
+    };
+    use std::collections::{HashMap, HashSet};
 
-        Ok(issues)
+    fn create_message_map(entries: &[(&str, &str)]) -> LocaleMessages {
+        let mut messages = LocaleMessages::new("en", "en.json");
+        for (k, v) in entries {
+            messages.entries.insert(
+                k.to_string(),
+                MessageEntry {
+                    context: MessageContext::new(
+                        MessageLocation::with_line("en.json", 1),
+                        k.to_string(),
+                        v.to_string(),
+                    ),
+                    value_type: ValueType::String,
+                },
+            );
+        }
+        messages
+    }
+
+    fn create_resolved_usage(file: &str, line: usize, key: &str) -> ResolvedKeyUsage {
+        ResolvedKeyUsage {
+            key: FullKey::new(key),
+            context: SourceContext::new(
+                SourceLocation::new(file, line, 1),
+                format!("t('{}')", key),
+                CommentStyle::Js,
+            ),
+            suppressed_rules: HashSet::new(),
+            from_schema: None,
+        }
+    }
+
+    fn empty_registries() -> Registries {
+        Registries {
+            schema: HashMap::new(),
+            key_object: HashMap::new(),
+            key_array: HashMap::new(),
+            string_array: HashMap::new(),
+            translation_prop: HashMap::new(),
+            translation_fn_call: HashMap::new(),
+            default_exports: HashMap::new(),
+        }
+    }
+
+    #[test]
+    fn test_check_missing_key_none_missing() {
+        let mut extractions: AllKeyUsages = HashMap::new();
+        extractions.insert(
+            "test.tsx".to_string(),
+            FileKeyUsages {
+                resolved: vec![create_resolved_usage("test.tsx", 10, "Common.submit")],
+                unresolved: vec![],
+            },
+        );
+
+        let primary_messages = create_message_map(&[("Common.submit", "Submit")]);
+        let registries = empty_registries();
+
+        let issues = check_missing_keys(&extractions, &primary_messages, &registries);
+        assert!(issues.is_empty());
+    }
+
+    #[test]
+    fn test_check_missing_key_one_missing() {
+        let mut extractions: AllKeyUsages = HashMap::new();
+        extractions.insert(
+            "test.tsx".to_string(),
+            FileKeyUsages {
+                resolved: vec![
+                    create_resolved_usage("test.tsx", 10, "Common.submit"),
+                    create_resolved_usage("test.tsx", 20, "Common.missing"),
+                ],
+                unresolved: vec![],
+            },
+        );
+
+        let primary_messages = create_message_map(&[("Common.submit", "Submit")]);
+        let registries = empty_registries();
+
+        let issues = check_missing_keys(&extractions, &primary_messages, &registries);
+        assert_eq!(issues.len(), 1);
+        assert_eq!(issues[0].key, "Common.missing");
+        assert_eq!(issues[0].context.location.line, 20);
+    }
+
+    #[test]
+    fn test_check_missing_key_multiple_files() {
+        let mut extractions: AllKeyUsages = HashMap::new();
+        extractions.insert(
+            "a.tsx".to_string(),
+            FileKeyUsages {
+                resolved: vec![create_resolved_usage("a.tsx", 1, "Key.a")],
+                unresolved: vec![],
+            },
+        );
+        extractions.insert(
+            "b.tsx".to_string(),
+            FileKeyUsages {
+                resolved: vec![create_resolved_usage("b.tsx", 2, "Key.b")],
+                unresolved: vec![],
+            },
+        );
+
+        let primary_messages = create_message_map(&[]);
+        let registries = empty_registries();
+
+        let issues = check_missing_keys(&extractions, &primary_messages, &registries);
+        assert_eq!(issues.len(), 2);
+    }
+
+    #[test]
+    fn test_check_missing_key_from_schema() {
+        use crate::core::schema::SchemaFunction;
+
+        let mut extractions: AllKeyUsages = HashMap::new();
+        extractions.insert(
+            "test.tsx".to_string(),
+            FileKeyUsages {
+                resolved: vec![ResolvedKeyUsage {
+                    key: FullKey::new("Form.email"),
+                    context: SourceContext::new(
+                        SourceLocation::new("test.tsx", 10, 1),
+                        "formSchema(t)",
+                        CommentStyle::Js,
+                    ),
+                    suppressed_rules: HashSet::new(),
+                    from_schema: Some(SchemaSource {
+                        schema_name: "formSchema".to_string(),
+                        schema_file: "./schemas/form.ts".to_string(),
+                    }),
+                }],
+                unresolved: vec![],
+            },
+        );
+
+        let primary_messages = create_message_map(&[]);
+        let mut registries = empty_registries();
+        registries.schema.insert(
+            "formSchema".to_string(),
+            SchemaFunction {
+                name: "formSchema".to_string(),
+                file_path: "./schemas/form.ts".to_string(),
+                keys: vec!["email".to_string()],
+                nested_calls: vec![],
+            },
+        );
+
+        let issues = check_missing_keys(&extractions, &primary_messages, &registries);
+        assert_eq!(issues.len(), 1);
+        assert_eq!(issues[0].key, "Form.email");
+        assert!(issues[0].from_schema.is_some());
+        let (name, file) = issues[0].from_schema.as_ref().unwrap();
+        assert_eq!(name, "formSchema");
+        assert_eq!(file, "./schemas/form.ts");
+    }
+
+    #[test]
+    fn test_check_missing_key_empty_extractions() {
+        let extractions: AllKeyUsages = HashMap::new();
+        let primary_messages = create_message_map(&[("Common.submit", "Submit")]);
+        let registries = empty_registries();
+
+        let issues = check_missing_keys(&extractions, &primary_messages, &registries);
+        assert!(issues.is_empty());
     }
 }

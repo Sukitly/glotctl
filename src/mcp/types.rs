@@ -510,7 +510,7 @@ pub struct Pagination {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::mcp::types::*;
     use serde_json::json;
 
     // ============================================================

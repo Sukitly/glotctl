@@ -1,52 +1,190 @@
-//! Orphan keys detection rule.
+//! Orphan translation key detection rule.
 //!
-//! Detects unused translation keys in locale files, including:
-//! - Keys in primary locale that are not used in code
-//! - Keys in non-primary locales that don't exist in primary locale
-
-use anyhow::Result;
+//! Detects translation keys that exist in non-primary locales
+//! but are missing from the primary locale.
 
 use crate::{
-    commands::{
-        check::{find_orphan_keys, find_unused_keys},
-        context::CheckContext,
-    },
-    issue::Issue,
-    rules::Checker,
+    core::CheckContext,
+    core::{AllLocaleMessages, MessageContext, MessageLocation},
+    issues::OrphanKeyIssue,
 };
 
-pub struct OrphanKeysRule;
+pub fn check_orphan_keys_issues(ctx: &CheckContext) -> Vec<OrphanKeyIssue> {
+    let primary_locale = &ctx.config.primary_locale;
+    let all_messages = &ctx.messages().all_messages;
+    check_orphan_keys(primary_locale, all_messages)
+}
 
-impl Checker for OrphanKeysRule {
-    fn name(&self) -> &str {
-        "orphan_keys"
-    }
+/// Check for orphan translation keys.
+///
+/// Finds all keys that exist in non-primary locales but are missing from
+/// the primary locale. These are typically leftover keys from deleted features
+/// that were removed from the primary locale but not from other locales.
+///
+/// # Arguments
+/// * `primary_locale` - The primary locale code (e.g., "en")
+/// * `all_messages` - All messages from all locales
+///
+/// # Returns
+/// Vector of OrphanKeyIssue for keys missing in primary locale
+pub fn check_orphan_keys(
+    primary_locale: &str,
+    all_messages: &AllLocaleMessages,
+) -> Vec<OrphanKeyIssue> {
+    let Some(primary_messages) = all_messages.get(primary_locale) else {
+        return Vec::new();
+    };
 
-    fn needs_registries(&self) -> bool {
-        true
-    }
+    let mut issues: Vec<OrphanKeyIssue> = all_messages
+        .iter()
+        .filter(|(locale, _)| *locale != primary_locale)
+        .flat_map(|(locale, messages)| {
+            messages
+                .entries
+                .iter()
+                .filter(|(key, _)| !primary_messages.contains_key(key))
+                .map(|(key, entry)| OrphanKeyIssue {
+                    context: MessageContext::new(
+                        MessageLocation::new(
+                            &entry.context.location.file_path,
+                            entry.context.location.line,
+                            1,
+                        ),
+                        key.clone(),
+                        entry.context.value.clone(),
+                    ),
+                    locale: locale.clone(),
+                })
+        })
+        .collect();
 
-    fn needs_messages(&self) -> bool {
-        true
-    }
+    // Sort by file path, then line for deterministic output
+    issues.sort_by(|a, b| {
+        a.context
+            .location
+            .file_path
+            .cmp(&b.context.location.file_path)
+            .then_with(|| a.context.location.line.cmp(&b.context.location.line))
+            .then_with(|| a.context.key.cmp(&b.context.key))
+    });
 
-    fn check(&self, ctx: &CheckContext) -> Result<Vec<Issue>> {
-        // Ensure used_keys are collected
-        ctx.ensure_used_keys()?;
-        let mut issues = Vec::new();
+    issues
+}
 
-        let messages = ctx.messages().expect("messages must be loaded");
-        let used_keys = ctx.used_keys().expect("used_keys must be loaded");
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
 
-        if let Some(primary_messages) = &messages.primary_messages {
-            issues.extend(find_unused_keys(used_keys, primary_messages));
+    use crate::core::{LocaleMessages, MessageContext, MessageEntry, MessageLocation, ValueType};
+    use crate::rules::orphan::*;
+
+    fn create_message_map(file: &str, entries: &[(&str, &str)]) -> LocaleMessages {
+        let locale = file.trim_end_matches(".json");
+        let mut messages = LocaleMessages::new(locale, file);
+        for (i, (k, v)) in entries.iter().enumerate() {
+            messages.entries.insert(
+                k.to_string(),
+                MessageEntry {
+                    context: MessageContext::new(
+                        MessageLocation::with_line(file, i + 1),
+                        k.to_string(),
+                        v.to_string(),
+                    ),
+                    value_type: ValueType::String,
+                },
+            );
         }
+        messages
+    }
 
-        issues.extend(find_orphan_keys(
-            &ctx.config.primary_locale,
-            &messages.all_messages,
-        ));
+    #[test]
+    fn test_check_orphan_key_none_orphan() {
+        let mut all_messages = HashMap::new();
+        all_messages.insert(
+            "en".to_string(),
+            create_message_map("en.json", &[("Common.submit", "Submit")]),
+        );
+        all_messages.insert(
+            "zh".to_string(),
+            create_message_map("zh.json", &[("Common.submit", "提交")]),
+        );
 
-        Ok(issues)
+        let issues = check_orphan_keys("en", &all_messages);
+        assert!(issues.is_empty());
+    }
+
+    #[test]
+    fn test_check_orphan_key_one_orphan() {
+        let mut all_messages = HashMap::new();
+        all_messages.insert(
+            "en".to_string(),
+            create_message_map("en.json", &[("Common.submit", "Submit")]),
+        );
+        all_messages.insert(
+            "zh".to_string(),
+            create_message_map(
+                "zh.json",
+                &[("Common.submit", "提交"), ("Common.orphan", "孤儿")],
+            ),
+        );
+
+        let issues = check_orphan_keys("en", &all_messages);
+        assert_eq!(issues.len(), 1);
+        assert_eq!(issues[0].context.key, "Common.orphan");
+        assert_eq!(issues[0].locale, "zh");
+    }
+
+    #[test]
+    fn test_check_orphan_key_multiple_locales() {
+        let mut all_messages = HashMap::new();
+        all_messages.insert(
+            "en".to_string(),
+            create_message_map("en.json", &[("Common.submit", "Submit")]),
+        );
+        all_messages.insert(
+            "zh".to_string(),
+            create_message_map(
+                "zh.json",
+                &[("Common.submit", "提交"), ("Common.orphan1", "孤儿1")],
+            ),
+        );
+        all_messages.insert(
+            "ja".to_string(),
+            create_message_map(
+                "ja.json",
+                &[("Common.submit", "送信"), ("Common.orphan2", "孤児2")],
+            ),
+        );
+
+        let issues = check_orphan_keys("en", &all_messages);
+        assert_eq!(issues.len(), 2);
+
+        let keys: Vec<_> = issues.iter().map(|i| i.context.key.as_str()).collect();
+        assert!(keys.contains(&"Common.orphan1"));
+        assert!(keys.contains(&"Common.orphan2"));
+    }
+
+    #[test]
+    fn test_check_orphan_key_primary_not_found() {
+        let mut all_messages = HashMap::new();
+        all_messages.insert(
+            "zh".to_string(),
+            create_message_map("zh.json", &[("Common.submit", "提交")]),
+        );
+
+        let issues = check_orphan_keys("en", &all_messages);
+        assert!(issues.is_empty());
+    }
+
+    #[test]
+    fn test_check_orphan_key_only_primary() {
+        let mut all_messages = HashMap::new();
+        all_messages.insert(
+            "en".to_string(),
+            create_message_map("en.json", &[("Common.submit", "Submit")]),
+        );
+
+        let issues = check_orphan_keys("en", &all_messages);
+        assert!(issues.is_empty());
     }
 }

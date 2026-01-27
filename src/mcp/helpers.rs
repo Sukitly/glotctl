@@ -2,9 +2,9 @@
 
 use std::path::Path;
 
-use crate::json_writer::JsonWriter;
+use crate::mcp::json_writer::{JsonWriter, KeyAction};
 
-use super::types::{KeyActionDetail, LocaleError, LocaleResult};
+use crate::mcp::types::{KeyActionDetail, LocaleError, LocaleResult};
 
 /// Process a single locale translation entry.
 ///
@@ -61,8 +61,8 @@ pub fn process_locale_translation(
 
         let action = writer.add_value(key, json_value);
         match action {
-            crate::json_writer::KeyAction::Added => added_count += 1,
-            crate::json_writer::KeyAction::Updated => updated_count += 1,
+            KeyAction::Added => added_count += 1,
+            KeyAction::Updated => updated_count += 1,
         }
 
         details.push(KeyActionDetail {
@@ -161,7 +161,7 @@ pub fn validate_and_convert_value(value: &serde_json::Value) -> Result<serde_jso
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::mcp::helpers::*;
     use serde_json::json;
     use std::fs;
     use tempfile::tempdir;

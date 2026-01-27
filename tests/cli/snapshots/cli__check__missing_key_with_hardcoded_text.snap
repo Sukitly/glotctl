@@ -16,7 +16,7 @@ error: "Common.submit"  missing-key
 6 |               <button>{t("submit")}</button>
   |                        ^
 
-error: "Hardcoded"  hardcoded-text
+error: "Hardcoded"  hardcoded
   --> ./src/app.tsx:7:21
   |
 7 |               <span>Hardcoded</span>

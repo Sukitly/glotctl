@@ -7,11 +7,12 @@ info:
   env:
     NO_COLOR: "1"
 ---
-success: true
-exit_code: 0
+success: false
+exit_code: 1
 ----- stdout -----
-./messages/en.json:
-  - App.Settings.Account.unused (line 6): ("Unused")  [unused]
+  --> ./messages/en.json:6
+     |
+   6 | "App.Settings.Account.unused": "Unused" [unused]
 
 Would delete 1 unused key(s) and 0 orphan key(s) from 1 file(s).
 Run with --apply to delete these keys.
