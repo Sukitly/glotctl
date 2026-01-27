@@ -6,7 +6,7 @@ pub use args::{Arguments, Command};
 pub use exit_status::ExitStatus;
 
 mod actions;
-mod args;
+pub mod args;
 mod commands;
 mod exit_status;
 pub mod report;

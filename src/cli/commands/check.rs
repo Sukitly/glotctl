@@ -46,7 +46,7 @@ impl CheckRule {
 pub fn check(cmd: CheckCommand, verbose: bool) -> Result<ExitStatus> {
     let args = &cmd.args;
     let checks = &cmd.checks;
-    let ctx = CheckContext::new(&args.common.path, args.common.verbose)?;
+    let ctx = CheckContext::new(&args.common)?;
 
     let checks = if checks.is_empty() {
         CheckRule::all()

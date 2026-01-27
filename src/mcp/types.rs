@@ -129,8 +129,9 @@ pub struct ConfigValues {
     pub includes: Vec<String>,
     pub checked_attributes: Vec<String>,
     pub ignore_texts: Vec<String>,
-    pub messages_dir: String,
+    pub messages_root: String,
     pub primary_locale: String,
+    pub source_root: String,
     pub ignore_test_files: bool,
 }
 
@@ -141,8 +142,9 @@ impl From<crate::config::Config> for ConfigValues {
             includes: c.includes,
             checked_attributes: c.checked_attributes,
             ignore_texts: c.ignore_texts,
-            messages_dir: c.messages_dir,
+            messages_root: c.messages_root,
             primary_locale: c.primary_locale,
+            source_root: c.source_root,
             ignore_test_files: c.ignore_test_files,
         }
     }
