@@ -13,11 +13,11 @@
 
 use std::collections::HashSet;
 
-use swc_common::{Loc, SourceMap};
+use swc_common::{Loc, SourceMap, Spanned};
 use swc_ecma_ast::{
-    BinaryOp, CallExpr, Callee, DefaultDecl, Expr, FnDecl, JSXAttr, JSXAttrName, JSXAttrValue,
-    JSXElement, JSXElementName, JSXExpr, JSXExprContainer, JSXFragment, JSXText, Lit, MemberProp,
-    Module, ObjectPatProp, Pat, VarDecl, VarDeclarator,
+    BinaryOp, BlockStmtOrExpr, CallExpr, Callee, DefaultDecl, Expr, FnDecl, JSXAttr, JSXAttrName,
+    JSXAttrValue, JSXElement, JSXElementName, JSXExpr, JSXExprContainer, JSXFragment, JSXText, Lit,
+    MemberProp, Module, ObjectPatProp, Pat, ReturnStmt, VarDecl, VarDeclarator,
 };
 use swc_ecma_visit::{Visit, VisitWith};
 
@@ -56,6 +56,19 @@ struct JsxState {
     in_element_expr: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StmtKind {
+    Return,
+    VarInit,
+    ArrowExpr,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct StmtContext {
+    line: usize,
+    kind: StmtKind,
+}
+
 impl JsxState {
     /// Create a new state for entering JSX children.
     /// Preserves `in_element_expr` based on whether we're currently in an expression.
@@ -90,6 +103,7 @@ pub struct FileAnalyzer<'a> {
     source_map: &'a SourceMap,
     file_comments: &'a FileComments,
     jsx_state: JsxState,
+    stmt_context: Vec<StmtContext>,
 
     // === HardcodedChecker specific ===
     checked_attributes: &'a [String],
@@ -122,6 +136,7 @@ impl<'a> FileAnalyzer<'a> {
             source_map,
             file_comments,
             jsx_state: JsxState::default(),
+            stmt_context: Vec::new(),
             checked_attributes,
             ignore_texts,
             binding_context: BindingContext::new(),
@@ -169,7 +184,10 @@ impl<'a> FileAnalyzer<'a> {
     }
 
     /// Determines whether to use JSX comment style `{/* */}` or JS comment style `//`.
-    fn should_use_jsx_comment(&self, source_line: &str) -> bool {
+    fn should_use_jsx_comment(&self, source_line: &str, line: usize) -> bool {
+        if self.is_js_statement_line(line) {
+            return false;
+        }
         let trimmed_line = source_line.trim_start();
         if self.jsx_state.in_expr
             && (trimmed_line.starts_with(':') || trimmed_line.starts_with('?'))
@@ -199,7 +217,7 @@ impl<'a> FileAnalyzer<'a> {
             .map(|cow| cow.to_string())
             .unwrap_or_default();
 
-        let use_jsx_comment = self.should_use_jsx_comment(&source_line);
+        let use_jsx_comment = self.should_use_jsx_comment(&source_line, loc.line);
 
         self.hardcoded_issues.push(HardcodedTextIssue {
             context: SourceContext::new(
@@ -255,7 +273,10 @@ impl<'a> FileAnalyzer<'a> {
     // ============================================================
 
     /// Compute comment style for current JSX state.
-    fn compute_comment_style(&self, source_line: &str) -> CommentStyle {
+    fn compute_comment_style(&self, source_line: &str, line: usize) -> CommentStyle {
+        if self.is_js_statement_line(line) {
+            return CommentStyle::Js;
+        }
         // Use the same logic as should_use_jsx_comment but for extraction context
         if !self.jsx_state.in_context {
             return CommentStyle::Js;
@@ -276,7 +297,7 @@ impl<'a> FileAnalyzer<'a> {
             .get_line(loc.line - 1)
             .map(|cow| cow.to_string())
             .unwrap_or_default();
-        let comment_style = self.compute_comment_style(&source_line);
+        let comment_style = self.compute_comment_style(&source_line, loc.line);
 
         SourceContext::new(
             SourceLocation::new(self.file_path, loc.line, loc.col_display + 1),
@@ -471,9 +492,33 @@ impl<'a> FileAnalyzer<'a> {
         }
         None
     }
+
+    fn with_stmt_context<F>(&mut self, line: usize, kind: StmtKind, f: F)
+    where
+        F: FnOnce(&mut Self),
+    {
+        self.stmt_context.push(StmtContext { line, kind });
+        f(self);
+        self.stmt_context.pop();
+    }
+
+    fn is_js_statement_line(&self, line: usize) -> bool {
+        self.stmt_context
+            .last()
+            .is_some_and(|ctx| ctx.line == line && matches!(ctx.kind, StmtKind::Return | StmtKind::VarInit | StmtKind::ArrowExpr))
+    }
 }
 
 impl<'a> Visit for FileAnalyzer<'a> {
+    fn visit_return_stmt(&mut self, node: &ReturnStmt) {
+        if let Some(arg) = &node.arg {
+            let line = self.source_map.lookup_char_pos(node.span.lo).line;
+            self.with_stmt_context(line, StmtKind::Return, |this| {
+                arg.visit_with(this);
+            });
+        }
+    }
+
     fn visit_jsx_element(&mut self, node: &JSXElement) {
         // Visit opening element (attributes)
         node.opening.visit_with(self);
@@ -658,8 +703,31 @@ impl<'a> Visit for FileAnalyzer<'a> {
 
     fn visit_arrow_expr(&mut self, node: &swc_ecma_ast::ArrowExpr) {
         self.binding_context.enter_scope();
-        node.visit_children_with(self);
+        for param in &node.params {
+            param.visit_with(self);
+        }
+        match &*node.body {
+            BlockStmtOrExpr::Expr(expr) => {
+                let line = self.source_map.lookup_char_pos(expr.span().lo).line;
+                self.with_stmt_context(line, StmtKind::ArrowExpr, |this| {
+                    expr.visit_with(this);
+                });
+            }
+            BlockStmtOrExpr::BlockStmt(block) => {
+                block.visit_with(self);
+            }
+        }
         self.binding_context.exit_scope();
+    }
+
+    fn visit_var_declarator(&mut self, node: &VarDeclarator) {
+        node.name.visit_with(self);
+        if let Some(init) = &node.init {
+            let line = self.source_map.lookup_char_pos(init.span().lo).line;
+            self.with_stmt_context(line, StmtKind::VarInit, |this| {
+                init.visit_with(this);
+            });
+        }
     }
 
     fn visit_var_decl(&mut self, node: &VarDecl) {

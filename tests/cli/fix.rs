@@ -361,14 +361,14 @@ export function Button({ type }: { type: string }) {
     let app_content = test.read_file("src/app.tsx")?;
     assert_comment_insertions(
         &app_content,
-        JSX_MESSAGE_KEYS,
+        JS_MESSAGE_KEYS,
         &["<div>{t(`${prefix}.title`)}</div>"],
     );
 
     let button_content = test.read_file("src/button.tsx")?;
     assert_comment_insertions(
         &button_content,
-        JSX_MESSAGE_KEYS,
+        JS_MESSAGE_KEYS,
         &["<button>{t(`${type}.label`)}</button>"],
     );
     Ok(())
@@ -598,7 +598,7 @@ export function Button({ t, prefix }: Props) {
     let content = test.read_file("src/button.tsx")?;
     assert_comment_insertions(
         &content,
-        JSX_MESSAGE_KEYS,
+        JS_MESSAGE_KEYS,
         &["<button>{t(`${prefix}.submit`)}</button>"],
     );
     // Should contain relative pattern ".*.submit" not absolute pattern "Common.*.submit"

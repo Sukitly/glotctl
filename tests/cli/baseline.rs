@@ -121,7 +121,7 @@ fn test_baseline_apply_jsx_context() -> Result<()> {
     assert_cmd_snapshot!(cmd);
 
     let content = test.read_file("src/app.tsx")?;
-    assert_comment_insertions(&content, JSX_HARDCODED, &["return <div>Hello World</div>;"]);
+    assert_comment_insertions(&content, JS_HARDCODED, &["return <div>Hello World</div>;"]);
     Ok(())
 }
 
@@ -197,7 +197,7 @@ fn test_baseline_multiple_same_line() -> Result<()> {
     cmd.output()?;
 
     let content = test.read_file("src/app.tsx")?;
-    assert_comment_insertions(&content, JSX_HARDCODED, &["return <div>Hello World</div>;"]);
+    assert_comment_insertions(&content, JS_HARDCODED, &["return <div>Hello World</div>;"]);
     Ok(())
 }
 
@@ -681,7 +681,7 @@ fn test_baseline_hardcoded_in_jsx_file_uses_jsx_comment() -> Result<()> {
     assert_cmd_snapshot!(cmd);
 
     let content = test.read_file("src/app.jsx")?;
-    assert_comment_insertions(&content, JSX_HARDCODED, &["return <div>Hardcoded</div>;"]);
+    assert_comment_insertions(&content, JS_HARDCODED, &["return <div>Hardcoded</div>;"]);
     Ok(())
 }
 
@@ -773,7 +773,7 @@ export function App() {
     let content = test.read_file("src/app.jsx")?;
     assert_comment_insertions(
         &content,
-        JSX_UNTRANSLATED,
+        JS_UNTRANSLATED,
         &["return <div>{t(\"greeting\")}</div>;"],
     );
     Ok(())
@@ -1062,7 +1062,7 @@ export function App() {
     let content = test.read_file("src/app.tsx")?;
     assert_comment_insertions(
         &content,
-        JSX_HARDCODED,
+        JS_HARDCODED,
         &["<span>{t(\"title\")} (Hardcoded)</span>"],
     );
     Ok(())
@@ -1161,7 +1161,7 @@ export function App() {
     let content = test.read_file("src/app.tsx")?;
     assert_comment_insertions(
         &content,
-        JSX_UNTRANSLATED,
+        JS_UNTRANSLATED,
         &["return <div>{t(\"greeting\")}</div>;"],
     );
     Ok(())
@@ -1267,12 +1267,12 @@ export function Other() {
 
     assert_comment_insertions(
         &app_content,
-        JSX_UNTRANSLATED,
+        JS_UNTRANSLATED,
         &["return <div>{t(\"greeting\")}</div>;"],
     );
     assert_comment_insertions(
         &other_content,
-        JSX_UNTRANSLATED,
+        JS_UNTRANSLATED,
         &["return <span>{t(\"greeting\")}</span>;"],
     );
     Ok(())
@@ -1389,18 +1389,14 @@ export function App() {
     let content = test.read_file("src/app.tsx")?;
     assert_comment_insertions(
         &content,
-        JSX_MERGED,
+        JS_MERGED,
         &["return <div>{t(\"greeting\")} suffix</div>;"],
     );
-    assert!(
-        !content.contains(JSX_HARDCODED),
-        "Expected merged comment, got:\n{}",
-        content
-    );
-    assert!(
-        !content.contains(JSX_UNTRANSLATED),
-        "Expected merged comment, got:\n{}",
-        content
+    let comment_count = content.matches("glot-disable-next-line").count();
+    assert_eq!(
+        comment_count, 1,
+        "Expected single merged comment, got {}:\n{}",
+        comment_count, content
     );
     Ok(())
 }
