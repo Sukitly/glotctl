@@ -181,9 +181,9 @@ export function App() {
 }"#,
     )?;
 
-    // Run with --orphan flag
+    // Run with --rules orphan
     let mut cmd = test.clean_command();
-    cmd.arg("--orphan");
+    cmd.arg("--rules").arg("orphan");
     assert_cmd_snapshot!(cmd);
     Ok(())
 }
@@ -226,9 +226,9 @@ export function App() {
 }"#,
     )?;
 
-    // Run with --unused flag - should only show unused, not orphan
+    // Run with --rules unused - should only show unused, not orphan
     let mut cmd = test.clean_command();
-    cmd.arg("--unused");
+    cmd.arg("--rules").arg("unused");
     assert_cmd_snapshot!(cmd);
     Ok(())
 }
@@ -531,9 +531,9 @@ export function App() {
 }"#,
     )?;
 
-    // Run with --orphan --apply
+    // Run with --rules orphan --apply
     let mut cmd = test.clean_command();
-    cmd.arg("--orphan").arg("--apply");
+    cmd.arg("--rules").arg("orphan").arg("--apply");
     assert_cmd_snapshot!(cmd);
 
     // Verify orphan was removed

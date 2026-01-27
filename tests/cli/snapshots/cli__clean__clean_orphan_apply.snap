@@ -4,7 +4,8 @@ info:
   program: glot
   args:
     - clean
-    - "--orphan"
+    - "--rules"
+    - orphan
     - "--apply"
   env:
     NO_COLOR: "1"
@@ -12,9 +13,7 @@ info:
 success: true
 exit_code: 0
 ----- stdout -----
-./messages/zh.json:
-  - Common.orphan (line 4): in zh ("孤儿")  [orphan]
-
-Deleted 0 unused key(s) and 1 orphan key(s) from 1 file(s).
+Deleted 1 key(s) in 1 file(s) (processed 1 key(s)).
+  - orphan: 1 key(s) (from 1 issue(s))
 
 ----- stderr -----
