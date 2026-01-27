@@ -67,7 +67,7 @@ pub fn report_to<W: Write>(issues: &[Issue], writer: &mut W) {
 }
 
 /// Print a success message when no issues are found.
-pub fn print_success(source_files: usize, locale_files: usize) {
+pub fn print_no_issue(source_files: usize, locale_files: usize) {
     print_success_to(source_files, locale_files, &mut io::stdout().lock());
 }
 
@@ -101,18 +101,18 @@ pub fn print_success_to<W: Write>(source_files: usize, locale_files: usize, writ
     let _ = writeln!(writer, "{}", msg);
 }
 
-/// Print a warning about files that could not be parsed.
-pub fn print_parse_warning(count: usize, verbose: bool) {
-    print_parse_warning_to(count, verbose, &mut io::stderr().lock());
+/// Print a error about files that could not be parsed.
+pub fn print_parse_error(count: usize, verbose: bool) {
+    print_parse_error_to(count, verbose, &mut io::stderr().lock());
 }
 
-/// Print a parse warning to a custom writer.
-pub fn print_parse_warning_to<W: Write>(count: usize, verbose: bool, writer: &mut W) {
+/// Print a parse error to a custom writer.
+pub fn print_parse_error_to<W: Write>(count: usize, verbose: bool, writer: &mut W) {
     if count > 0 && !verbose {
         let _ = writeln!(
             writer,
             "{} {} file(s) could not be parsed (use {} for details)",
-            "warning:".bold().yellow(),
+            "error:".bold().red(),
             count,
             "-v".cyan()
         );
@@ -338,20 +338,19 @@ fn compare_issues(a: &Issue, b: &Issue) -> std::cmp::Ordering {
 }
 
 pub fn print(result: &CommandResult, verbose: bool) {
-    print_command_output(result);
-
-    // Only print success message for commands that actually check files
-    if result.issues.is_empty() && matches!(result.summary, CommandSummary::Check) {
-        print_success(result.source_files_checked, result.locale_files_checked);
+    if result.issues.is_empty() && !result.exit_on_errors {
+        print_no_issue(result.source_files_checked, result.locale_files_checked);
+    } else {
+        print_command_output(result);
     }
 
-    print_parse_warning(result.parse_error_count, verbose);
+    print_parse_error(result.parse_error_count, verbose);
 }
 
 fn print_command_output(result: &CommandResult) {
     match &result.summary {
         CommandSummary::Check => {
-            report(&result.issues);
+            print_check(result);
         }
         CommandSummary::Baseline(summary) => {
             print_baseline(summary);
@@ -366,6 +365,10 @@ fn print_command_output(result: &CommandResult) {
             print_init(summary);
         }
     }
+}
+
+fn print_check(result: &CommandResult) {
+    report(&result.issues);
 }
 
 fn print_baseline(summary: &BaselineSummary) {
