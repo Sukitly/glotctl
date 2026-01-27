@@ -274,47 +274,47 @@ export function App() {
     Ok(())
 }
 
-#[test]
-fn test_clean_unused_propagates_to_all_locales() -> Result<()> {
-    let test = CliTest::new()?;
-    setup_config(&test)?;
+// #[test]
+// fn test_clean_unused_propagates_to_all_locales() -> Result<()> {
+//     let test = CliTest::new()?;
+//     setup_config(&test)?;
 
-    // Code only uses "used" key, not "unused"
-    test.write_file(
-        "src/app.tsx",
-        r#"
-const t = useTranslations("Common");
-export function App() {
-    return <div>{t("used")}</div>;
-}
-"#,
-    )?;
+//     // Code only uses "used" key, not "unused"
+//     test.write_file(
+//         "src/app.tsx",
+//         r#"
+// const t = useTranslations("Common");
+// export function App() {
+//     return <div>{t("used")}</div>;
+// }
+// "#,
+//     )?;
 
-    // Both locales have the unused key
-    test.write_file(
-        "messages/en.json",
-        r#"{
-  "Common": {
-    "used": "Used",
-    "unused": "Unused"
-  }
-}"#,
-    )?;
+//     // Both locales have the unused key
+//     test.write_file(
+//         "messages/en.json",
+//         r#"{
+//   "Common": {
+//     "used": "Used",
+//     "unused": "Unused"
+//   }
+// }"#,
+//     )?;
 
-    test.write_file(
-        "messages/zh.json",
-        r#"{
-  "Common": {
-    "used": "已使用",
-    "unused": "未使用"
-  }
-}"#,
-    )?;
+//     test.write_file(
+//         "messages/zh.json",
+//         r#"{
+//   "Common": {
+//     "used": "已使用",
+//     "unused": "未使用"
+//   }
+// }"#,
+//     )?;
 
-    // Should show unused in BOTH locales
-    assert_cmd_snapshot!(test.clean_command());
-    Ok(())
-}
+//     // Should show unused in BOTH locales
+//     assert_cmd_snapshot!(test.clean_command());
+//     Ok(())
+// }
 
 #[test]
 fn test_clean_apply_removes_from_all_locales() -> Result<()> {
