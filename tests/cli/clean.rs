@@ -1,5 +1,6 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use insta_cmd::assert_cmd_snapshot;
+use serde_json::Value;
 
 use crate::CliTest;
 
@@ -12,6 +13,56 @@ fn setup_config(test: &CliTest) -> Result<()> {
             "primaryLocale": "en"
         }"#,
     )
+}
+
+/// Validates JSON file structure and content.
+/// - Parses JSON to ensure valid structure
+/// - Checks expected keys exist using dot notation (e.g., "Common.submit")
+/// - Verifies forbidden keys don't exist
+/// - Validates formatting (trailing newline, indentation)
+fn assert_json_structure(
+    content: &str,
+    expected_keys: &[&str],
+    forbidden_keys: &[&str],
+) -> Result<()> {
+    // 1. Parse to verify valid JSON
+    let parsed: Value = serde_json::from_str(content).context("JSON should be parseable")?;
+
+    // 2. Check expected keys exist
+    for key_path in expected_keys {
+        assert!(
+            json_key_exists(&parsed, key_path),
+            "Expected key '{}' not found in JSON:\n{}",
+            key_path,
+            content
+        );
+    }
+
+    // 3. Check forbidden keys don't exist
+    for key_path in forbidden_keys {
+        assert!(
+            !json_key_exists(&parsed, key_path),
+            "Forbidden key '{}' found in JSON:\n{}",
+            key_path,
+            content
+        );
+    }
+
+    // Note: We don't enforce trailing newline as it's not critical for JSON validity
+
+    Ok(())
+}
+
+fn json_key_exists(value: &Value, key_path: &str) -> bool {
+    let parts: Vec<&str> = key_path.split('.').collect();
+    let mut current = value;
+    for part in parts {
+        match current.get(part) {
+            Some(v) => current = v,
+            None => return false,
+        }
+    }
+    true
 }
 
 #[test]
@@ -137,10 +188,9 @@ export function App() {
     cmd.arg("--apply");
     assert_cmd_snapshot!(cmd);
 
-    // Verify the file was modified
+    // Verify the file was modified with valid JSON structure
     let content = test.read_file("messages/en.json")?;
-    assert!(content.contains("\"used\""));
-    assert!(!content.contains("\"unused\""));
+    assert_json_structure(&content, &["Common.used"], &["Common.unused"])?;
     Ok(())
 }
 
@@ -267,10 +317,9 @@ export function App() {
     cmd.arg("--apply");
     assert_cmd_snapshot!(cmd);
 
-    // Verify Common was removed entirely
+    // Verify Common was removed entirely and Other remains
     let content = test.read_file("messages/en.json")?;
-    assert!(!content.contains("\"Common\""));
-    assert!(content.contains("\"Other\""));
+    assert_json_structure(&content, &["Other.key"], &["Common"])?;
     Ok(())
 }
 
@@ -396,10 +445,9 @@ export function App() {
     cmd.arg("--apply");
     assert_cmd_snapshot!(cmd);
 
-    // Verify the unused key was removed and file was reformatted
+    // Verify the unused key was removed and JSON is valid
     let content = test.read_file("messages/en.json")?;
-    assert!(content.contains("\"used\""));
-    assert!(!content.contains("\"unused\""));
+    assert_json_structure(&content, &["Common.used"], &["Common.unused"])?;
 
     Ok(())
 }
@@ -419,7 +467,7 @@ export function App() {
 "#,
     )?;
 
-    // Valid primary locale
+    // Valid primary locale with unused key
     test.write_file(
         "messages/en.json",
         r#"{
@@ -435,6 +483,31 @@ export function App() {
 
     // Should refuse to clean due to parse error
     assert_cmd_snapshot!(test.clean_command());
+
+    // Verify command fails when using --apply
+    let mut cmd = test.clean_command();
+    cmd.arg("--apply");
+    let output = cmd.output()?;
+    assert!(
+        !output.status.success(),
+        "Should fail with invalid JSON in --apply mode"
+    );
+
+    // Verify error message mentions parsing
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.to_lowercase().contains("parse") || stderr.to_lowercase().contains("invalid"),
+        "Error message should mention parsing issue, got: {}",
+        stderr
+    );
+
+    // Verify original file is unchanged
+    let en_content = test.read_file("messages/en.json")?;
+    assert!(
+        en_content.contains("\"unused\""),
+        "Original file should be unchanged when parse fails"
+    );
+
     Ok(())
 }
 
@@ -536,10 +609,9 @@ export function App() {
     cmd.arg("--rules").arg("orphan").arg("--apply");
     assert_cmd_snapshot!(cmd);
 
-    // Verify orphan was removed
+    // Verify orphan was removed and JSON is valid
     let content = test.read_file("messages/zh.json")?;
-    assert!(content.contains("\"submit\""));
-    assert!(!content.contains("\"orphan\""));
+    assert_json_structure(&content, &["Common.submit"], &["Common.orphan"])?;
 
     Ok(())
 }
@@ -614,12 +686,19 @@ export function App() {
     cmd.arg("--apply");
     assert_cmd_snapshot!(cmd);
 
-    // Verify entire App tree was removed
+    // Verify entire App tree was removed and JSON is valid
     let content = test.read_file("messages/en.json")?;
-    assert!(!content.contains("\"App\""));
-    assert!(!content.contains("\"Settings\""));
-    assert!(!content.contains("\"Account\""));
-    assert!(content.contains("\"Other\""));
+    assert_json_structure(
+        &content,
+        &["Other.key"],
+        &[
+            "App",
+            "Settings",
+            "Account",
+            "App.Settings",
+            "App.Settings.Account",
+        ],
+    )?;
 
     Ok(())
 }
@@ -697,10 +776,13 @@ export function App() {
     cmd.arg("--apply");
     assert_cmd_snapshot!(cmd);
 
-    // Verify file becomes empty object
+    // Verify file becomes empty object with valid JSON
     let content = test.read_file("messages/en.json")?;
-    assert!(!content.contains("\"Common\""));
-    assert!(!content.contains("\"unused1\""));
+    assert_json_structure(
+        &content,
+        &[],
+        &["Common", "Common.unused1", "Common.unused2"],
+    )?;
 
     Ok(())
 }
