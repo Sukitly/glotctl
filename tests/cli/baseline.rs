@@ -369,12 +369,12 @@ fn test_baseline_inside_jsx_expression() -> Result<()> {
     let content = test.read_file("src/app.tsx")?;
     assert_comment_insertions(
         &content,
-        JS_HARDCODED,
+        JSX_HARDCODED,
         &["<p>No console output</p>", "<span>Has output</span>"],
     );
     assert!(
-        !content.contains(JSX_HARDCODED),
-        "Should NOT have JSX comment inside {{expr}}, got:\n{}",
+        !content.contains(JS_HARDCODED),
+        "Should NOT have JS comment inside {{expr}}, got:\n{}",
         content
     );
     Ok(())
@@ -555,7 +555,7 @@ fn test_baseline_map_expression() -> Result<()> {
     let content = test.read_file("src/app.tsx")?;
     assert_comment_insertions(
         &content,
-        JS_HARDCODED,
+        JSX_HARDCODED,
         &["<span key={item.id}>Item text</span>"],
     );
     Ok(())

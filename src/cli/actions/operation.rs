@@ -422,8 +422,7 @@ fn build_merged_comment(group: &InsertGroup, existing_line: Option<&str>) -> Opt
 
     match group.kind {
         DirectiveKind::DisableNextLine => {
-            let style =
-                select_disable_comment_style(group, existing_line, existing_directive.as_ref());
+            let style = select_disable_comment_style(group, existing_line);
             let mut merged = std::collections::HashSet::new();
 
             if let Some(Directive::DisableNextLine { rules }) = existing_directive {
@@ -482,35 +481,30 @@ fn build_merged_comment(group: &InsertGroup, existing_line: Option<&str>) -> Opt
     }
 }
 
-fn select_disable_comment_style(
-    group: &InsertGroup,
-    existing_line: Option<&str>,
-    existing_directive: Option<&Directive>,
-) -> CommentStyle {
-    if let Some(Directive::DisableNextLine { rules }) = existing_directive
-        && rules.contains(&SuppressibleRule::Hardcoded)
-        && let Some(line) = existing_line
-        && let Some(detected) = detect_comment_style(line)
-    {
-        return detected;
-    }
-
-    for comment in &group.comments {
-        if let Some(Directive::DisableNextLine { rules }) = parse_comment_directive(comment)
-            && rules.contains(&SuppressibleRule::Hardcoded)
-            && let Some(detected) = detect_comment_style(comment)
-        {
-            return detected;
-        }
-    }
+fn select_disable_comment_style(group: &InsertGroup, existing_line: Option<&str>) -> CommentStyle {
+    let mut has_jsx = false;
 
     if let Some(line) = existing_line
         && let Some(detected) = detect_comment_style(line)
+        && detected == CommentStyle::Jsx
     {
-        return detected;
+        has_jsx = true;
     }
 
-    group.comment_style
+    for comment in &group.comments {
+        if let Some(detected) = detect_comment_style(comment)
+            && detected == CommentStyle::Jsx
+        {
+            has_jsx = true;
+            break;
+        }
+    }
+
+    if has_jsx {
+        CommentStyle::Jsx
+    } else {
+        CommentStyle::Js
+    }
 }
 
 fn merge_directives(

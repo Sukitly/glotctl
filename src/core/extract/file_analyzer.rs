@@ -46,14 +46,12 @@ use crate::core::{
 /// - `in_attr`: Inside a JSX attribute
 /// - `in_checked_attr`: Inside a checked attribute (placeholder, title, etc.)
 /// - `in_expr`: Inside a JSX expression container {}
-/// - `in_element_expr`: Current JSX element is inside an expression (ternary, &&, etc.)
 #[derive(Debug, Clone, Copy, Default)]
 struct JsxState {
     in_context: bool,
     in_attr: bool,
     in_checked_attr: bool,
     in_expr: bool,
-    in_element_expr: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -71,14 +69,12 @@ struct StmtContext {
 
 impl JsxState {
     /// Create a new state for entering JSX children.
-    /// Preserves `in_element_expr` based on whether we're currently in an expression.
     fn for_children(self) -> Self {
         Self {
             in_context: true,
             in_attr: false,
             in_checked_attr: false,
             in_expr: false,
-            in_element_expr: self.in_expr, // if entering from expr, element is in expr
         }
     }
 }
@@ -183,31 +179,35 @@ impl<'a> FileAnalyzer<'a> {
         contains_alphabetic(text)
     }
 
-    /// Determines whether to use JSX comment style `{/* */}` or JS comment style `//`.
-    fn should_use_jsx_comment(&self, source_line: &str, line: usize) -> bool {
-        if self.is_js_statement_line(line) {
-            return false;
-        }
+    /// Determine the correct comment style for a source line.
+    fn decide_comment_style(&self, source_line: &str, line: usize) -> CommentStyle {
         let trimmed_line = source_line.trim_start();
+
+        // A) JSX attributes -> JS comment
+        if self.jsx_state.in_attr {
+            return CommentStyle::Js;
+        }
+
+        // B) Ternary branches inside JSX expressions -> JS comment
         if self.jsx_state.in_expr
             && (trimmed_line.starts_with(':') || trimmed_line.starts_with('?'))
         {
-            return false;
+            return CommentStyle::Js;
         }
-        let line_starts_with_element = trimmed_line.starts_with('<');
-        let state = &self.jsx_state;
 
-        if state.in_attr {
-            line_starts_with_element && state.in_context && !state.in_expr
-        } else if line_starts_with_element {
-            if state.in_element_expr {
-                false
-            } else {
-                state.in_context && !state.in_expr
-            }
-        } else {
-            state.in_context
+        // E) JS statement-level JSX -> JS comment
+        if let Some(kind) = self.statement_context_for_line(line)
+            && self.should_force_js_for_statement(kind, trimmed_line)
+        {
+            return CommentStyle::Js;
         }
+
+        // D) JSX children -> JSX comment
+        if self.jsx_state.in_context {
+            return CommentStyle::Jsx;
+        }
+
+        CommentStyle::Js
     }
 
     fn add_hardcoded_issue(&mut self, value: &str, loc: Loc) {
@@ -217,17 +217,12 @@ impl<'a> FileAnalyzer<'a> {
             .map(|cow| cow.to_string())
             .unwrap_or_default();
 
-        let use_jsx_comment = self.should_use_jsx_comment(&source_line, loc.line);
-
+        let comment_style = self.decide_comment_style(&source_line, loc.line);
         self.hardcoded_issues.push(HardcodedTextIssue {
             context: SourceContext::new(
                 SourceLocation::new(self.file_path, loc.line, loc.col_display + 1),
                 source_line,
-                if use_jsx_comment {
-                    CommentStyle::Jsx
-                } else {
-                    CommentStyle::Js
-                },
+                comment_style,
             ),
             text: value.to_owned(),
         });
@@ -273,23 +268,6 @@ impl<'a> FileAnalyzer<'a> {
     // ============================================================
 
     /// Compute comment style for current JSX state.
-    fn compute_comment_style(&self, source_line: &str, line: usize) -> CommentStyle {
-        if self.is_js_statement_line(line) {
-            return CommentStyle::Js;
-        }
-        // Use the same logic as should_use_jsx_comment but for extraction context
-        if !self.jsx_state.in_context {
-            return CommentStyle::Js;
-        }
-        if self.jsx_state.in_expr {
-            let trimmed = source_line.trim_start();
-            if trimmed.starts_with(':') || trimmed.starts_with('?') {
-                return CommentStyle::Js;
-            }
-        }
-        CommentStyle::Jsx
-    }
-
     /// Create SourceContext from Loc.
     fn make_source_context(&self, loc: &Loc) -> SourceContext {
         let source_line = loc
@@ -297,7 +275,7 @@ impl<'a> FileAnalyzer<'a> {
             .get_line(loc.line - 1)
             .map(|cow| cow.to_string())
             .unwrap_or_default();
-        let comment_style = self.compute_comment_style(&source_line, loc.line);
+        let comment_style = self.decide_comment_style(&source_line, loc.line);
 
         SourceContext::new(
             SourceLocation::new(self.file_path, loc.line, loc.col_display + 1),
@@ -502,10 +480,37 @@ impl<'a> FileAnalyzer<'a> {
         self.stmt_context.pop();
     }
 
-    fn is_js_statement_line(&self, line: usize) -> bool {
+    fn statement_context_for_line(&self, line: usize) -> Option<StmtKind> {
         self.stmt_context
             .last()
-            .is_some_and(|ctx| ctx.line == line && matches!(ctx.kind, StmtKind::Return | StmtKind::VarInit | StmtKind::ArrowExpr))
+            .and_then(|ctx| {
+                if ctx.line == line {
+                    Some(ctx.kind)
+                } else {
+                    None
+                }
+            })
+    }
+
+    fn should_force_js_for_statement(&self, kind: StmtKind, trimmed_line: &str) -> bool {
+        let lt_pos = trimmed_line.find('<');
+        match kind {
+            StmtKind::Return => trimmed_line.starts_with("return "),
+            StmtKind::VarInit => {
+                if trimmed_line.starts_with("const ")
+                    || trimmed_line.starts_with("let ")
+                    || trimmed_line.starts_with("var ")
+                {
+                    return true;
+                }
+                let eq_pos = trimmed_line.find('=');
+                matches!((eq_pos, lt_pos), (Some(eq), Some(lt)) if eq < lt)
+            }
+            StmtKind::ArrowExpr => {
+                let arrow_pos = trimmed_line.find("=>");
+                matches!((arrow_pos, lt_pos), (Some(arrow), Some(lt)) if arrow < lt)
+            }
+        }
     }
 }
 
