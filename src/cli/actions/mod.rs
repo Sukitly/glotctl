@@ -41,5 +41,5 @@ mod traits;
 pub use delete_key::DeleteKey;
 pub use insert_disable_comment::InsertDisableComment;
 pub use insert_message_keys::InsertMessageKeys;
-pub use traits::{Action, ActionStats};
 pub(crate) use traits::execute_operations;
+pub use traits::{Action, ActionStats};

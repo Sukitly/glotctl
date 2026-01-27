@@ -28,7 +28,25 @@ pub enum Operation {
         comment: String,
     },
     /// Delete a key from a JSON file.
-    DeleteJsonKey { context: MessageContext },
+    DeleteJsonKey {
+        context: MessageContext,
+        reason: DeleteReason,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeleteReason {
+    Unused,
+    Orphan,
+}
+
+impl DeleteReason {
+    pub fn label(self) -> &'static str {
+        match self {
+            DeleteReason::Unused => "unused",
+            DeleteReason::Orphan => "orphan",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -50,7 +68,7 @@ impl Operation {
             Operation::InsertComment { context, comment } => {
                 Self::execute_insert_comment(context, comment)
             }
-            Operation::DeleteJsonKey { context } => Self::execute_delete_json_key(context),
+            Operation::DeleteJsonKey { context, .. } => Self::execute_delete_json_key(context),
         }
     }
 
@@ -60,8 +78,8 @@ impl Operation {
             Operation::InsertComment { context, comment } => {
                 Self::preview_insert_comment(context, comment);
             }
-            Operation::DeleteJsonKey { context } => {
-                Self::preview_delete_json_key(context);
+            Operation::DeleteJsonKey { context, reason } => {
+                Self::preview_delete_json_key(context, *reason);
             }
         }
     }
@@ -319,7 +337,7 @@ impl Operation {
         Ok(changes_applied)
     }
 
-    fn preview_delete_json_key(context: &MessageContext) {
+    fn preview_delete_json_key(context: &MessageContext, reason: DeleteReason) {
         let file_path = context.file_path();
         let line = context.line();
         let key = &context.key;
@@ -339,7 +357,12 @@ impl Operation {
         );
 
         // Deletion indicator
-        println!("  {} delete key \"{}\"", "-".red().bold(), key.red());
+        println!(
+            "  {} delete key \"{}\"  [{}]",
+            "-".red().bold(),
+            key.red(),
+            reason.label()
+        );
         println!();
     }
 }
@@ -637,12 +660,16 @@ mod tests {
     fn test_operation_delete_json_key() {
         let loc = MessageLocation::new("./messages/en.json", 5, 3);
         let ctx = MessageContext::new(loc, "Common.unused", "Unused value");
-        let op = Operation::DeleteJsonKey { context: ctx };
+        let op = Operation::DeleteJsonKey {
+            context: ctx,
+            reason: DeleteReason::Unused,
+        };
 
         match &op {
-            Operation::DeleteJsonKey { context } => {
+            Operation::DeleteJsonKey { context, reason } => {
                 assert_eq!(context.file_path(), "./messages/en.json");
                 assert_eq!(context.key, "Common.unused");
+                assert_eq!(*reason, DeleteReason::Unused);
             }
             _ => panic!("Expected DeleteJsonKey"),
         }

@@ -555,9 +555,10 @@ fn print_clean(summary: &CleanSummary) {
             }
         } else {
             println!(
-                "{} {} key(s) in {} file(s).",
+                "{} {} unused key(s) and {} orphan key(s) from {} file(s).",
                 "Would delete".yellow().bold(),
-                total,
+                summary.unused_count,
+                summary.orphan_count,
                 summary.file_count
             );
             println!("Run with {} to delete these keys.", "--apply".cyan());

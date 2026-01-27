@@ -481,15 +481,13 @@ impl<'a> FileAnalyzer<'a> {
     }
 
     fn statement_context_for_line(&self, line: usize) -> Option<StmtKind> {
-        self.stmt_context
-            .last()
-            .and_then(|ctx| {
-                if ctx.line == line {
-                    Some(ctx.kind)
-                } else {
-                    None
-                }
-            })
+        self.stmt_context.last().and_then(|ctx| {
+            if ctx.line == line {
+                Some(ctx.kind)
+            } else {
+                None
+            }
+        })
     }
 
     fn should_force_js_for_statement(&self, kind: StmtKind, trimmed_line: &str) -> bool {

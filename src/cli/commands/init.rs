@@ -1,7 +1,7 @@
 use std::{fs, path::Path};
 
 use super::{CommandResult, CommandSummary, InitSummary};
-use crate::config::{default_config_json, CONFIG_FILE_NAME};
+use crate::config::{CONFIG_FILE_NAME, default_config_json};
 use anyhow::Result;
 
 pub fn init() -> Result<CommandResult> {

@@ -121,11 +121,13 @@ impl CheckContext {
         let primary_messages = scan_results
             .messages
             .get(&config.primary_locale)
-            .ok_or_else(|| anyhow!(
-                "Primary locale '{}' messages not found in '{}'",
-                config.primary_locale,
-                message_dir.display()
-            ))?
+            .ok_or_else(|| {
+                anyhow!(
+                    "Primary locale '{}' messages not found in '{}'",
+                    config.primary_locale,
+                    message_dir.display()
+                )
+            })?
             .clone();
 
         let messages = OnceCell::new();
@@ -205,7 +207,9 @@ impl CheckContext {
 
     pub fn messages(&self) -> &MessageData {
         // Messages are initialized in new(), so this should never fail
-        self.messages.get().expect("Messages should be initialized in CheckContext::new()")
+        self.messages
+            .get()
+            .expect("Messages should be initialized in CheckContext::new()")
     }
 
     pub fn all_key_usages(&self) -> &AllKeyUsages {

@@ -5,7 +5,7 @@
 
 use crate::issues::{OrphanKeyIssue, UnusedKeyIssue};
 
-use super::operation::Operation;
+use super::operation::{DeleteReason, Operation};
 use super::traits::Action;
 
 /// Action to delete translation keys from JSON files.
@@ -21,6 +21,7 @@ impl Action<UnusedKeyIssue> for DeleteKey {
             .iter()
             .map(|issue| Operation::DeleteJsonKey {
                 context: issue.context.clone(),
+                reason: DeleteReason::Unused,
             })
             .collect()
     }
@@ -32,6 +33,7 @@ impl Action<OrphanKeyIssue> for DeleteKey {
             .iter()
             .map(|issue| Operation::DeleteJsonKey {
                 context: issue.context.clone(),
+                reason: DeleteReason::Orphan,
             })
             .collect()
     }
@@ -52,9 +54,10 @@ mod tests {
 
         assert_eq!(ops.len(), 1);
         match &ops[0] {
-            Operation::DeleteJsonKey { context } => {
+            Operation::DeleteJsonKey { context, reason } => {
                 assert_eq!(context.file_path(), "./messages/en.json");
                 assert_eq!(context.key, "Common.unused");
+                assert_eq!(*reason, DeleteReason::Unused);
             }
             _ => panic!("Expected DeleteJsonKey"),
         }
@@ -73,9 +76,10 @@ mod tests {
 
         assert_eq!(ops.len(), 1);
         match &ops[0] {
-            Operation::DeleteJsonKey { context } => {
+            Operation::DeleteJsonKey { context, reason } => {
                 assert_eq!(context.file_path(), "./messages/zh.json");
                 assert_eq!(context.key, "Common.orphan");
+                assert_eq!(*reason, DeleteReason::Orphan);
             }
             _ => panic!("Expected DeleteJsonKey"),
         }

@@ -104,7 +104,7 @@ pub(crate) fn execute_operations(ops: &[Operation]) -> Result<ActionStats> {
         let result = op.execute()?;
         if result.is_applied() {
             changes_applied += 1;
-            if let Operation::DeleteJsonKey { context } = op {
+            if let Operation::DeleteJsonKey { context, .. } = op {
                 files_modified.insert(context.file_path().to_string());
             }
         }
