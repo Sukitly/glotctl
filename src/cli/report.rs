@@ -338,7 +338,7 @@ fn compare_issues(a: &Issue, b: &Issue) -> std::cmp::Ordering {
 }
 
 pub fn print(result: &CommandResult, verbose: bool) {
-    if result.issues.is_empty() && !result.exit_on_errors {
+    if result.issues.is_empty() && result.error_count == 0 {
         print_no_issue(result.source_files_checked, result.locale_files_checked);
     } else {
         print_command_output(result);

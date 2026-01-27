@@ -15,10 +15,16 @@ pub fn finish(
         .filter(|i| matches!(i, Issue::ParseError(_)))
         .count();
 
-    let error_count = issues
+    let mut error_count = issues
         .iter()
         .filter(|i| i.severity() == Severity::Error)
         .count();
+
+    if let CommandSummary::Init(ref summary) = summary
+        && summary.error.is_some()
+    {
+        error_count += 1;
+    }
 
     CommandResult {
         summary,

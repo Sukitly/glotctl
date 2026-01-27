@@ -54,6 +54,7 @@ pub struct InitSummary {
 }
 
 /// Result of running glot commands
+#[derive(Debug)]
 pub struct CommandResult {
     pub summary: CommandSummary,
     pub error_count: usize,
