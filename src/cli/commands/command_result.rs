@@ -72,3 +72,9 @@ pub struct CommandResult {
     /// 0 if message checking was not performed.
     pub locale_files_checked: usize,
 }
+
+impl CommandResult {
+    pub fn is_success(&self) -> bool {
+        self.issues.is_empty() && self.error_count == 0
+    }
+}
