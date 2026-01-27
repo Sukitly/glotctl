@@ -45,6 +45,10 @@ pub fn report(issues: &[Issue]) {
     report_to(issues, &mut io::stdout().lock());
 }
 
+pub fn report_to_stderr(issues: &[Issue]) {
+    report_to(issues, &mut io::stderr().lock());
+}
+
 /// Print issues to a custom writer.
 ///
 /// Useful for testing or redirecting output.
@@ -359,7 +363,7 @@ fn print_command_output(result: &CommandResult) {
             print_fix(summary);
         }
         CommandSummary::Clean(summary) => {
-            print_clean(summary);
+            print_clean(result, summary);
         }
         CommandSummary::Init(summary) => {
             print_init(summary);
@@ -521,7 +525,25 @@ fn print_unfixable_keys(issues: &[&UnresolvedKeyIssue]) {
     }
 }
 
-fn print_clean(summary: &CleanSummary) {
+fn print_clean(result: &CommandResult, summary: &CleanSummary) {
+    let unresolved_issues: Vec<Issue> = result
+        .issues
+        .iter()
+        .filter(|issue| matches!(issue, Issue::UnresolvedKey(_)))
+        .cloned()
+        .collect();
+
+    if !unresolved_issues.is_empty() {
+        eprintln!(
+            "Error: {} Cannot clean, {} unresolved key warning(s) found.",
+            FAILURE_MARK.red(),
+            unresolved_issues.len()
+        );
+        eprintln!("Unresolved keys prevent tracking all key usage.");
+        eprintln!("Run `glot check` to see details, then fix or suppress them.");
+        report_to_stderr(&unresolved_issues);
+        return;
+    }
     if !summary.is_apply {
         if !summary.unused_issues.is_empty() {
             DeleteKey::preview(&summary.unused_issues);

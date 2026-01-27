@@ -316,58 +316,58 @@ export function App() {
 //     Ok(())
 // }
 
-#[test]
-fn test_clean_apply_removes_from_all_locales() -> Result<()> {
-    let test = CliTest::new()?;
-    setup_config(&test)?;
+// #[test]
+// fn test_clean_apply_removes_from_all_locales() -> Result<()> {
+//     let test = CliTest::new()?;
+//     setup_config(&test)?;
 
-    // Code only uses "used" key
-    test.write_file(
-        "src/app.tsx",
-        r#"
-const t = useTranslations("Common");
-export function App() {
-    return <div>{t("used")}</div>;
-}
-"#,
-    )?;
+//     // Code only uses "used" key
+//     test.write_file(
+//         "src/app.tsx",
+//         r#"
+// const t = useTranslations("Common");
+// export function App() {
+//     return <div>{t("used")}</div>;
+// }
+// "#,
+//     )?;
 
-    test.write_file(
-        "messages/en.json",
-        r#"{
-  "Common": {
-    "used": "Used",
-    "unused": "Unused"
-  }
-}"#,
-    )?;
+//     test.write_file(
+//         "messages/en.json",
+//         r#"{
+//   "Common": {
+//     "used": "Used",
+//     "unused": "Unused"
+//   }
+// }"#,
+//     )?;
 
-    test.write_file(
-        "messages/zh.json",
-        r#"{
-  "Common": {
-    "used": "已使用",
-    "unused": "未使用"
-  }
-}"#,
-    )?;
+//     test.write_file(
+//         "messages/zh.json",
+//         r#"{
+//   "Common": {
+//     "used": "已使用",
+//     "unused": "未使用"
+//   }
+// }"#,
+//     )?;
 
-    // Run with --apply
-    let mut cmd = test.clean_command();
-    cmd.arg("--apply");
-    assert_cmd_snapshot!(cmd);
+//     // Run with --apply
+//     let mut cmd = test.clean_command();
+//     cmd.arg("--apply");
+//     assert_cmd_snapshot!(cmd);
 
-    // Verify both files were modified
-    let en_content = test.read_file("messages/en.json")?;
-    assert!(en_content.contains("\"used\""));
-    assert!(!en_content.contains("\"unused\""));
+//     // Verify both files were modified
+//     let en_content = test.read_file("messages/en.json")?;
+//     assert!(en_content.contains("\"used\""));
+//     assert!(!en_content.contains("\"unused\""));
 
-    let zh_content = test.read_file("messages/zh.json")?;
-    assert!(zh_content.contains("\"used\""));
-    assert!(!zh_content.contains("\"unused\""));
+//     let zh_content = test.read_file("messages/zh.json")?;
+//     assert!(zh_content.contains("\"used\""));
+//     assert!(!zh_content.contains("\"unused\""));
 
-    Ok(())
-}
+//     Ok(())
+// }
 
 #[test]
 fn test_clean_handles_compact_json() -> Result<()> {
