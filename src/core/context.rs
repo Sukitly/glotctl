@@ -4,27 +4,27 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
-use anyhow::{Context as _, Result, anyhow};
+use anyhow::{anyhow, Context as _, Result};
 use swc_ecma_visit::VisitWith;
 
 use crate::{
-    config::{Config, load_config},
+    config::{load_config, Config},
     core::{
-        AllKeyUsages, AllLocaleMessages, LocaleMessages,
         collect::{
-            AllFileComments, AllFileImports, CommentCollector, FileImports, Registries,
-            RegistryCollector, TranslationFnCall, TranslationProp, make_registry_key,
-            make_translation_fn_call_key, make_translation_prop_key, resolve_import_path,
+            make_registry_key, make_translation_fn_call_key, make_translation_prop_key,
+            resolve_import_path, AllFileComments, AllFileImports, CommentCollector, FileImports,
+            Registries, RegistryCollector, TranslationFnCall, TranslationProp,
         },
         extract::FileAnalyzer,
         file_scanner::scan_files,
         parsers::{
             json::scan_message_files,
-            jsx::{ParsedJSX, parse_jsx_source},
+            jsx::{parse_jsx_source, ParsedJSX},
         },
         resolve::resolve_translation_calls,
+        AllKeyUsages, AllLocaleMessages, LocaleMessages,
     },
-    issues::{HardcodedTextIssue, ParseErrorIssue},
+    issues::{HardcodedTextIssue, ParseErrorFileType, ParseErrorIssue},
 };
 
 use std::collections::HashMap;
@@ -63,6 +63,7 @@ pub struct CheckContext {
     resolved_data: OnceCell<ResolvedData>,
     messages: OnceCell<MessageData>,
     used_keys: OnceCell<HashSet<String>>,
+    message_parse_errors: Vec<ParseErrorIssue>,
 }
 
 impl CheckContext {
@@ -118,6 +119,17 @@ impl CheckContext {
         };
         let scan_results = scan_message_files(&message_dir)?;
 
+        // Convert message warnings to ParseErrorIssue
+        let message_parse_errors: Vec<ParseErrorIssue> = scan_results
+            .warnings
+            .iter()
+            .map(|warning| ParseErrorIssue {
+                file_path: warning.file_path.clone(),
+                error: warning.error.clone(),
+                file_type: ParseErrorFileType::Message,
+            })
+            .collect();
+
         let primary_messages = scan_results
             .messages
             .get(&config.primary_locale)
@@ -148,6 +160,7 @@ impl CheckContext {
             resolved_data: OnceCell::new(),
             messages,
             used_keys: OnceCell::new(),
+            message_parse_errors,
         })
     }
 
@@ -169,6 +182,7 @@ impl CheckContext {
                             errors.push(ParseErrorIssue {
                                 file_path: file_path.clone(),
                                 error: e.to_string(),
+                                file_type: ParseErrorFileType::Source,
                             });
                         }
                     },
@@ -179,6 +193,7 @@ impl CheckContext {
                         errors.push(ParseErrorIssue {
                             file_path: file_path.clone(),
                             error: format!("Failed to read file: {}", e),
+                            file_type: ParseErrorFileType::Source,
                         });
                     }
                 }
@@ -191,6 +206,10 @@ impl CheckContext {
 
     pub fn parsed_files_errors(&self) -> &Vec<ParseErrorIssue> {
         self.parsed_files_errors.get_or_init(Vec::new)
+    }
+
+    pub fn message_parse_errors(&self) -> &Vec<ParseErrorIssue> {
+        &self.message_parse_errors
     }
 
     pub fn registries(&self) -> &Registries {
@@ -530,6 +549,7 @@ mod tests {
             messages: OnceCell::new(),
             used_keys: OnceCell::new(),
             resolved_data: OnceCell::new(),
+            message_parse_errors: Vec::new(),
         }
     }
 

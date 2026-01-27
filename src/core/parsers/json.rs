@@ -7,10 +7,17 @@ use crate::core::{
     AllLocaleMessages, LocaleMessages, MessageContext, MessageEntry, MessageLocation, ValueType,
 };
 
+/// A warning from scanning message files.
+#[derive(Debug, Clone)]
+pub struct MessageScanWarning {
+    pub file_path: String,
+    pub error: String,
+}
+
 #[derive(Debug, Default)]
 pub struct ScanMessagesResult {
     pub messages: AllLocaleMessages,
-    pub warnings: Vec<String>,
+    pub warnings: Vec<MessageScanWarning>,
 }
 
 pub fn parse_json_file(path: &Path, locale: &str) -> Result<LocaleMessages> {
@@ -230,9 +237,10 @@ pub fn scan_message_files(message_dir: impl AsRef<Path>) -> Result<ScanMessagesR
                     result.messages.insert(locale, messages);
                 }
                 Err(e) => {
-                    result
-                        .warnings
-                        .push(format!("Failed to parse {:?}: {}", path, e));
+                    result.warnings.push(MessageScanWarning {
+                        file_path: path.to_string_lossy().to_string(),
+                        error: e.to_string(),
+                    });
                 }
             }
         }
@@ -454,7 +462,7 @@ mod tests {
 
         // Invalid file should produce a warning
         assert_eq!(result.warnings.len(), 1);
-        assert!(result.warnings[0].contains("zh.json"));
+        assert!(result.warnings[0].file_path.contains("zh.json"));
     }
 
     #[test]

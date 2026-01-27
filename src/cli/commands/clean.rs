@@ -27,6 +27,40 @@ pub fn clean(cmd: CleanCommand) -> Result<CommandResult> {
     let ctx = CheckContext::new(&args.common.path, args.common.verbose)?;
     let apply = args.apply;
 
+    // Check for message parse errors - block clean if any message files failed to parse
+    let message_parse_errors = ctx.message_parse_errors();
+    if !message_parse_errors.is_empty() {
+        let mut all_issues: Vec<Issue> = Vec::new();
+        all_issues.extend(
+            message_parse_errors
+                .iter()
+                .map(|i| Issue::ParseError(i.clone())),
+        );
+
+        let mut result = finish(
+            CommandSummary::Clean(CleanSummary {
+                unused_count: 0,
+                orphan_count: 0,
+                applied_unused_count: 0,
+                applied_orphan_count: 0,
+                applied_total_count: 0,
+                file_count: 0,
+                is_apply: apply,
+                unused_issues: Vec::new(),
+                orphan_issues: Vec::new(),
+            }),
+            all_issues,
+            ctx.files.len(),
+            ctx.messages().all_messages.len(),
+            false,
+        );
+
+        result.exit_on_errors = true;
+        result.error_count = 1;
+        return Ok(result);
+    }
+
+    // Check for unresolved keys - block clean if any keys cannot be statically resolved
     let unresolved_issues: Vec<UnresolvedKeyIssue> = check_unresolved_keys_issues(&ctx);
     if !unresolved_issues.is_empty() {
         let parse_errors = ctx.parsed_files_errors();

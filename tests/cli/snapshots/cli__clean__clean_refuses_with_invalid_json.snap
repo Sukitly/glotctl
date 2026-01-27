@@ -14,4 +14,9 @@ exit_code: 1
 ----- stderr -----
 Error: ✘ Cannot clean, 1 file(s) could not be parsed.
 Parse errors mean some files could not be analyzed.
-Run `glot check -v` to see details and fix them.
+Run `glot check` to see details and fix them.
+error: "Failed to parse JSON file: "./messages/zh.json""  parse-error
+  --> ./messages/zh.json:0:0
+
+
+✘ 1 problems (1 error, 0 warnings)

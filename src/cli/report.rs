@@ -16,7 +16,9 @@ use super::{
 };
 use crate::config::CONFIG_FILE_NAME;
 use crate::core::ResolvedKeyUsage;
-use crate::issues::{Issue, Report, ReportLocation, Severity, UnresolvedKeyIssue};
+use crate::issues::{
+    Issue, ParseErrorFileType, Report, ReportLocation, Severity, UnresolvedKeyIssue,
+};
 
 /// Success mark for consistent output formatting.
 pub const SUCCESS_MARK: &str = "\u{2713}"; // ✓
@@ -348,7 +350,12 @@ pub fn print(result: &CommandResult, verbose: bool) {
         print_command_output(result);
     }
 
-    print_parse_error(result.parse_error_count, verbose);
+    // For clean command with exit_on_errors, parse errors are already reported in print_clean
+    let skip_parse_error =
+        matches!(result.summary, CommandSummary::Clean(_)) && result.exit_on_errors;
+    if !skip_parse_error {
+        print_parse_error(result.parse_error_count, verbose);
+    }
 }
 
 fn print_command_output(result: &CommandResult) {
@@ -526,6 +533,29 @@ fn print_unfixable_keys(issues: &[&UnresolvedKeyIssue]) {
 }
 
 fn print_clean(result: &CommandResult, summary: &CleanSummary) {
+    // Check for message parse errors first
+    let message_parse_errors: Vec<Issue> = result
+        .issues
+        .iter()
+        .filter(|issue| {
+            matches!(issue, Issue::ParseError(e) if e.file_type == ParseErrorFileType::Message)
+        })
+        .cloned()
+        .collect();
+
+    if !message_parse_errors.is_empty() {
+        eprintln!(
+            "Error: {} Cannot clean, {} file(s) could not be parsed.",
+            FAILURE_MARK.red(),
+            message_parse_errors.len()
+        );
+        eprintln!("Parse errors mean some files could not be analyzed.");
+        eprintln!("Run `glot check` to see details and fix them.");
+        report_to_stderr(&message_parse_errors);
+        return;
+    }
+
+    // Check for unresolved keys
     let unresolved_issues: Vec<Issue> = result
         .issues
         .iter()
@@ -912,6 +942,7 @@ mod tests {
         let issue = Issue::ParseError(ParseErrorIssue {
             file_path: "./src/broken.tsx".to_string(),
             error: "Unexpected token at line 5".to_string(),
+            file_type: ParseErrorFileType::Source,
         });
 
         let mut output = Vec::new();

@@ -263,11 +263,21 @@ impl TypeMismatchIssue {
 // Special Issue Types
 // ============================================================
 
+/// Type of file that failed to parse.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParseErrorFileType {
+    /// Source code file (TSX/JSX)
+    Source,
+    /// Message file (JSON)
+    Message,
+}
+
 /// File could not be parsed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParseErrorIssue {
     pub file_path: String,
     pub error: String,
+    pub file_type: ParseErrorFileType,
 }
 
 impl ParseErrorIssue {
@@ -852,11 +862,13 @@ mod tests {
         let issue = ParseErrorIssue {
             file_path: "./src/broken.tsx".to_string(),
             error: "Unexpected token at line 5".to_string(),
+            file_type: ParseErrorFileType::Source,
         };
 
         assert_eq!(ParseErrorIssue::severity(), Severity::Error);
         assert_eq!(ParseErrorIssue::rule(), Rule::ParseError);
         assert_eq!(issue.file_path, "./src/broken.tsx");
+        assert_eq!(issue.file_type, ParseErrorFileType::Source);
     }
 
     #[test]
