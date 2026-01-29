@@ -11,7 +11,7 @@ info:
 success: false
 exit_code: 1
 ----- stdout -----
-error: "Hardcoded"  hardcoded
+error: "Hardcoded"  [hardcoded]
   --> ./src/app.tsx:1:6
   |
 1 | <div>Hardcoded</div>

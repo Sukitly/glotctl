@@ -10,11 +10,11 @@ info:
 success: false
 exit_code: 1
 ----- stdout -----
-warning: "Common.cancel"  unused-key
+warning: "Common.cancel"  [unused-key]
   --> ./messages/en.json:3:1
   = note: ("Cancel")
 
-error: "Common.submit"  missing-key
+error: "Common.submit"  [missing-key]
   --> ./src/app.tsx:4:23
   |
 4 |       return <button>{t("submit")}</button>;

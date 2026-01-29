@@ -34,6 +34,7 @@ impl Action<HardcodedTextIssue> for InsertDisableComment {
             .map(|issue| Operation::InsertComment {
                 context: issue.context.clone(),
                 comment: Self::format_comment(Rule::HardcodedText, issue.context.comment_style),
+                rule: Rule::HardcodedText,
             })
             .collect()
     }
@@ -47,6 +48,7 @@ impl Action<UntranslatedIssue> for InsertDisableComment {
                 issue.usages.iter().map(|usage| Operation::InsertComment {
                     context: usage.context.clone(),
                     comment: Self::format_comment(Rule::Untranslated, usage.context.comment_style),
+                    rule: Rule::Untranslated,
                 })
             })
             .collect()
@@ -105,9 +107,14 @@ mod tests {
 
         assert_eq!(ops.len(), 1);
         match &ops[0] {
-            Operation::InsertComment { context, comment } => {
+            Operation::InsertComment {
+                context,
+                comment,
+                rule,
+            } => {
                 assert_eq!(context.file_path(), "./src/app.tsx");
                 assert_eq!(comment, "// glot-disable-next-line hardcoded");
+                assert_eq!(*rule, Rule::HardcodedText);
             }
             _ => panic!("Expected InsertComment"),
         }
@@ -134,18 +141,28 @@ mod tests {
 
         // First usage - JSX style
         match &ops[0] {
-            Operation::InsertComment { context, comment } => {
+            Operation::InsertComment {
+                context,
+                comment,
+                rule,
+            } => {
                 assert_eq!(context.file_path(), "./src/a.tsx");
                 assert_eq!(comment, "{/* glot-disable-next-line untranslated */}");
+                assert_eq!(*rule, Rule::Untranslated);
             }
             _ => panic!("Expected InsertComment"),
         }
 
         // Second usage - JS style
         match &ops[1] {
-            Operation::InsertComment { context, comment } => {
+            Operation::InsertComment {
+                context,
+                comment,
+                rule,
+            } => {
                 assert_eq!(context.file_path(), "./src/b.tsx");
                 assert_eq!(comment, "// glot-disable-next-line untranslated");
+                assert_eq!(*rule, Rule::Untranslated);
             }
             _ => panic!("Expected InsertComment"),
         }

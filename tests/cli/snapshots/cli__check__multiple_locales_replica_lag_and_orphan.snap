@@ -12,12 +12,12 @@ info:
 success: false
 exit_code: 1
 ----- stdout -----
-error: "Common.b"  replica-lag
+error: "Common.b"  [replica-lag]
   --> ./messages/en.json:1:1
   = note: ("B") missing in: zh
   = used: (no usages found)
 
-warning: "Common.c"  orphan-key
+warning: "Common.c"  [orphan-key]
   --> ./messages/ja.json:1:1
   = note: in ja ("C")
 

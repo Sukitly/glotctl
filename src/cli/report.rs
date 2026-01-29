@@ -136,7 +136,7 @@ fn print_issue<W: Write>(issue: &Issue, writer: &mut W, max_line_width: usize) {
         "{}: \"{}\"  {}",
         severity_str,
         issue.message(),
-        issue.report_rule().to_string().dimmed().cyan()
+        format!("[{}]", issue.report_rule()).dimmed().cyan()
     );
 
     // Print clickable location: --> path:line:col

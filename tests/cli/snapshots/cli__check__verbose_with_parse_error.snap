@@ -11,7 +11,7 @@ info:
 success: false
 exit_code: 2
 ----- stdout -----
-error: "Failed to parse tsx string: Error { error: (14..14, Expected("</", "<eof>")) }"  parse-error
+error: "Failed to parse tsx string: Error { error: (14..14, Expected("</", "<eof>")) }"  [parse-error]
   --> ./src/broken.tsx:0:0
 
 

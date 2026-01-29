@@ -12,15 +12,15 @@ exit_code: 1
 ----- stdout -----
   --> ./messages/en.json:4
      |
-   4 | "Auth.logout": "Logout" [unused]
+   4 | "Auth.logout": "Logout" [unused-key]
 
   --> ./messages/en.json:8
      |
-   8 | "Common.cancel": "Cancel" [unused]
+   8 | "Common.cancel": "Cancel" [unused-key]
 
   --> ./messages/en.json:11
      |
-  11 | "Unused.key": "Value" [unused]
+  11 | "Unused.key": "Value" [unused-key]
 
 Would delete 3 unused key(s) and 0 orphan key(s) from 1 file(s).
 Run with --apply to delete these keys.

@@ -11,7 +11,7 @@ info:
 success: false
 exit_code: 1
 ----- stdout -----
-error: "Common.missing-special"  missing-key
+error: "Common.missing-special"  [missing-key]
   --> ./src/app.tsx:8:20
   |
 8 |             <span>{t("missing-special")}</span>

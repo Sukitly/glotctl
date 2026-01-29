@@ -11,7 +11,7 @@ info:
 success: false
 exit_code: 1
 ----- stdout -----
-error: "Common.tags"  type-mismatch
+error: "Common.tags"  [type-mismatch]
   --> ./messages/en.json:3:1
   = note: expected array, got: ja (string), zh (string)
   = used: (no usages found)

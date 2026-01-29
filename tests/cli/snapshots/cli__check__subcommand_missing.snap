@@ -11,7 +11,7 @@ info:
 success: false
 exit_code: 1
 ----- stdout -----
-error: "Common.submit"  missing-key
+error: "Common.submit"  [missing-key]
   --> ./src/app.tsx:3:9
   |
 3 |         t("submit");

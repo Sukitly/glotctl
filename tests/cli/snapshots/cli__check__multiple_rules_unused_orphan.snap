@@ -12,11 +12,11 @@ info:
 success: true
 exit_code: 0
 ----- stdout -----
-warning: "Common.unused"  unused-key
+warning: "Common.unused"  [unused-key]
   --> ./messages/en.json:1:1
   = note: ("Unused")
 
-warning: "Common.orphan"  orphan-key
+warning: "Common.orphan"  [orphan-key]
   --> ./messages/zh.json:1:1
   = note: in zh ("孤儿")
 

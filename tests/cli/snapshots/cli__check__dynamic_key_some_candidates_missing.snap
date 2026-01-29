@@ -10,7 +10,7 @@ info:
 success: false
 exit_code: 1
 ----- stdout -----
-error: "Tools.updateNovel"  missing-key
+error: "Tools.updateNovel"  [missing-key]
   --> ./src/app.tsx:9:12
   |
 9 |     return t(key);

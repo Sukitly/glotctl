@@ -10,7 +10,7 @@ info:
 success: false
 exit_code: 1
 ----- stdout -----
-  --> ./src/app.tsx:2:17
+  --> ./src/app.tsx:2:17  [hardcoded]
      |
    2 |     return <div>Hello World</div>;
      |                 ^

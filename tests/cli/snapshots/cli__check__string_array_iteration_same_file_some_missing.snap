@@ -10,7 +10,7 @@ info:
 success: false
 exit_code: 1
 ----- stdout -----
-error: "Features.prefix.load"  missing-key
+error: "Features.prefix.load"  [missing-key]
   --> ./src/app.tsx:4:25
   |
 4 | FEATURE_KEYS.map((k) => t(`prefix.${k}`));

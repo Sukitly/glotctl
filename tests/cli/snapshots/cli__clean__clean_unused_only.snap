@@ -14,7 +14,7 @@ exit_code: 1
 ----- stdout -----
   --> ./messages/en.json:4
      |
-   4 | "Common.unused": "Unused" [unused]
+   4 | "Common.unused": "Unused" [unused-key]
 
 Would delete 1 unused key(s) and 0 orphan key(s) from 1 file(s).
 Run with --apply to delete these keys.

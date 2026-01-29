@@ -12,7 +12,7 @@ exit_code: 1
 ----- stdout -----
 ✘ Cannot fix 1 unresolved key(s) (variable keys without pattern hints):
 
-  --> ./src/app.tsx:6:19
+  --> ./src/app.tsx:6:19  [unresolved-key]
      |
    6 |     return <span>{t(keyName)}</span>;
      |                   ^

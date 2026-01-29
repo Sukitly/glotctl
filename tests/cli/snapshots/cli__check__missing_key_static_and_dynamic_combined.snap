@@ -10,23 +10,23 @@ info:
 success: false
 exit_code: 1
 ----- stdout -----
-warning: "Tools.create"  unused-key
+warning: "Tools.create"  [unused-key]
   --> ./messages/en.json:3:1
    = note: ("Create")
 
-error: "Tools.delete"  missing-key
+error: "Tools.delete"  [missing-key]
   --> ./src/app.tsx:4:17
    |
  4 | const missing = t("delete");
    |                 ^
 
-error: "Tools.archive"  missing-key
+error: "Tools.archive"  [missing-key]
   --> ./src/app.tsx:13:12
    |
 13 |     return t(key);
    |            ^
 
-error: "Tools.update"  missing-key
+error: "Tools.update"  [missing-key]
   --> ./src/app.tsx:13:12
    |
 13 |     return t(key);
