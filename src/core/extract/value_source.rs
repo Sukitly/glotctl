@@ -118,7 +118,7 @@ pub enum ValueSource {
     /// This becomes an `UnresolvedKeyUsage` in Phase 3 with the given reason.
     Unresolvable {
         /// Why the value source cannot be resolved.
-        reason: UnresolvableReason
+        reason: UnresolvableReason,
     },
 }
 
@@ -160,7 +160,7 @@ pub enum UnresolvableReason {
     /// **Phase 3 outcome**: Warning (dynamic-key)
     ComplexTemplate {
         /// Number of interpolation expressions in the template.
-        expr_count: usize
+        expr_count: usize,
     },
 
     /// Expression type is not supported for analysis.
@@ -170,7 +170,7 @@ pub enum UnresolvableReason {
     /// **Phase 3 outcome**: Warning (dynamic-key)
     UnsupportedExpression {
         /// Expression type name for debugging (e.g., "BinaryExpression", "CallExpression").
-        expr_type: String
+        expr_type: String,
     },
 }
 

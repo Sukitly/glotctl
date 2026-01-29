@@ -108,7 +108,6 @@ pub struct CheckContext {
     // ============================================================
     // Basic data (set at initialization)
     // ============================================================
-
     /// Merged configuration (CLI args > config file > defaults).
     pub config: Config,
 
@@ -127,7 +126,6 @@ pub struct CheckContext {
     // ============================================================
     // Lazily initialized pipeline data
     // ============================================================
-
     /// Parsed AST for each source file.
     /// Initialized on first call to `parsed_files()`.
     parsed_files: OnceCell<HashMap<String, ParsedJSX>>,

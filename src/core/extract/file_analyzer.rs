@@ -173,7 +173,6 @@ pub struct FileAnalyzer<'a> {
     // ============================================================
     // Shared fields (used by all analysis types)
     // ============================================================
-
     /// Path to the file being analyzed (relative to source root).
     file_path: &'a str,
 
@@ -192,7 +191,6 @@ pub struct FileAnalyzer<'a> {
     // ============================================================
     // Hardcoded text detection fields
     // ============================================================
-
     /// JSX attributes to check for hardcoded text (from config).
     /// e.g., ["placeholder", "title", "alt", "aria-label"]
     checked_attributes: &'a [String],
@@ -203,7 +201,6 @@ pub struct FileAnalyzer<'a> {
     // ============================================================
     // Translation call collection fields
     // ============================================================
-
     /// Tracks bindings for translation functions (e.g., `t`, `tMessages`).
     /// Handles scoping, shadowing, and translation sources (direct, props, fn params).
     binding_context: BindingContext,
@@ -218,7 +215,6 @@ pub struct FileAnalyzer<'a> {
     // ============================================================
     // Output (accumulated during traversal)
     // ============================================================
-
     /// Hardcoded text issues collected during traversal.
     hardcoded_issues: Vec<HardcodedTextIssue>,
 
