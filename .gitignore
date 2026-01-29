@@ -38,3 +38,9 @@ target
 CLAUDE.md
 AGENT.md
 AGENTS.md
+
+# Example build artifacts (future-proofing)
+examples/**/node_modules
+examples/**/dist
+examples/**/.next
+examples/**/.turbo

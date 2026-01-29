@@ -1,0 +1,36 @@
+{
+  "home": {
+    "welcome": "欢迎"
+  },
+  "header": {
+    "title": "我的应用",
+    "status": {
+      "logged_in": "已登录",
+      "logged_out": "未登录"
+    }
+  },
+  "legacy": {
+    "continue": "继续",
+    "footer": "旧版页脚",
+    "unused_old_key": "此键不再使用"
+  },
+  "dynamic": {
+    "roles": {
+      "admin": {
+        "name": "管理员"
+      },
+      "editor": {
+        "name": "编辑者"
+      },
+      "viewer": {
+        "name": "查看者"
+      }
+    },
+    "actions": {
+      "create": "创建",
+      "read": "读取",
+      "update": "更新",
+      "delete": "删除"
+    }
+  }
+}
