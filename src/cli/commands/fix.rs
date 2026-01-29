@@ -21,7 +21,9 @@ use super::super::{
     report::{self, FAILURE_MARK},
 };
 use crate::{
-    core::CheckContext, issues::UnresolvedKeyIssue, rules::unresolved::check_unresolved_keys_issues,
+    core::CheckContext,
+    issues::{Rule, UnresolvedKeyIssue},
+    rules::unresolved::check_unresolved_keys_issues,
 };
 
 pub fn fix(cmd: FixCommand, verbose: bool) -> Result<ExitStatus> {
@@ -146,7 +148,14 @@ fn print_unfixable_keys(issues: &[&UnresolvedKeyIssue]) {
         let col = ctx.col();
         let source_line = &ctx.source_line;
 
-        println!("  {} {}:{}:{}", "-->".blue(), ctx.file_path(), line, col);
+        println!(
+            "  {} {}:{}:{}  {}",
+            "-->".blue(),
+            ctx.file_path(),
+            line,
+            col,
+            format!("[{}]", Rule::UnresolvedKey).dimmed().cyan()
+        );
         println!("     {}", "|".blue());
         println!(
             " {:>3} {} {}",

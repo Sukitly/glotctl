@@ -11,7 +11,7 @@ info:
 success: true
 exit_code: 0
 ----- stdout -----
-warning: "Common.greeting"  untranslated
+warning: "Common.greeting"  [untranslated]
   --> ./messages/en.json:3:1
   = note: ("Hello, welcome to our platform") identical in: th
   = used: (no usages found)

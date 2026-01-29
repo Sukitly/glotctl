@@ -11,7 +11,7 @@ info:
 success: false
 exit_code: 1
 ----- stdout -----
-error: "Page.features"  type-mismatch
+error: "Page.features"  [type-mismatch]
   --> ./messages/en.json:3:1
   = note: expected array, got: zh (string)
   = used: ./src/app.tsx:6:22

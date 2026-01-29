@@ -10,11 +10,11 @@ info:
 success: false
 exit_code: 1
 ----- stdout -----
-warning: "Common.cancel"  unused-key
+warning: "Common.cancel"  [unused-key]
   --> ./messages/en.json:4:1
   = note: ("Cancel")
 
-error: "Common.cancel"  replica-lag
+error: "Common.cancel"  [replica-lag]
   --> ./messages/en.json:4:1
   = note: ("Cancel") missing in: zh
   = used: (no usages found)

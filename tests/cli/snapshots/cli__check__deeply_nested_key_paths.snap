@@ -11,7 +11,7 @@ info:
 success: false
 exit_code: 1
 ----- stdout -----
-error: "Form.validation.errors.email.invalid"  missing-key
+error: "Form.validation.errors.email.invalid"  [missing-key]
   --> ./src/app.tsx:4:18
   |
 4 |     return <div>{t("validation.errors.email.invalid")}</div>;

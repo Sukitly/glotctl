@@ -4,7 +4,7 @@
 //! Used by the `glot fix` command.
 
 use crate::core::CommentStyle;
-use crate::issues::UnresolvedKeyIssue;
+use crate::issues::{Rule, UnresolvedKeyIssue};
 
 use super::operation::Operation;
 use super::traits::{Action, ActionStats, execute_operations};
@@ -37,6 +37,7 @@ impl Action<UnresolvedKeyIssue> for InsertMessageKeys {
                     .map(|pattern| Operation::InsertComment {
                         context: issue.context.clone(),
                         comment: Self::format_comment(pattern, issue.context.comment_style),
+                        rule: Rule::UnresolvedKey,
                     })
             })
             .collect()
@@ -88,9 +89,14 @@ mod tests {
 
         assert_eq!(ops.len(), 1);
         match &ops[0] {
-            Operation::InsertComment { context, comment } => {
+            Operation::InsertComment {
+                context,
+                comment,
+                rule,
+            } => {
                 assert_eq!(context.file_path(), "./src/app.tsx");
                 assert_eq!(comment, "{/* glot-message-keys \"status.*\" */}");
+                assert_eq!(*rule, Rule::UnresolvedKey);
             }
             _ => panic!("Expected InsertComment"),
         }

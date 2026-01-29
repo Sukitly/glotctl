@@ -10,18 +10,18 @@ info:
 success: false
 exit_code: 1
 ----- stdout -----
-warning: "Common.error.unknown"  unused-key
+warning: "Common.error.unknown"  [unused-key]
   --> ./messages/en.json:1:1
   = note: ("Unknown error")
 
-warning: "template with expression"  unresolved-key
+warning: "template with expression"  [unresolved-key]
   --> ./src/app.tsx:6:21
   |
 6 |         console.log(t(`error.${code}`));
   |                     ^
   = hint: add `// glot-message-keys "Common.error.*"` to declare expected keys
 
-error: "Click"  hardcoded
+error: "Click"  [hardcoded]
   --> ./src/app.tsx:8:59
   |
 8 |     return <button onClick={() => handleError('unknown')}>Click</button>;

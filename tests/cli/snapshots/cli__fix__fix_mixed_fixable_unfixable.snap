@@ -12,13 +12,13 @@ exit_code: 1
 ----- stdout -----
 ✘ Cannot fix 1 unresolved key(s) (variable keys without pattern hints):
 
-  --> ./src/app.tsx:9:20
+  --> ./src/app.tsx:9:20  [unresolved-key]
      |
    9 |             <span>{t(keyName)}</span>
      |                    ^
    = reason: variable key
 
-  --> ./src/app.tsx:8:20
+  --> ./src/app.tsx:8:20  [unresolved-key]
      |
    8 |             <span>{t(`${prefix}.title`)}</span>
      |                    ^

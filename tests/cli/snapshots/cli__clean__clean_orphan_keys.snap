@@ -14,7 +14,7 @@ exit_code: 1
 ----- stdout -----
   --> ./messages/zh.json:4
      |
-   4 | "Common.orphan": "Orphan Key" [orphan]
+   4 | "Common.orphan": "Orphan Key" [orphan-key]
 
 Would delete 0 unused key(s) and 1 orphan key(s) from 1 file(s).
 Run with --apply to delete these keys.

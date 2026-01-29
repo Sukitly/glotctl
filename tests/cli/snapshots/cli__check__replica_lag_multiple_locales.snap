@@ -10,11 +10,11 @@ info:
 success: false
 exit_code: 1
 ----- stdout -----
-warning: "Common.submit"  unused-key
+warning: "Common.submit"  [unused-key]
   --> ./messages/en.json:3:1
   = note: ("Submit")
 
-error: "Common.submit"  replica-lag
+error: "Common.submit"  [replica-lag]
   --> ./messages/en.json:3:1
   = note: ("Submit") missing in: ja, zh
   = used: (no usages found)

@@ -10,52 +10,52 @@ info:
 success: false
 exit_code: 1
 ----- stdout -----
-warning: "Common.key1"  untranslated
+warning: "Common.key1"  [untranslated]
   --> ./messages/en.json:3:1
    = note: ("item1, item2") identical in: zh
    = used: ./src/app.tsx:8:19
 
-error: "Common.key1"  type-mismatch
+error: "Common.key1"  [type-mismatch]
   --> ./messages/en.json:3:1
    = note: expected array, got: zh (string)
    = used: ./src/app.tsx:8:19
 
-warning: "Common.key2"  untranslated
+warning: "Common.key2"  [untranslated]
   --> ./messages/en.json:4:1
    = note: ("Value 2") identical in: zh
    = used: ./src/app.tsx:9:19
 
-error: "Common.key3"  replica-lag
+error: "Common.key3"  [replica-lag]
   --> ./messages/en.json:5:1
    = note: ("Value 3") missing in: zh
    = used: ./src/app.tsx:10:19
 
-warning: "Common.unused_key"  unused-key
+warning: "Common.unused_key"  [unused-key]
   --> ./messages/en.json:6:1
    = note: ("Unused")
 
-error: "Common.unused_key"  replica-lag
+error: "Common.unused_key"  [replica-lag]
   --> ./messages/en.json:6:1
    = note: ("Unused") missing in: zh
    = used: (no usages found)
 
-warning: "Common.orphan_key"  orphan-key
+warning: "Common.orphan_key"  [orphan-key]
   --> ./messages/zh.json:5:1
    = note: in zh ("孤儿")
 
-error: "Hardcoded"  hardcoded
+error: "Hardcoded"  [hardcoded]
   --> ./src/app.tsx:6:19
    |
  6 |             <span>Hardcoded</span>
    |                   ^
 
-error: "Common.missing_key"  missing-key
+error: "Common.missing_key"  [missing-key]
   --> ./src/app.tsx:7:22
    |
  7 |             <button>{t("missing_key")}</button>
    |                      ^
 
-warning: "variable key"  unresolved-key
+warning: "variable key"  [unresolved-key]
   --> ./src/app.tsx:11:19
    |
 11 |             <div>{t(dynamicKey)}</div>

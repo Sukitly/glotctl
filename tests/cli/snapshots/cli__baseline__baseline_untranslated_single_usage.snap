@@ -10,7 +10,7 @@ info:
 success: false
 exit_code: 1
 ----- stdout -----
-  --> ./src/app.tsx:4:18
+  --> ./src/app.tsx:4:18  [untranslated]
      |
    4 |     return <div>{t("greeting")}</div>;
      |                  ^

@@ -10,19 +10,19 @@ info:
 success: false
 exit_code: 1
 ----- stdout -----
-  --> ./src/app.tsx:6:19
+  --> ./src/app.tsx:6:19  [hardcoded]
      |
    6 |             <span>Hardcoded one</span>
      |                   ^
   +             {/* glot-disable-next-line hardcoded */}
 
-  --> ./src/app.tsx:7:19
+  --> ./src/app.tsx:7:19  [hardcoded]
      |
    7 |             <span>Hardcoded two</span>
      |                   ^
   +             {/* glot-disable-next-line hardcoded */}
 
-  --> ./src/app.tsx:8:20
+  --> ./src/app.tsx:8:20  [untranslated]
      |
    8 |             <span>{t("greeting")}</span>
      |                    ^

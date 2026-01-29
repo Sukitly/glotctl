@@ -11,7 +11,7 @@ info:
 success: true
 exit_code: 0
 ----- stdout -----
-warning: "Common.submit"  untranslated
+warning: "Common.submit"  [untranslated]
   --> ./messages/en.json:1:1
   = note: ("Submit") identical in: zh
   = used: ./src/other.tsx:7:21

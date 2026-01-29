@@ -10,7 +10,7 @@ info:
 success: false
 exit_code: 1
 ----- stdout -----
-error: "Landing.subtitle"  missing-key
+error: "Landing.subtitle"  [missing-key]
   --> ./src/landing-content.tsx:6:17
   |
 6 |             <p>{t("subtitle")}</p>

@@ -10,13 +10,13 @@ info:
 success: false
 exit_code: 1
 ----- stdout -----
-error: "Common.submit"  missing-key
+error: "Common.submit"  [missing-key]
   --> ./src/app.tsx:6:24
   |
 6 |               <button>{t("submit")}</button>
   |                        ^
 
-error: "Hardcoded"  hardcoded
+error: "Hardcoded"  [hardcoded]
   --> ./src/app.tsx:7:21
   |
 7 |               <span>Hardcoded</span>

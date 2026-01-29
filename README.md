@@ -47,7 +47,7 @@ Untranslated strings in JSX that should use translation functions:
 ```
 
 ```
-error: "Submit"  hardcoded-text
+error: "Submit"  [hardcoded]
   --> ./src/components/Button.tsx:5:22
   |
 5 |     return <button>Submit</button>;
@@ -74,7 +74,7 @@ return <button>{t("submit")}</button>;
 ```
 
 ```
-error: common.submit  missing-key
+error: "common.submit"  [missing-key]
   --> ./src/components/Button.tsx:3
   |
   | Translation key "common.submit" is used but not defined
@@ -102,7 +102,7 @@ Keys in replica locales that don't exist in the primary locale:
 ```
 
 ```
-warning: common.legacyText  orphan-key
+warning: "common.legacyText"  [orphan-key]
   --> ./messages/es.json
   |
   | Key exists in non-primary locale but not in primary locale (en)
@@ -129,7 +129,7 @@ Values in non-primary locales that are identical to the primary locale, possibly
 ```
 
 ```
-warning: common.submit  untranslated
+warning: "common.submit"  [untranslated]
   --> ./messages/zh.json:3:0
   = note: "Submit"
   = hint: Value is identical to primary locale (en), possibly not translated

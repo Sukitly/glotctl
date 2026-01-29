@@ -11,7 +11,7 @@ info:
 success: false
 exit_code: 1
 ----- stdout -----
-error: "Common.cancel"  replica-lag
+error: "Common.cancel"  [replica-lag]
   --> ./messages/en.json:1:1
   = note: ("Cancel") missing in: zh
   = used: ./src/app.tsx:9:22

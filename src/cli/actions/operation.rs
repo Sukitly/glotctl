@@ -15,6 +15,7 @@ use super::json_editor::JsonEditor;
 use crate::core::collect::Directive;
 use crate::core::collect::types::SuppressibleRule;
 use crate::core::{CommentStyle, MessageContext, SourceContext};
+use crate::issues::Rule;
 
 /// A low-level file operation.
 ///
@@ -26,6 +27,7 @@ pub enum Operation {
     InsertComment {
         context: SourceContext,
         comment: String,
+        rule: Rule,
     },
     /// Delete a key from a JSON file.
     DeleteJsonKey {
@@ -43,8 +45,8 @@ pub enum DeleteReason {
 impl DeleteReason {
     pub fn label(self) -> &'static str {
         match self {
-            DeleteReason::Unused => "unused",
-            DeleteReason::Orphan => "orphan",
+            DeleteReason::Unused => "unused-key",
+            DeleteReason::Orphan => "orphan-key",
         }
     }
 }
@@ -65,9 +67,9 @@ impl Operation {
     /// Execute this operation (modify files).
     pub fn execute(&self) -> anyhow::Result<OperationResult> {
         match self {
-            Operation::InsertComment { context, comment } => {
-                Self::execute_insert_comment(context, comment)
-            }
+            Operation::InsertComment {
+                context, comment, ..
+            } => Self::execute_insert_comment(context, comment),
             Operation::DeleteJsonKey { context, .. } => Self::execute_delete_json_key(context),
         }
     }
@@ -75,8 +77,12 @@ impl Operation {
     /// Preview this operation (display what would be done).
     pub fn preview(&self) {
         match self {
-            Operation::InsertComment { context, comment } => {
-                Self::preview_insert_comment(context, comment);
+            Operation::InsertComment {
+                context,
+                comment,
+                rule,
+            } => {
+                Self::preview_insert_comment(context, comment, *rule);
             }
             Operation::DeleteJsonKey { context, reason } => {
                 Self::preview_delete_json_key(context, *reason);
@@ -158,14 +164,21 @@ impl Operation {
         Ok(OperationResult::Applied)
     }
 
-    fn preview_insert_comment(context: &SourceContext, comment: &str) {
+    fn preview_insert_comment(context: &SourceContext, comment: &str, rule: Rule) {
         let file_path = context.file_path();
         let line = context.line();
         let col = context.col();
         let source_line = &context.source_line;
 
-        // Clickable location
-        println!("  {} {}:{}:{}", "-->".blue(), file_path, line, col);
+        // Clickable location with label
+        println!(
+            "  {} {}:{}:{}  {}",
+            "-->".blue(),
+            file_path,
+            line,
+            col,
+            format!("[{}]", rule).dimmed().cyan()
+        );
 
         // Source context
         println!("     {}", "|".blue());
@@ -226,7 +239,10 @@ impl Operation {
         let mut groups: Vec<InsertGroup> = Vec::new();
 
         for op in ops {
-            if let Operation::InsertComment { context, comment } = op {
+            if let Operation::InsertComment {
+                context, comment, ..
+            } = op
+            {
                 let op_path = context.file_path();
                 if let Some(existing) = file_path {
                     if existing != op_path {
@@ -354,7 +370,7 @@ impl Operation {
             "|".blue(),
             key,
             value,
-            format!("[{}]", reason.label()).cyan()
+            format!("[{}]", reason.label()).dimmed().cyan()
         );
         println!();
     }
@@ -638,12 +654,18 @@ mod tests {
         let op = Operation::InsertComment {
             context: ctx,
             comment: "// glot-disable-next-line hardcoded".to_string(),
+            rule: Rule::HardcodedText,
         };
 
         match &op {
-            Operation::InsertComment { context, comment } => {
+            Operation::InsertComment {
+                context,
+                comment,
+                rule,
+            } => {
                 assert_eq!(context.file_path(), "./src/app.tsx");
                 assert_eq!(comment, "// glot-disable-next-line hardcoded");
+                assert_eq!(*rule, Rule::HardcodedText);
             }
             _ => panic!("Expected InsertComment"),
         }
@@ -680,6 +702,7 @@ mod tests {
         let op = Operation::InsertComment {
             context: ctx,
             comment: "// glot-disable-next-line untranslated".to_string(),
+            rule: Rule::Untranslated,
         };
 
         let _ = op.execute().unwrap();
@@ -701,6 +724,7 @@ mod tests {
         let op = Operation::InsertComment {
             context: ctx,
             comment: "// glot-message-keys \"b\"".to_string(),
+            rule: Rule::UnresolvedKey,
         };
 
         let _ = op.execute().unwrap();
@@ -723,12 +747,14 @@ mod tests {
         let op1 = Operation::InsertComment {
             context: ctx.clone(),
             comment: "// glot-disable-next-line hardcoded".to_string(),
+            rule: Rule::HardcodedText,
         };
         let _ = op1.execute().unwrap();
 
         let op2 = Operation::InsertComment {
             context: ctx,
             comment: "// glot-disable-next-line untranslated".to_string(),
+            rule: Rule::Untranslated,
         };
         let _ = op2.execute().unwrap();
 
@@ -749,6 +775,7 @@ mod tests {
         let op = Operation::InsertComment {
             context: ctx,
             comment: "{/* glot-message-keys \"b\" */}".to_string(),
+            rule: Rule::UnresolvedKey,
         };
 
         let _ = op.execute().unwrap();

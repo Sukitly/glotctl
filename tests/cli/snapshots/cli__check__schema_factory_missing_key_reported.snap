@@ -10,7 +10,7 @@ info:
 success: false
 exit_code: 1
 ----- stdout -----
-error: "Form.titleRequired"  missing-key
+error: "Form.titleRequired"  [missing-key]
   --> ./src/form.tsx:3:16
   |
 3 | 
