@@ -1,0 +1,10 @@
+{
+  "primaryLocale": "en",
+  "locales": ["en", "zh", "es"],
+  "sourceRoot": "./",
+  "messagesRoot": "./messages",
+  "includes": [
+    "src/app",
+    "src/components"
+  ]
+}

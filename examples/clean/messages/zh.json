@@ -1,0 +1,30 @@
+{
+  "home": {
+    "welcome": "欢迎使用我们的应用",
+    "tagline": "Next.js 最佳国际化解决方案"
+  },
+  "common": {
+    "button": {
+      "submit": "提交",
+      "tooltip": "点击提交表单",
+      "aria_label": "提交按钮"
+    }
+  },
+  "form": {
+    "title": "登录",
+    "description": "请输入您的凭据",
+    "email": {
+      "placeholder": "输入您的邮箱",
+      "label": "邮箱地址"
+    },
+    "password": {
+      "placeholder": "输入您的密码",
+      "label": "密码"
+    },
+    "status": {
+      "active": "账户已激活",
+      "inactive": "账户未激活"
+    },
+    "submit": "登录"
+  }
+}

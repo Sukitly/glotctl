@@ -1,0 +1,14 @@
+{
+  "common": {
+    "button": "Submit",
+    "unused": "This key is never used in any component",
+    "another_unused": "Also unused"
+  },
+  "form": {
+    "title": "Form Title",
+    "description": "Fill out the form below"
+  },
+  "valid": {
+    "key": "Valid Translation"
+  }
+}

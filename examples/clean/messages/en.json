@@ -1,0 +1,30 @@
+{
+  "home": {
+    "welcome": "Welcome to Our Application",
+    "tagline": "The best i18n solution for Next.js"
+  },
+  "common": {
+    "button": {
+      "submit": "Submit",
+      "tooltip": "Click to submit the form",
+      "aria_label": "Submit button"
+    }
+  },
+  "form": {
+    "title": "Sign In",
+    "description": "Please enter your credentials",
+    "email": {
+      "placeholder": "Enter your email",
+      "label": "Email address"
+    },
+    "password": {
+      "placeholder": "Enter your password",
+      "label": "Password"
+    },
+    "status": {
+      "active": "Account is active",
+      "inactive": "Account is inactive"
+    },
+    "submit": "Sign In"
+  }
+}

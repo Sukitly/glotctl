@@ -1,0 +1,16 @@
+{
+  "common": {
+    "button": "Enviar",
+    "unused": "Esta clave nunca se usa"
+  },
+  "form": {
+    "title": "Título del formulario",
+    "description": "Completa el siguiente formulario"
+  },
+  "orphan": {
+    "only_in_spanish": "Solo en español"
+  },
+  "valid": {
+    "key": "Traducción válida"
+  }
+}

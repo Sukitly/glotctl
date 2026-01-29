@@ -1,0 +1,36 @@
+{
+  "home": {
+    "welcome": "Welcome"
+  },
+  "header": {
+    "title": "My Application",
+    "status": {
+      "logged_in": "Logged In",
+      "logged_out": "Logged Out"
+    }
+  },
+  "legacy": {
+    "continue": "Continue",
+    "footer": "Legacy Footer",
+    "unused_old_key": "This key is no longer used"
+  },
+  "dynamic": {
+    "roles": {
+      "admin": {
+        "name": "Administrator"
+      },
+      "editor": {
+        "name": "Editor"
+      },
+      "viewer": {
+        "name": "Viewer"
+      }
+    },
+    "actions": {
+      "create": "Create",
+      "read": "Read",
+      "update": "Update",
+      "delete": "Delete"
+    }
+  }
+}
