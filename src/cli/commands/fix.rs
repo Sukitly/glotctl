@@ -1,3 +1,13 @@
+//! Fix command - Insert glot-message-keys comments for unresolved keys.
+//!
+//! This command automatically fixes unresolved key warnings by inserting
+//! `glot-message-keys "pattern"` comments that declare the expected dynamic keys.
+//!
+//! Only unresolved key issues with a valid pattern suggestion can be fixed.
+//! Issues without a pattern (e.g., completely dynamic keys) are skipped and reported.
+//!
+//! Use `--apply` to actually insert comments (default is dry-run mode).
+
 use std::collections::HashSet;
 
 use anyhow::Result;

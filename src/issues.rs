@@ -65,15 +65,29 @@ impl std::fmt::Display for Rule {
 // Unresolved Key Reason
 // ============================================================
 
-/// Reason why a key cannot be resolved (statically analyzed).
+/// Reason why a key cannot be resolved (user-facing version for issues).
+///
+/// This enum is used in `UnresolvedKeyIssue` to communicate to users why a
+/// translation key couldn't be statically analyzed.
+///
+/// **Related**: See `crate::core::key_usage::UsageUnresolvedKeyReason` for the
+/// internal version used during Phase 3 resolution. The two enums are parallel
+/// but serve different purposes:
+/// - **This enum** (`IssueUnresolvedKeyReason`): User-facing, used in CLI/MCP reporting
+/// - **`UsageUnresolvedKeyReason`**: Internal, used in `UnresolvedKeyUsage` during resolution
+///
+/// The internal version has additional fields (e.g., `raw_key` in `UnknownNamespace`)
+/// that aren't needed in the user-facing issue.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum IssueUnresolvedKeyReason {
     /// Key is a variable: `t(keyName)`
     VariableKey,
+
     /// Key is a template with expressions: `t(\`${prefix}.key\`)`
     TemplateWithExpr,
+
     /// Namespace cannot be determined for schema-derived keys.
-    /// Contains the schema function name.
+    /// Contains the schema function name (e.g., "loginSchema").
     UnknownNamespace { schema_name: String },
 }
 

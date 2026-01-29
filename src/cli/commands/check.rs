@@ -1,3 +1,17 @@
+//! Check command - Run i18n validation checks.
+//!
+//! This command runs various i18n checks on the codebase:
+//! - `hardcoded`: Detect hardcoded text that should be translated
+//! - `missing`: Find translation keys used in code but not in message files
+//! - `unused`: Find keys in message files that are never used
+//! - `orphan`: Find keys in message files that don't exist in primary locale
+//! - `replica-lag`: Find keys missing in non-primary locales
+//! - `untranslated`: Find keys with untranslated values (same as English)
+//! - `type-mismatch`: Find keys with mismatched value types across locales
+//! - `unresolved`: Find dynamic keys that couldn't be statically resolved
+//!
+//! By default, all checks are run. You can specify specific checks to run.
+
 use anyhow::Result;
 use clap::ValueEnum;
 

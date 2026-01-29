@@ -1,3 +1,17 @@
+//! CLI argument definitions using clap.
+//!
+//! This module defines the command-line interface structure for all Glot commands.
+//! It uses clap's derive API for declarative argument parsing.
+//!
+//! ## Commands
+//!
+//! - `check`: Run i18n checks (hardcoded text, missing keys, etc.)
+//! - `clean`: Remove unused/orphan keys from message files
+//! - `baseline`: Add disable comments to suppress existing issues
+//! - `fix`: Fix unresolved key issues with glot-message-keys comments
+//! - `init`: Initialize glot configuration file
+//! - `serve`: Start MCP server for AI integration
+
 use std::path::PathBuf;
 
 use clap::{Args, CommandFactory, Parser, Subcommand, ValueEnum};

@@ -1,14 +1,18 @@
-//! Combined collector for schema functions and key objects.
+//! Registry collection - Schema functions, key objects, and cross-file dependencies.
 //!
-//! This module merges SchemaFunctionCollector and KeyObjectCollector to reduce
-//! AST traversal overhead by visiting each file only once during registry building.
+//! This module implements the RegistryCollector, which performs Phase 1 collection
+//! of cross-file dependency data in a single AST pass per file.
 //!
-//! # Architecture
+//! ## Module Structure
 //!
-//! The collector is split into sub-modules for better organization:
 //! - `helpers`: Pure functions for AST node extraction
 //! - `schema`: Schema function detection and collection
 //! - `key_data`: Key objects, arrays, imports, and translation bindings
+//!
+//! ## Single-Pass Optimization
+//!
+//! The collector merges multiple sub-collectors (schema functions, key objects, imports,
+//! translation bindings) into a single visitor to minimize AST traversals.
 
 mod helpers;
 mod key_data;

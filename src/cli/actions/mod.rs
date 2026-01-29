@@ -24,10 +24,12 @@
 //! ## Example
 //!
 //! ```ignore
-//! use glot::actions::{Action, InsertDisableComment};
-//! use glot::issues::HardcodedIssue;
+//! use glot::cli::actions::{Action, InsertDisableComment};
+//! use glot::rules::hardcoded::check_hardcoded_text_issues;
+//! use glot::core::CheckContext;
 //!
-//! let issues: Vec<HardcodedIssue> = checkers::hardcoded(&data);
+//! let ctx = CheckContext::new(&args)?;
+//! let issues = check_hardcoded_text_issues(&ctx);
 //! let stats = InsertDisableComment::run(&issues, apply)?;
 //! ```
 

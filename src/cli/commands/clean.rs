@@ -1,3 +1,15 @@
+//! Clean command - Remove unused or orphan keys from message files.
+//!
+//! This command deletes keys from JSON message files:
+//! - `unused`: Keys that exist in message files but are never used in code
+//! - `orphan`: Keys that exist in non-primary locale files but not in primary locale
+//!
+//! The command performs safety checks before deletion:
+//! - Blocks if any message files failed to parse
+//! - Blocks if any unresolved key warnings exist (dynamic keys can't be tracked)
+//!
+//! Use `--apply` to actually delete keys (default is dry-run mode).
+
 use std::collections::HashSet;
 
 use anyhow::Result;

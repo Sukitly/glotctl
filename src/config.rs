@@ -1,3 +1,14 @@
+//! Configuration file loading and parsing.
+//!
+//! This module handles loading configuration from `.glotrc.json` files
+//! and provides default configuration values.
+//!
+//! ## Configuration Priority
+//!
+//! 1. CLI arguments (highest priority)
+//! 2. .glotrc.json file
+//! 3. Built-in defaults (lowest priority)
+
 use std::{
     fs,
     path::{Path, PathBuf},
