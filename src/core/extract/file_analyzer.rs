@@ -139,31 +139,32 @@ pub struct FileAnalysisResult {
 ///
 /// # Usage
 ///
-/// ```no_run
+/// ```ignore
 /// use glot::core::extract::FileAnalyzer;
 /// # use swc_common::SourceMap;
-/// # use std::sync::Arc;
 /// # use std::collections::HashSet;
 /// # use glot::core::collect::{Registries, types::FileComments, types::FileImports};
-/// # let source_map = Arc::new(SourceMap::default());
-/// # let registries = Registries::default();
-/// # let file_comments = FileComments::default();
-/// # let file_imports = FileImports::default();
-/// # let checked_attributes = vec![];
-/// # let ignore_texts = HashSet::new();
-/// # let module = todo!();
+///
+/// // Assuming you have these from Phase 1
+/// let source_map: &SourceMap = /* ... */;
+/// let registries: &Registries = /* ... */;
+/// let file_comments: &FileComments = /* ... */;
+/// let file_imports: &FileImports = /* ... */;
+/// let checked_attributes: &[String] = /* ... */;
+/// let ignore_texts: &HashSet<String> = /* ... */;
+/// let module: &Module = /* parsed AST */;
 ///
 /// let analyzer = FileAnalyzer::new(
 ///     "src/app/page.tsx",
-///     &source_map,
-///     &file_comments,
-///     &checked_attributes,
-///     &ignore_texts,
-///     &registries,
-///     &file_imports,
+///     source_map,
+///     file_comments,
+///     checked_attributes,
+///     ignore_texts,
+///     registries,
+///     file_imports,
 /// );
 ///
-/// let result = analyzer.analyze(&module);
+/// let result = analyzer.analyze(module);
 /// // result.hardcoded_issues: Vec<HardcodedTextIssue>
 /// // result.raw_calls: Vec<RawTranslationCall> (to be resolved in Phase 3)
 /// // result.schema_calls: Vec<SchemaCallInfo>

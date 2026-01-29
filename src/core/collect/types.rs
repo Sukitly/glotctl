@@ -52,7 +52,7 @@ pub struct KeyObject {
 /// **Phase 1**: Created by `RegistryCollector`
 /// **Phase 2**: Used by `ValueAnalyzer` to resolve `obj[key]` expressions
 ///
-/// **Key format**: `"file_path:object_name"` (e.g., `"src/utils/keys.ts:toolKeys"`)
+/// **Key format**: `"file_path.object_name"` (e.g., `"src/utils/keys.ts.toolKeys"`)
 pub type KeyObjectRegistry = HashMap<String, KeyObject>;
 
 /// Import statement information for cross-file resolution.
@@ -110,7 +110,7 @@ pub struct KeyArray {
 /// **Phase 1**: Created by `RegistryCollector`
 /// **Phase 2**: Used by `ValueAnalyzer` to resolve `arr.map(item => item.prop)` patterns
 ///
-/// **Key format**: `"file_path:array_name"` (e.g., `"src/config.ts:capabilities"`)
+/// **Key format**: `"file_path.array_name"` (e.g., `"src/config.ts.capabilities"`)
 pub type KeyArrayRegistry = HashMap<String, KeyArray>;
 
 /// String array containing translation key candidates.
@@ -141,7 +141,7 @@ pub struct StringArray {
 /// **Phase 1**: Created by `RegistryCollector`
 /// **Phase 2**: Used by `ValueAnalyzer` to resolve `arr.map(k => k)` or `arr[0]` patterns
 ///
-/// **Key format**: `"file_path:array_name"` (e.g., `"src/constants.ts:FEATURE_KEYS"`)
+/// **Key format**: `"file_path.array_name"` (e.g., `"src/constants.ts.FEATURE_KEYS"`)
 pub type StringArrayRegistry = HashMap<String, StringArray>;
 
 /// Translation function passed as a JSX prop.
@@ -171,19 +171,19 @@ pub struct TranslationProp {
 /// **Phase 1**: Created by `RegistryCollector` when it sees `<Component t={translationVar} />`
 /// **Phase 2**: Used by `FileAnalyzer` to register translation bindings from component props
 ///
-/// **Key format**: `"ComponentName:propName"` (e.g., `"MyComponent:t"`, `"UI.Button:translate"`)
+/// **Key format**: `"ComponentName.propName"` (e.g., `"MyComponent.t"`, `"UI.Button.translate"`)
 pub type TranslationPropRegistry = HashMap<String, TranslationProp>;
 
 /// Create registry key for `TranslationPropRegistry`.
 ///
-/// **Format**: `"ComponentName:propName"`
+/// **Format**: `"ComponentName.propName"`
 ///
 /// # Examples
 ///
 /// ```
 /// # use glot::core::collect::types::make_translation_prop_key;
-/// assert_eq!(make_translation_prop_key("MyComponent", "t"), "MyComponent:t");
-/// assert_eq!(make_translation_prop_key("UI.Button", "translate"), "UI.Button:translate");
+/// assert_eq!(make_translation_prop_key("MyComponent", "t"), "MyComponent.t");
+/// assert_eq!(make_translation_prop_key("UI.Button", "translate"), "UI.Button.translate");
 /// ```
 pub fn make_translation_prop_key(component_name: &str, prop_name: &str) -> String {
     format!("{}.{}", component_name, prop_name)
@@ -221,12 +221,12 @@ pub struct TranslationFnCall {
 /// **Phase 1**: Created by `RegistryCollector` when it sees `someFunc(translationVar)`
 /// **Phase 2**: Used by `FileAnalyzer` to register translation bindings from function parameters
 ///
-/// **Key format**: `"file_path:fn_name:arg_index"` (e.g., `"src/utils.ts:myHelper:0"`)
+/// **Key format**: `"file_path.fn_name.arg_index"` (e.g., `"src/utils.ts.myHelper.0"`)
 pub type TranslationFnCallRegistry = HashMap<String, TranslationFnCall>;
 
 /// Create registry key for `TranslationFnCallRegistry`.
 ///
-/// **Format**: `"file_path:fn_name:arg_index"`
+/// **Format**: `"file_path.fn_name.arg_index"`
 ///
 /// # Examples
 ///
@@ -234,11 +234,11 @@ pub type TranslationFnCallRegistry = HashMap<String, TranslationFnCall>;
 /// # use glot::core::collect::types::make_translation_fn_call_key;
 /// assert_eq!(
 ///     make_translation_fn_call_key("src/utils.ts", "myHelper", 0),
-///     "src/utils.ts:myHelper:0"
+///     "src/utils.ts.myHelper.0"
 /// );
 /// assert_eq!(
 ///     make_translation_fn_call_key("src/lib.ts", "default", 1),
-///     "src/lib.ts:default:1"
+///     "src/lib.ts.default.1"
 /// );
 /// ```
 pub fn make_translation_fn_call_key(fn_file_path: &str, fn_name: &str, arg_index: usize) -> String {
@@ -337,7 +337,7 @@ pub fn resolve_import_path(current_file: &Path, import_path: &str) -> Option<Str
 ///
 /// Used for `KeyObjectRegistry`, `KeyArrayRegistry`, and `StringArrayRegistry`.
 ///
-/// **Format**: `"file_path:name"`
+/// **Format**: `"file_path.name"`
 ///
 /// # Examples
 ///
@@ -345,7 +345,7 @@ pub fn resolve_import_path(current_file: &Path, import_path: &str) -> Option<Str
 /// # use glot::core::collect::types::make_registry_key;
 /// assert_eq!(
 ///     make_registry_key("src/constants.ts", "FEATURE_KEYS"),
-///     "src/constants.ts:FEATURE_KEYS"
+///     "src/constants.ts.FEATURE_KEYS"
 /// );
 /// ```
 pub fn make_registry_key(file_path: &str, name: &str) -> String {
