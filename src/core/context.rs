@@ -30,69 +30,154 @@ use crate::{
 
 use std::collections::HashMap;
 
-/// Type alias for all hardcoded text issues (one vec per file).
+/// All hardcoded text issues across the codebase, indexed by file path.
+///
+/// **Phase 2**: Created during extraction
+/// **Phase 3+**: Converted to user-facing issues by rules
 pub type AllHardcodedTextIssues = HashMap<String, Vec<HardcodedTextIssue>>;
 
 /// Aggregated message data from all locale files.
 ///
-/// Contains both the primary locale messages (used for validation) and
-/// all locale messages (used for untranslated value detection).
+/// Loaded from the messages directory (e.g., `./messages/`) during context initialization.
+/// Contains both the primary locale (for validation) and all locales (for untranslated detection).
 pub struct MessageData {
+    /// Messages for all locales (e.g., {"en": {...}, "ja": {...}}).
+    /// Used by untranslated rule to find keys that exist in primary but not replica locales.
     pub all_messages: AllLocaleMessages,
+
+    /// Messages for the primary locale (e.g., "en").
+    /// Used for key validation - all keys must exist in the primary locale.
     pub primary_messages: LocaleMessages,
 }
 
 /// Source metadata collected during Phase 1: Collection.
 ///
-/// This includes cross-file dependency registries, import resolution data,
-/// and comment annotations (disable directives, glot-message-keys).
+/// This aggregates all cross-file dependency information collected during
+/// the initial scan of the codebase. It's used in Phase 2 (Extraction) to
+/// resolve dynamic keys and translation function bindings.
 pub struct SourceMetadata {
+    /// Cross-file dependency registries (key objects, translation props, schemas, etc.).
     pub registries: Registries,
+
+    /// Import statements for each file (used to resolve imported variables).
     pub file_imports: AllFileImports,
+
+    /// Comment directives for each file (suppressions and key declarations).
     pub file_comments: AllFileComments,
 }
 
 /// Resolved data from Phase 2 (Extraction) and Phase 3 (Resolution).
 ///
-/// Contains the final key usages (resolved and unresolved) and hardcoded text issues.
+/// This is the final output of the extraction and resolution phases,
+/// ready to be checked against locale files by rules in Phase 3+.
 pub struct ResolvedData {
+    /// Resolved and unresolved key usages for all files.
+    /// Resolved keys are validated, unresolved keys generate warnings.
     pub key_usages: AllKeyUsages,
+
+    /// Hardcoded text issues found during extraction (directly reportable).
     pub hardcoded_issues: AllHardcodedTextIssues,
 }
 
 /// Core analysis context orchestrating the three-phase pipeline.
 ///
-/// CheckContext manages all analysis phases:
-/// - **Phase 1: Collection** - Cross-file registries and comments (source_metadata)
-/// - **Phase 2: Extraction** - Raw translation calls per file
-/// - **Phase 3: Resolution** - Final resolved/unresolved key usages (resolved_data)
+/// `CheckContext` is the central orchestrator for the entire analysis pipeline.
+/// It manages configuration, file scanning, and lazy initialization of each phase.
 ///
-/// Uses lazy initialization (OnceCell) for each phase to compute data only when needed.
+/// # Three-Phase Pipeline
+///
+/// 1. **Phase 1: Collection** → `source_metadata` (registries, imports, comments)
+/// 2. **Phase 2: Extraction** → Raw translation calls + hardcoded issues
+/// 3. **Phase 3: Resolution** → `resolved_data` (resolved/unresolved key usages)
+/// 4. **Phase 3+: Rules** → User-facing issues (missing keys, type mismatches, etc.)
+///
+/// # Lazy Initialization Strategy
+///
+/// Most data is computed lazily using `OnceCell`:
+/// - **Why**: Some commands (e.g., `glot --help`) don't need full analysis
+/// - **How**: Each phase is computed on first access via getter methods
+/// - **Benefit**: Faster startup, only compute what's needed
+///
+/// # Configuration Priority
+///
+/// Configuration is loaded with the following priority (highest to lowest):
+/// 1. CLI arguments (e.g., `--primary-locale en`)
+/// 2. `.glotrc.json` config file
+/// 3. Built-in defaults
 pub struct CheckContext {
+    // ============================================================
     // Basic data (set at initialization)
+    // ============================================================
+
+    /// Merged configuration (CLI args > config file > defaults).
     pub config: Config,
+
+    /// Project root directory (for resolving relative paths).
     pub root_dir: PathBuf,
+
+    /// All source files to analyze (TSX/JSX/TS/JS).
     pub files: HashSet<String>,
+
+    /// Hardcoded texts to ignore (from config `ignoreTexts`).
     pub ignore_texts: HashSet<String>,
+
+    /// Whether to print verbose diagnostic messages.
     pub verbose: bool,
 
+    // ============================================================
     // Lazily initialized pipeline data
+    // ============================================================
+
+    /// Parsed AST for each source file.
+    /// Initialized on first call to `parsed_files()`.
     parsed_files: OnceCell<HashMap<String, ParsedJSX>>,
+
+    /// Parse errors encountered while parsing source files.
+    /// Populated alongside `parsed_files` initialization.
     parsed_files_errors: OnceCell<Vec<ParseErrorIssue>>,
+
+    /// Phase 1 output: Registries, imports, and comments.
+    /// Initialized on first call to `source_metadata()`.
     source_metadata: OnceCell<SourceMetadata>,
+
+    /// Phase 2+3 output: Resolved key usages and hardcoded issues.
+    /// Initialized on first call to `resolved_data()`.
     resolved_data: OnceCell<ResolvedData>,
+
+    /// Message data from locale files (primary + all locales).
+    /// Initialized eagerly during context creation to catch errors early.
     messages: OnceCell<MessageData>,
+
+    /// Set of all resolved keys used in source code.
+    /// Initialized on first call to `used_keys()` (for unused key detection).
     used_keys: OnceCell<HashSet<String>>,
+
+    /// Parse errors from message files (collected during context creation).
     message_parse_errors: Vec<ParseErrorIssue>,
 }
 
 impl CheckContext {
-    /// Create a new CheckContext with basic data from command line args.
+    /// Create a new `CheckContext` from command line arguments.
+    ///
+    /// This constructor:
+    /// 1. Loads configuration (CLI args > config file > defaults)
+    /// 2. Scans source files (TSX/JSX/TS/JS)
+    /// 3. Loads message files (JSON from messages directory)
+    /// 4. Initializes lazy pipeline data structures
+    ///
+    /// # Errors
+    ///
+    /// Returns error if:
+    /// - Config file is invalid
+    /// - Primary locale messages are not found
+    /// - Messages directory doesn't exist
     pub fn new(common_args: &CommonArgs) -> Result<Self> {
         let verbose = common_args.verbose;
 
+        // ============================================================
         // 1. Determine source_root for config file search
-        // Priority: CLI arg > current directory
+        // ============================================================
+        // Priority: CLI --source-root arg > current directory
         let source_root = common_args
             .source_root
             .clone()
@@ -103,7 +188,9 @@ impl CheckContext {
             .to_str()
             .with_context(|| anyhow!("Invalid path: {:?}", source_root))?;
 
+        // ============================================================
         // 2. Load config from source_root
+        // ============================================================
         let config_result = load_config(Path::new(path))?;
 
         // In verbose mode, inform user if using default config
@@ -113,7 +200,9 @@ impl CheckContext {
 
         let mut config = config_result.config;
 
-        // 3. Apply CLI overrides (CLI > config)
+        // ============================================================
+        // 3. Apply CLI overrides (CLI > config file > defaults)
+        // ============================================================
         if let Some(ref primary_locale) = common_args.primary_locale {
             config.primary_locale = primary_locale.clone();
         }
@@ -122,7 +211,7 @@ impl CheckContext {
             config.messages_root = messages_root.to_string_lossy().to_string();
         }
 
-        // Note: source_root from config is used for file scanning
+        // Note: config's source_root is used for file scanning,
         // but CLI's source_root already determined where to find the config
 
         let scan_result = scan_files(
@@ -207,6 +296,10 @@ impl CheckContext {
         })
     }
 
+    /// Get parsed AST for all source files (lazy initialization).
+    ///
+    /// Parses all TSX/JSX/TS/JS files using swc. Parse errors are collected
+    /// separately and can be retrieved via `parsed_files_errors()`.
     pub fn parsed_files(&self) -> &HashMap<String, ParsedJSX> {
         self.parsed_files.get_or_init(|| {
             let mut parsed = HashMap::new();
@@ -247,26 +340,40 @@ impl CheckContext {
         })
     }
 
+    /// Get parse errors from source files.
+    ///
+    /// Returns errors encountered while parsing TSX/JSX/TS/JS files.
+    /// Populated when `parsed_files()` is first called.
     pub fn parsed_files_errors(&self) -> &Vec<ParseErrorIssue> {
         self.parsed_files_errors.get_or_init(Vec::new)
     }
 
+    /// Get parse errors from message files.
+    ///
+    /// Returns errors encountered while parsing JSON locale files.
+    /// Collected during context initialization.
     pub fn message_parse_errors(&self) -> &Vec<ParseErrorIssue> {
         &self.message_parse_errors
     }
 
+    /// Get Phase 1 registries (lazy initialization).
     pub fn registries(&self) -> &Registries {
         &self.source_metadata().registries
     }
 
+    /// Get Phase 1 file imports (lazy initialization).
     pub fn file_imports(&self) -> &AllFileImports {
         &self.source_metadata().file_imports
     }
 
+    /// Get Phase 1 file comments (lazy initialization).
     pub fn file_comments(&self) -> &AllFileComments {
         &self.source_metadata().file_comments
     }
 
+    /// Get message data (eagerly initialized).
+    ///
+    /// Messages are loaded during context creation to catch errors early.
     pub fn messages(&self) -> &MessageData {
         // Messages are initialized in new(), so this should never fail
         self.messages
@@ -274,14 +381,24 @@ impl CheckContext {
             .expect("Messages should be initialized in CheckContext::new()")
     }
 
+    /// Get all resolved and unresolved key usages (lazy initialization).
+    ///
+    /// This triggers Phase 1→2→3 pipeline if not already run.
     pub fn all_key_usages(&self) -> &AllKeyUsages {
         &self.resolved_data().key_usages
     }
 
+    /// Get all hardcoded text issues (lazy initialization).
+    ///
+    /// This triggers Phase 1→2 pipeline if not already run.
     pub fn hardcoded_issues(&self) -> &AllHardcodedTextIssues {
         &self.resolved_data().hardcoded_issues
     }
 
+    /// Get set of all keys used in source code (lazy initialization).
+    ///
+    /// This is a flattened set of all resolved keys from all files.
+    /// Used by the unused-key rule to find keys in locale files that aren't used.
     pub fn used_keys(&self) -> &HashSet<String> {
         self.used_keys.get_or_init(|| {
             let mut used_keys = HashSet::new();
@@ -295,10 +412,18 @@ impl CheckContext {
         })
     }
 
+    /// Get set of all keys available in primary locale messages.
+    ///
+    /// This is a flattened set of all keys from the primary locale file.
+    /// Used for key validation and unused key detection.
     pub fn available_keys(&self) -> HashSet<String> {
         self.messages().primary_messages.keys().cloned().collect()
     }
 
+    /// Get Phase 1 source metadata (lazy initialization).
+    ///
+    /// Runs Phase 1: Collection to gather all cross-file dependencies.
+    /// This includes registries, imports, and comment annotations.
     pub fn source_metadata(&self) -> &SourceMetadata {
         self.source_metadata.get_or_init(|| {
             let available_keys = self.available_keys();
@@ -317,6 +442,10 @@ impl CheckContext {
         })
     }
 
+    /// Get Phase 2+3 resolved data (lazy initialization).
+    ///
+    /// Runs Phase 2 (Extraction) and Phase 3 (Resolution) to produce
+    /// final resolved/unresolved key usages and hardcoded issues.
     fn resolved_data(&self) -> &ResolvedData {
         self.resolved_data.get_or_init(|| {
             let parsed_files = self.parsed_files();
@@ -497,6 +626,16 @@ fn collect_registries_and_comments(
     (registries, file_imports, file_comments)
 }
 
+/// Resolve a component name to its original definition name.
+///
+/// When a component is imported as a default export and passed a translation prop,
+/// we need to resolve the local name back to the original exported name.
+///
+/// Example:
+/// ```typescript
+/// import MyComp from "./components/Button";  // Button exports "SubmitButton" as default
+/// <MyComp t={t} />  // Need to resolve "MyComp" → "SubmitButton"
+/// ```
 fn resolve_component_name_for_prop(
     file_path: &str,
     component_name: &str,

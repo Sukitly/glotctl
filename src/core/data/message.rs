@@ -1,10 +1,16 @@
 use std::{collections::HashMap, fmt};
 
-/// Pure position information in message/locale files (JSON).
+/// Position information in message/locale files (JSON).
+///
+/// Represents a specific location in a locale JSON file, used for error reporting
+/// when there are issues with translation values.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct MessageLocation {
+    /// Path to the locale file (e.g., "./messages/en.json").
     pub file_path: String,
+    /// Line number (1-indexed).
     pub line: usize,
+    /// Column number (1-indexed).
     pub col: usize,
 }
 
@@ -27,11 +33,30 @@ impl MessageLocation {
     }
 }
 
+/// Value type for translation messages.
+///
+/// next-intl supports two value types for translation messages:
+///
+/// 1. **String**: A simple string value (most common)
+///    - JSON: `"key": "value"`
+///    - Usage: `t("key")` returns string
+///
+/// 2. **StringArray**: An array of strings (for rich text)
+///    - JSON: `"key": ["Part 1", "Part 2"]`
+///    - Usage: `t.raw("key")` returns array
+///    - The `raw()` method explicitly requests array type
+///
+/// Type mismatches are detected when:
+/// - Code uses `t.raw("key")` but locale has string value
+/// - Code uses `t("key")` expecting string but locale has array
+/// - Different locales have different types for the same key
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ValueType {
-    /// A simple string value
+    /// A simple string value: `"submit": "Submit"`
     String,
-    /// A string array (accessed via t.raw() as a whole)
+
+    /// A string array value: `"rich": ["Bold ", "text"]`
+    /// Accessed via `t.raw("rich")` to get the array.
     StringArray,
 }
 
@@ -109,11 +134,16 @@ impl MessageContext {
 }
 
 /// A single message entry from a locale file.
+///
+/// Represents one key-value pair from a locale JSON file, with its type
+/// and location information for error reporting.
 #[derive(Debug, Clone)]
 pub struct MessageEntry {
     /// Message context (location, key, value).
     pub context: MessageContext,
+
     /// Value type (string or string array).
+    /// Used to detect type mismatches between code and locale files.
     pub value_type: ValueType,
 }
 

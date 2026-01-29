@@ -1,7 +1,16 @@
-//! Type definitions and helper functions for key object collection.
+//! Type definitions for Phase 1: Collection.
 //!
-//! The actual collection logic has been moved to `registry_collector.rs` for better performance.
-//! This module now only contains type definitions and utility functions.
+//! This module defines the data structures used to collect information about
+//! translation keys, translation functions, and related code patterns during
+//! the initial scan of the codebase.
+//!
+//! The actual collection logic is in `registry_collector.rs` - this module
+//! contains only type definitions and utility functions.
+//!
+//! # Phase Context
+//!
+//! All types in this module are **created in Phase 1** by `RegistryCollector`
+//! and **consumed in Phase 2** by `FileAnalyzer` to resolve translation calls.
 
 use std::{
     collections::{HashMap, HashSet},
@@ -12,123 +21,250 @@ use swc_ecma_ast::{ObjectPatProp, Pat};
 
 use crate::core::schema::SchemaRegistry;
 
-/// Represents an object literal containing translation key candidates
+/// Object literal containing translation key candidates.
+///
+/// Used for patterns like:
+/// ```typescript
+/// const toolKeys = {
+///   create: "tools.create",
+///   edit: "tools.edit"
+/// };
+/// ```
+///
+/// Enables resolution of dynamic keys like `t(toolKeys[action])` in Phase 2.
 #[derive(Debug, Clone)]
 pub struct KeyObject {
+    /// Variable name (e.g., "toolKeys").
     pub name: String,
+    /// File where the object is defined (relative to source root).
     pub file_path: String,
+    /// Whether the object is exported (affects cross-file resolution).
     pub is_exported: bool,
-    /// Whether defined at module level (scope_depth == 0)
+    /// Whether defined at module level (scope_depth == 0).
+    /// Non-module-level objects are collected but have lower priority.
     pub is_module_level: bool,
+    /// All string values from the object (e.g., ["tools.create", "tools.edit"]).
     pub candidate_keys: Vec<String>,
 }
 
-/// Registry of all objects that may contain translation key mappings
-/// Key format: "file_path:object_name"
+/// Registry of all objects that may contain translation key mappings.
+///
+/// **Phase 1**: Created by `RegistryCollector`
+/// **Phase 2**: Used by `ValueAnalyzer` to resolve `obj[key]` expressions
+///
+/// **Key format**: `"file_path:object_name"` (e.g., `"src/utils/keys.ts:toolKeys"`)
 pub type KeyObjectRegistry = HashMap<String, KeyObject>;
 
-/// Tracks import statements for cross-file resolution
+/// Import statement information for cross-file resolution.
+///
+/// Tracks how names are imported so we can resolve references like:
+/// ```typescript
+/// import { toolKeys as keys } from "./constants";
+/// t(keys[action]); // Resolve 'keys' back to 'toolKeys' in "./constants"
+/// ```
 #[derive(Debug, Clone)]
 pub struct ImportInfo {
+    /// Local name in the importing file (e.g., "keys").
     pub local_name: String,
+    /// Original name in the imported file (e.g., "toolKeys", or "default" for default imports).
     pub imported_name: String,
+    /// Import source path (e.g., "./constants").
     pub module_path: String,
 }
 
-/// Collected imports for a single file
+/// All imports for a single file.
+///
+/// **Phase 1**: Created by `RegistryCollector`
+/// **Phase 2**: Used by `ValueAnalyzer` to resolve imported variable references
 pub type FileImports = Vec<ImportInfo>;
 
-/// Represents an array of objects containing translation key candidates
-/// Used for patterns like: const items = [{ key: "a" }, { key: "b" }]
+/// Array of objects containing translation key candidates.
+///
+/// Used for patterns like:
+/// ```typescript
+/// const capabilities = [
+///   { titleKey: "ai.features.novel", descKey: "ai.features.novel.desc" },
+///   { titleKey: "ai.features.char", descKey: "ai.features.char.desc" }
+/// ];
+/// ```
+///
+/// Enables resolution of patterns like `capabilities.map(c => t(c.titleKey))` in Phase 2.
 #[derive(Debug, Clone)]
 pub struct KeyArray {
+    /// Variable name (e.g., "capabilities").
     pub name: String,
+    /// File where the array is defined (relative to source root).
     pub file_path: String,
+    /// Whether the array is exported (affects cross-file resolution).
     pub is_exported: bool,
-    /// Whether defined at module level (scope_depth == 0)
+    /// Whether defined at module level (scope_depth == 0).
+    /// Non-module-level arrays are collected but have lower priority.
     pub is_module_level: bool,
-    /// Maps property names to all values found in array elements
-    /// e.g., { "titleKey": ["novelManagement", "characterDevelopment"] }
+    /// Maps property names to all values found in array elements.
+    /// Example: `{ "titleKey": ["ai.features.novel", "ai.features.char"], "descKey": [...] }`
     pub property_values: HashMap<String, Vec<String>>,
 }
 
-/// Registry of all arrays that may contain translation key mappings
-/// Key format: "file_path.array_name"
+/// Registry of all arrays that may contain translation key mappings.
+///
+/// **Phase 1**: Created by `RegistryCollector`
+/// **Phase 2**: Used by `ValueAnalyzer` to resolve `arr.map(item => item.prop)` patterns
+///
+/// **Key format**: `"file_path:array_name"` (e.g., `"src/config.ts:capabilities"`)
 pub type KeyArrayRegistry = HashMap<String, KeyArray>;
 
-/// Represents a string array containing translation key candidates
-/// Used for patterns like: const KEYS = ["save", "characters"] as const;
+/// String array containing translation key candidates.
+///
+/// Used for patterns like:
+/// ```typescript
+/// const FEATURE_KEYS = ["save", "characters", "chapters"] as const;
+/// ```
+///
+/// Enables resolution of patterns like `FEATURE_KEYS.map(k => t(\`features.\${k}\`))` in Phase 2.
 #[derive(Debug, Clone)]
 pub struct StringArray {
+    /// Variable name (e.g., "FEATURE_KEYS").
     pub name: String,
+    /// File where the array is defined (relative to source root).
     pub file_path: String,
+    /// Whether the array is exported (affects cross-file resolution).
     pub is_exported: bool,
-    /// Whether defined at module level (scope_depth == 0)
+    /// Whether defined at module level (scope_depth == 0).
+    /// Non-module-level arrays are collected but have lower priority.
     pub is_module_level: bool,
-    /// All string values in the array
+    /// All string elements in the array (e.g., ["save", "characters", "chapters"]).
     pub values: Vec<String>,
 }
 
-/// Registry of all string arrays that may contain translation keys
-/// Key format: "file_path.array_name"
+/// Registry of all string arrays that may contain translation keys.
+///
+/// **Phase 1**: Created by `RegistryCollector`
+/// **Phase 2**: Used by `ValueAnalyzer` to resolve `arr.map(k => k)` or `arr[0]` patterns
+///
+/// **Key format**: `"file_path:array_name"` (e.g., `"src/constants.ts:FEATURE_KEYS"`)
 pub type StringArrayRegistry = HashMap<String, StringArray>;
 
-/// Represents a translation function passed as a JSX prop.
-/// Used to track: `<ComponentName t={translationVar} />`
+/// Translation function passed as a JSX prop.
+///
+/// Used for patterns like:
+/// ```typescript
+/// const t = useTranslations("MyNamespace");
+/// <MyComponent t={t} />
+/// ```
+///
+/// In Phase 2, when analyzing `MyComponent`, we check if it receives a translation
+/// prop and register the prop parameter as a translation binding.
 #[derive(Debug, Clone)]
 pub struct TranslationProp {
-    /// Component name (e.g., "AdultLandingPage")
+    /// Component name receiving the prop (e.g., "MyComponent", "UI.Button").
     pub component_name: String,
-    /// Prop name (e.g., "t")
+    /// Prop name (e.g., "t", "translate").
     pub prop_name: String,
-    /// List of possible namespaces from different call sites
-    /// None means no namespace (e.g., `useTranslations()` without argument)
+    /// All possible namespaces from different call sites.
+    /// `None` means no namespace (e.g., `useTranslations()` with no argument).
+    /// Multiple entries indicate the component is used with different namespaces.
     pub namespaces: Vec<Option<String>>,
 }
 
 /// Registry of translation functions passed as JSX props.
-/// Key format: "ComponentName.propName"
+///
+/// **Phase 1**: Created by `RegistryCollector` when it sees `<Component t={translationVar} />`
+/// **Phase 2**: Used by `FileAnalyzer` to register translation bindings from component props
+///
+/// **Key format**: `"ComponentName:propName"` (e.g., `"MyComponent:t"`, `"UI.Button:translate"`)
 pub type TranslationPropRegistry = HashMap<String, TranslationProp>;
 
-/// Create registry key for TranslationPropRegistry
+/// Create registry key for `TranslationPropRegistry`.
+///
+/// **Format**: `"ComponentName:propName"`
+///
+/// # Examples
+///
+/// ```
+/// # use glot::core::collect::types::make_translation_prop_key;
+/// assert_eq!(make_translation_prop_key("MyComponent", "t"), "MyComponent:t");
+/// assert_eq!(make_translation_prop_key("UI.Button", "translate"), "UI.Button:translate");
+/// ```
 pub fn make_translation_prop_key(component_name: &str, prop_name: &str) -> String {
     format!("{}.{}", component_name, prop_name)
 }
 
-/// Represents a translation function passed as a regular function call argument.
-/// Used to track: `someFunc(t)` where `t` is a translation function.
+/// Translation function passed as a regular function call argument.
 ///
-/// This enables tracking translation keys in utility/factory functions that
-/// receive translation functions as parameters, not just React components.
+/// Used for patterns like:
+/// ```typescript
+/// const t = useTranslations("MyNamespace");
+/// myHelper(t);  // Pass translation function to helper
+/// ```
+///
+/// Enables tracking translation keys in utility/factory functions that receive
+/// translation functions as parameters, not just React components.
+///
+/// In Phase 2, when analyzing the definition of `myHelper`, we check if it receives
+/// a translation function argument and register the parameter as a translation binding.
 #[derive(Debug, Clone)]
 pub struct TranslationFnCall {
-    /// File path where the function is defined
+    /// File where the called function is defined (relative to source root).
     pub fn_file_path: String,
-    /// Function name (e.g., "usageTypeLabels")
+    /// Function name (e.g., "myHelper", or "default" for default exports).
     pub fn_name: String,
-    /// Argument index (0-based) where the translation function is passed
+    /// Argument index (0-based) where the translation function is passed.
     pub arg_index: usize,
-    /// List of possible namespaces from different call sites
-    /// None means no namespace (e.g., `useTranslations()` without argument)
+    /// All possible namespaces from different call sites.
+    /// `None` means no namespace (e.g., `useTranslations()` with no argument).
+    /// Multiple entries indicate the function is called with different namespaces.
     pub namespaces: Vec<Option<String>>,
 }
 
 /// Registry of translation functions passed as regular function call arguments.
-/// Key format: "file_path.fn_name.arg_index"
+///
+/// **Phase 1**: Created by `RegistryCollector` when it sees `someFunc(translationVar)`
+/// **Phase 2**: Used by `FileAnalyzer` to register translation bindings from function parameters
+///
+/// **Key format**: `"file_path:fn_name:arg_index"` (e.g., `"src/utils.ts:myHelper:0"`)
 pub type TranslationFnCallRegistry = HashMap<String, TranslationFnCall>;
 
-/// Create registry key for TranslationFnCallRegistry
+/// Create registry key for `TranslationFnCallRegistry`.
+///
+/// **Format**: `"file_path:fn_name:arg_index"`
+///
+/// # Examples
+///
+/// ```
+/// # use glot::core::collect::types::make_translation_fn_call_key;
+/// assert_eq!(
+///     make_translation_fn_call_key("src/utils.ts", "myHelper", 0),
+///     "src/utils.ts:myHelper:0"
+/// );
+/// assert_eq!(
+///     make_translation_fn_call_key("src/lib.ts", "default", 1),
+///     "src/lib.ts:default:1"
+/// );
+/// ```
 pub fn make_translation_fn_call_key(fn_file_path: &str, fn_name: &str, arg_index: usize) -> String {
     format!("{}.{}.{}", fn_file_path, fn_name, arg_index)
 }
 
-/// Represents a binding value in the translation bindings stack.
-/// Used to distinguish between actual translation bindings and shadowed bindings.
+/// Binding value in the translation bindings stack (used during Phase 1 collection).
+///
+/// Used by `RegistryCollector` to track which variables are translation functions
+/// and detect shadowing within nested scopes.
 #[derive(Debug, Clone)]
 pub enum TranslationBindingValue {
-    /// A translation function binding with optional namespace
+    /// A translation function binding with optional namespace.
+    /// Example: `const t = useTranslations("MyNs")` → `Translation(Some("MyNs"))`
     Translation(Option<String>),
+
     /// A shadowed binding (parameter that shadows outer translation binding).
+    ///
+    /// Example:
+    /// ```typescript
+    /// const t = useTranslations("Outer");
+    /// function inner(t) {  // This 't' shadows the outer 't'
+    ///   // ...
+    /// }
+    /// ```
+    ///
     /// When encountered during lookup, indicates "stop searching, this is not a translation".
     Shadowed,
 }
@@ -197,6 +333,21 @@ pub fn resolve_import_path(current_file: &Path, import_path: &str) -> Option<Str
     Some(resolved.with_extension("ts").to_string_lossy().to_string())
 }
 
+/// Create a generic registry key for file-scoped items.
+///
+/// Used for `KeyObjectRegistry`, `KeyArrayRegistry`, and `StringArrayRegistry`.
+///
+/// **Format**: `"file_path:name"`
+///
+/// # Examples
+///
+/// ```
+/// # use glot::core::collect::types::make_registry_key;
+/// assert_eq!(
+///     make_registry_key("src/constants.ts", "FEATURE_KEYS"),
+///     "src/constants.ts:FEATURE_KEYS"
+/// );
+/// ```
 pub fn make_registry_key(file_path: &str, name: &str) -> String {
     format!("{}.{}", file_path, name)
 }
@@ -248,42 +399,77 @@ pub struct Declarations {
 
 /// All glot comments collected from a single file.
 ///
-/// This is collected in Phase 1 alongside Registries and FileImports,
-/// and passed to FileAnalyzer in Phase 2 for immediate use.
+/// **Phase 1**: Collected by comment parsers alongside other registries
+/// **Phase 2**: Passed to `FileAnalyzer` to check suppressions and expand declarations
 #[derive(Debug, Default)]
 pub struct FileComments {
-    /// Suppression directives (glot-disable, glot-enable, glot-disable-next-line)
+    /// Suppression directives (glot-disable, glot-enable, glot-disable-next-line).
+    /// Checked during Phase 2 to skip reporting suppressed issues.
     pub suppressions: Suppressions,
-    /// Key declarations (glot-message-keys)
+
+    /// Key declarations (glot-message-keys: Common.*, .features.*).
+    /// Expanded during Phase 3 to validate declared keys exist in locale files.
     pub declarations: Declarations,
 }
 
-/// All file comments indexed by file path
+/// All file comments across the codebase, indexed by file path.
+///
+/// **Phase 1**: Created by comment parsers for each file
+/// **Phase 2-3**: Used to check suppressions and validate declarations
+///
+/// **Key format**: File path (relative to source root)
 pub type AllFileComments = HashMap<String, FileComments>;
 
 // ============================================================
 // Aggregated Registry Types
 // ============================================================
 
-/// Registry of parsed symbol information (schemas, objects, arrays, translation props).
+/// Aggregated registry of all collected symbols from Phase 1.
 ///
-/// This struct aggregates all cross-file dependencies collected during Phase 1.
-/// Does NOT contain file_imports - that's stored separately in AllFileImports.
+/// This struct holds all cross-file dependency information collected during
+/// the initial scan of the codebase. It's created by scanning all files in
+/// Phase 1 and passed to `FileAnalyzer` in Phase 2 for resolving dynamic keys
+/// and translation function bindings.
+///
+/// **Note**: File imports are stored separately in `AllFileImports`, not in this struct.
 pub struct Registries {
+    /// Schema function registry (e.g., `loginSchema`, `profileSchema`).
+    /// Used to detect validation schema calls that use translation functions.
     pub schema: SchemaRegistry,
+
+    /// Object literal registry (key objects with string values).
+    /// Used to resolve `obj[key]` expressions in translation calls.
     pub key_object: KeyObjectRegistry,
+
+    /// Object array registry (arrays of objects with properties).
+    /// Used to resolve `arr.map(item => item.prop)` expressions.
     pub key_array: KeyArrayRegistry,
+
+    /// String array registry (arrays of string literals).
+    /// Used to resolve `arr.map(k => k)` or `arr[0]` expressions.
     pub string_array: StringArrayRegistry,
-    /// Translation functions passed as JSX props (e.g., `<Component t={t} />`)
+
+    /// Translation functions passed as JSX props.
+    /// Used to register translation bindings when entering component definitions.
     pub translation_prop: TranslationPropRegistry,
-    /// Translation functions passed as regular function call arguments (e.g., `someFunc(t)`)
+
+    /// Translation functions passed as regular function call arguments.
+    /// Used to register translation bindings when entering function definitions.
     pub translation_fn_call: TranslationFnCallRegistry,
-    /// Maps file_path -> default_export_name for files with default exports.
+
+    /// Maps file_path → default export name for files with default exports.
     /// Used to match translation function calls with default imported functions.
+    /// Example: `{ "src/utils.ts": "myHelper" }` means `utils.ts` exports `myHelper` as default.
     pub default_exports: HashMap<String, String>,
 }
 
-/// Type alias for all file imports across the codebase (one per file).
+/// All file imports across the codebase, indexed by file path.
+///
+/// **Phase 1**: Created by `RegistryCollector` for each file
+/// **Phase 2**: Used by `ValueAnalyzer` to resolve imported variable references
+///
+/// **Key format**: File path (relative to source root)
+/// **Value**: List of all imports in that file
 pub type AllFileImports = HashMap<String, FileImports>;
 
 #[cfg(test)]

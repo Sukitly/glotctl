@@ -6,33 +6,84 @@
 //! - FromFnCall: `const fn = (t) => { ... }`
 //! - Shadowed: parameter that shadows an outer binding
 
-/// Source of a translation function binding.
+/// Source of a translation function binding (Phase 2: Extraction).
 ///
-/// Distinguishes between translation functions obtained directly via
-/// `useTranslations()`/`getTranslations()` vs those passed as props or function arguments.
+/// Tracks how a translation function variable was obtained, which determines
+/// which namespaces to search when resolving keys in Phase 3.
+///
+/// # Phase Context
+///
+/// - **Created in**: Phase 2 by `FileAnalyzer` while tracking variable bindings
+/// - **Used in**: Phase 2 to determine namespaces for translation calls
+/// - **Consumed in**: Phase 3 to resolve keys against the correct namespaces
+///
+/// # Examples
+///
+/// ```ignore
+/// // Direct - single known namespace
+/// const t = useTranslations("Common");
+/// t("submit");  // Look in Common.submit
+///
+/// // FromProps - multiple possible namespaces
+/// function Button({ t }) {  // Used with "Common" and "Errors"
+///   t("cancel");  // Check both Common.cancel and Errors.cancel
+/// }
+///
+/// // FromFnCall - multiple possible namespaces
+/// const makeLabels = (t) => ({ save: t("save") });
+/// makeLabels(useTranslations("Actions"));  // Actions.save
+///
+/// // Shadowed - don't track
+/// const t = useTranslations("Outer");
+/// function inner(t) {  // Shadows outer t
+///   t("key");  // Don't track (not a translation function)
+/// }
+/// ```
 #[derive(Debug, Clone)]
 pub enum TranslationSource {
-    /// Direct binding: `const t = useTranslations("Namespace")`
-    /// Has a single, known namespace.
+    /// Direct binding from a translation hook call.
+    ///
+    /// Example: `const t = useTranslations("Namespace")`
+    ///
+    /// Has a single, known namespace (or `None` if called without argument).
     Direct { namespace: Option<String> },
-    /// From props: `function Component({ t }: Props)`
-    /// May have multiple possible namespaces from different call sites.
+
+    /// From React component props.
+    ///
+    /// Example: `function Component({ t }: Props)`
+    ///
+    /// May have multiple possible namespaces from different JSX call sites.
+    /// Collected in Phase 1 when we see `<Component t={someT} />`.
     FromProps {
-        /// All possible namespaces from call sites.
-        /// Empty if no call sites found (will still generate warnings).
+        /// All possible namespaces from call sites where this component is used.
+        /// Empty if no call sites found (unusual, will still generate warnings).
         namespaces: Vec<Option<String>>,
     },
-    /// From function call argument: `const usageLabels = (t) => { ... }; usageLabels(t)`
-    /// Similar to FromProps, may have multiple possible namespaces from different call sites.
+
+    /// From function call argument (non-React).
+    ///
+    /// Example: `const makeLabels = (t) => { ... }; makeLabels(t)`
+    ///
+    /// Similar to `FromProps`, may have multiple possible namespaces from different call sites.
+    /// Collected in Phase 1 when we see `someFunction(translationVar)`.
     FromFnCall {
-        /// All possible namespaces from call sites.
+        /// All possible namespaces from call sites where this function is called.
         /// Empty if no call sites found (will still generate warnings).
         namespaces: Vec<Option<String>>,
     },
-    /// Shadowed binding: a parameter that shadows an outer translation binding.
-    /// Used when an inner function has a parameter with the same name as an outer
-    /// translation binding, but the inner function is not tracked.
-    /// Calls using this binding should NOT be tracked.
+
+    /// Shadowed binding (parameter shadows outer translation binding).
+    ///
+    /// Example:
+    /// ```ignore
+    /// const t = useTranslations("Outer");
+    /// function inner(t) {  // This 't' is not a translation function
+    ///   t("key");  // Should NOT be tracked
+    /// }
+    /// ```
+    ///
+    /// Used when an inner function parameter shadows an outer translation binding.
+    /// Calls using this binding are ignored (not tracked as translation calls).
     Shadowed,
 }
 

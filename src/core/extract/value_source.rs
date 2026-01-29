@@ -1,44 +1,85 @@
-//! Unified value source representation for dynamic key analysis.
+//! Unified value source representation for dynamic key analysis (Phase 2: Extraction).
 //!
 //! This module provides a unified way to represent and resolve dynamic translation keys.
 //! Instead of having separate handling for each pattern (object access, array iteration, etc.),
 //! all dynamic expressions are analyzed into a common `ValueSource` enum that can be
 //! recursively resolved to candidate string values.
+//!
+//! # Phase Context
+//!
+//! - **Created in**: Phase 2 (Extraction) by `ValueAnalyzer` while analyzing translation call arguments
+//! - **Consumed in**: Phase 3 (Resolution) to determine if dynamic keys exist in locale files
+//!
+//! # Examples
+//!
+//! ```ignore
+//! // Literal key
+//! t("home.title") → ValueSource::Literal("home.title")
+//!
+//! // Template with known variable
+//! t(`prefix.${key}`) where key ∈ ["a", "b"]
+//! → ValueSource::Template { prefix: "prefix.", inner: StringArrayElement(...), ... }
+//! → Resolves to ["prefix.a", "prefix.b"]
+//!
+//! // Conditional with static branches
+//! t(flag ? "key.plural" : "key.singular")
+//! → ValueSource::Conditional { consequent: Literal("key.plural"), alternate: Literal("key.singular") }
+//! → Resolves to ["key.plural", "key.singular"]
+//! ```
 
 /// Represents the possible values an expression can resolve to.
 ///
 /// This is the core abstraction for the unified value tracing system.
 /// All dynamic key expressions are analyzed into this enum, which can then
 /// be recursively resolved to produce candidate translation keys.
+///
+/// The enum forms a tree structure where composite variants (`Template`, `Conditional`)
+/// can contain nested `ValueSource` values, allowing complex expressions to be represented.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ValueSource {
     /// A known static string literal: `"keyA"`
+    ///
+    /// This is the simplest case - a hardcoded string that's known at build time.
     Literal(String),
 
     /// A template literal: `` `prefix.${inner}.suffix` ``
     ///
     /// The inner `ValueSource` represents what `${expr}` can resolve to.
     /// The final keys are computed as: `prefix + inner_value + suffix` for each inner value.
+    ///
+    /// Currently only supports single-expression templates. Multi-expression templates
+    /// like `` `${a}.${b}` `` are marked as `Unresolvable::ComplexTemplate`.
     Template {
+        /// Text before the interpolation expression.
         prefix: String,
+        /// Text after the interpolation expression.
         suffix: String,
+        /// The interpolated expression (can be any `ValueSource`, including nested templates).
         inner: Box<ValueSource>,
     },
 
     /// A conditional expression: `cond ? a : b`
     ///
     /// Both branches are analyzed and their candidate values are combined.
+    /// If either branch is unresolvable, the entire conditional is unresolvable.
     Conditional {
+        /// The "then" branch (resolved recursively).
         consequent: Box<ValueSource>,
+        /// The "else" branch (resolved recursively).
         alternate: Box<ValueSource>,
     },
 
     /// Object property access: `obj[key]` resolves to all values of the object.
     ///
     /// For example, `toolKeys[toolName]` where `toolKeys = { create: "keyA", edit: "keyB" }`
-    /// resolves to `["keyA", "keyB"]`.
+    /// resolves to `["keyA", "keyB"]`. The actual property key doesn't matter - we return
+    /// all possible values.
+    ///
+    /// The object must be registered in Phase 1 (Collection) for this to work.
     ObjectAccess {
+        /// Name of the object variable (e.g., "toolKeys").
         object_name: String,
+        /// All string values from the object (collected in Phase 1).
         candidate_values: Vec<String>,
     },
 
@@ -47,9 +88,14 @@ pub enum ValueSource {
     /// For example, `capabilities.map(cap => cap.titleKey)` where
     /// `capabilities = [{ titleKey: "a" }, { titleKey: "b" }]`
     /// resolves to `["a", "b"]`.
+    ///
+    /// The array must be registered in Phase 1 (Collection) for this to work.
     ArrayIteration {
+        /// Name of the array variable (e.g., "capabilities").
         array_name: String,
+        /// Name of the property being accessed (e.g., "titleKey").
         property_name: String,
+        /// All values of the property from array elements (collected in Phase 1).
         candidate_values: Vec<String>,
     },
 
@@ -58,41 +104,85 @@ pub enum ValueSource {
     /// For example, `FEATURE_KEYS.map(k => k)` where
     /// `FEATURE_KEYS = ["save", "load"]`
     /// resolves to `["save", "load"]`.
+    ///
+    /// The array must be registered in Phase 1 (Collection) for this to work.
     StringArrayElement {
+        /// Name of the string array variable (e.g., "FEATURE_KEYS").
         array_name: String,
+        /// All string elements from the array (collected in Phase 1).
         candidate_values: Vec<String>,
     },
 
-    /// Cannot resolve - the expression is truly dynamic.
-    Unresolvable { reason: UnresolvableReason },
+    /// Cannot resolve - the expression is truly dynamic or unsupported.
+    ///
+    /// This becomes an `UnresolvedKeyUsage` in Phase 3 with the given reason.
+    Unresolvable {
+        /// Why the value source cannot be resolved.
+        reason: UnresolvableReason
+    },
 }
 
 /// Reasons why a value source cannot be resolved.
+///
+/// Each variant maps to a specific `UnresolvedKeyReason` in Phase 3,
+/// which determines whether it's reported as a warning or error.
+///
+/// See also: `crate::issues::UnresolvedKeyReason` (user-facing enum)
+/// and `crate::core::key_usage::UnresolvedKeyReason` (internal enum).
 #[derive(Debug, Clone, PartialEq)]
 pub enum UnresolvableReason {
-    /// Variable comes from an unknown source (e.g., function parameters, props).
+    /// Variable comes from an unknown source (e.g., function parameters, external imports).
+    ///
+    /// Example: `t(someParam)` where `someParam` is a function parameter.
+    ///
+    /// **Phase 3 outcome**: Warning (dynamic-key)
     UnknownVariable(String),
 
-    /// Referenced object is not in the registry.
+    /// Referenced object is not in the registry (wasn't found during Phase 1).
+    ///
+    /// Example: `t(obj[key])` where `obj` was imported or defined outside the file.
+    ///
+    /// **Phase 3 outcome**: Warning (dynamic-key)
     UnknownObject(String),
 
-    /// Referenced array is not in the registry.
+    /// Referenced array is not in the registry (wasn't found during Phase 1).
+    ///
+    /// Example: `t(arr[0])` where `arr` was imported or defined outside the file.
+    ///
+    /// **Phase 3 outcome**: Warning (dynamic-key)
     UnknownArray(String),
 
     /// Template has multiple expressions (e.g., `` `${a}.${b}` ``).
-    /// Contains the number of expressions in the template.
-    ComplexTemplate { expr_count: usize },
+    ///
+    /// Currently we only support single-expression templates. Multi-expression
+    /// templates would require tracking relationships between variables.
+    ///
+    /// **Phase 3 outcome**: Warning (dynamic-key)
+    ComplexTemplate {
+        /// Number of interpolation expressions in the template.
+        expr_count: usize
+    },
 
     /// Expression type is not supported for analysis.
-    /// Contains the expression type name for debugging.
-    UnsupportedExpression { expr_type: String },
+    ///
+    /// Example: `t(Math.random() > 0.5 ? "a" : "b")` (binary expression in template).
+    ///
+    /// **Phase 3 outcome**: Warning (dynamic-key)
+    UnsupportedExpression {
+        /// Expression type name for debugging (e.g., "BinaryExpression", "CallExpression").
+        expr_type: String
+    },
 }
 
-/// Result of analyzing a translation key argument.
+/// Legacy structure from before the Phase 2/3 split.
 ///
-/// This represents a single `t(...)` call that has been analyzed.
+/// This type is no longer used - it was replaced by `RawTranslationCall` (Phase 2 output)
+/// and `ResolvedKeyUsage`/`UnresolvedKeyUsage` (Phase 3 output).
+///
+/// Kept for compatibility during refactoring, marked as dead_code.
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
+#[deprecated(note = "Use RawTranslationCall + ResolvedKeyUsage/UnresolvedKeyUsage instead")]
 pub struct ResolvedKey {
     pub file_path: String,
     pub line: usize,

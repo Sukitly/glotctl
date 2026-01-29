@@ -41,29 +41,47 @@ use crate::core::{
 
 /// Tracks JSX context state during AST traversal.
 ///
-/// These flags are independent (not mutually exclusive):
-/// - `in_context`: Inside JSX element/fragment children
-/// - `in_attr`: Inside a JSX attribute
-/// - `in_checked_attr`: Inside a checked attribute (placeholder, title, etc.)
-/// - `in_expr`: Inside a JSX expression container {}
+/// These flags are independent (not mutually exclusive) and help determine:
+/// 1. Which hardcoded text checks to apply
+/// 2. What comment style to use (JSX vs JS) for issue reporting
+///
+/// Used by Phase 2 (Extraction) to maintain context while walking the AST.
 #[derive(Debug, Clone, Copy, Default)]
 struct JsxState {
+    /// Inside JSX element/fragment children (between opening and closing tags).
     in_context: bool,
+    /// Inside a JSX attribute (e.g., `<div title={...}>`).
     in_attr: bool,
+    /// Inside a checked attribute (placeholder, title, alt, aria-*, etc.).
+    /// Only these attributes are checked for hardcoded text.
     in_checked_attr: bool,
+    /// Inside a JSX expression container `{...}`.
     in_expr: bool,
 }
 
+/// Kind of JavaScript statement that produces JSX.
+///
+/// Used to determine correct comment style when hardcoded text appears in
+/// statement-level JSX (e.g., `return <div>text</div>` vs just `<div>text</div>`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum StmtKind {
+    /// Return statement: `return <div>text</div>`
     Return,
+    /// Variable initializer: `const x = <div>text</div>`
     VarInit,
+    /// Arrow function body: `() => <div>text</div>`
     ArrowExpr,
 }
 
+/// Tracks the statement context for a specific source line.
+///
+/// Used to determine if JSX on a given line is part of a JS statement,
+/// which affects whether we use JS or JSX comment style.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct StmtContext {
+    /// Source line number (1-indexed).
     line: usize,
+    /// The kind of statement producing JSX on this line.
     kind: StmtKind,
 }
 
@@ -79,40 +97,134 @@ impl JsxState {
     }
 }
 
-/// Result of analyzing a single file (Phase 2).
+/// Result of analyzing a single file (Phase 2: Extraction).
 ///
-/// Contains raw collected data. Resolution to UsedKey/warnings happens in Phase 3.
+/// Contains raw collected data from a single AST traversal. Resolution to
+/// `ResolvedKeyUsage`/`UnresolvedKeyUsage` happens in Phase 3 (see `crate::core::resolve`).
 #[derive(Debug)]
 pub struct FileAnalysisResult {
-    /// Hardcoded text issues (directly collected).
+    /// Hardcoded text issues found in JSX/TSX (ready to report).
     pub hardcoded_issues: Vec<HardcodedTextIssue>,
-    /// Raw translation calls (to be resolved in Phase 3).
+    /// Raw translation calls with unresolved keys (e.g., `t("key")`, `t.raw("key")`).
+    /// Phase 3 will resolve these against locale files.
     pub raw_calls: Vec<RawTranslationCall>,
-    /// Schema function calls (directly collected).
+    /// Schema function calls (e.g., `loginSchema(t)`) for schema validation rules.
     pub schema_calls: Vec<SchemaCallInfo>,
 }
 
-/// Combined analyzer that collects translation calls and detects hardcoded text.
+/// Combined analyzer that collects translation calls and detects hardcoded text in a single AST pass.
+///
+/// This struct merges the functionality of three formerly separate visitors:
+/// 1. **HardcodedChecker**: Detects hardcoded text in JSX/JSX attributes
+/// 2. **TranslationCallCollector**: Collects translation function calls (`t()`, `t.raw()`, etc.)
+/// 3. **SchemaCallCollector**: Collects schema function calls for validation
+///
+/// By combining these into one visitor implementing `swc_ecma_visit::Visit`, we traverse
+/// each file's AST only once instead of 3-4 times, significantly improving performance.
+///
+/// # Phase Context
+///
+/// This analyzer operates in **Phase 2: Extraction**. It takes parsed AST and registries
+/// from Phase 1 (Collection) and produces:
+/// - Hardcoded text issues (ready to report)
+/// - Raw translation calls (unresolved keys to be resolved in Phase 3)
+/// - Schema calls (for validation rules)
+///
+/// # Architecture
+///
+/// The analyzer maintains state while walking the AST:
+/// - `jsx_state`: Tracks whether we're in JSX context, attributes, or expressions
+/// - `binding_context`: Tracks variable bindings for translation functions (scoped)
+/// - `value_analyzer`: Resolves translation key arguments (handles template literals, object access, etc.)
+///
+/// # Usage
+///
+/// ```no_run
+/// use glot::core::extract::FileAnalyzer;
+/// # use swc_common::SourceMap;
+/// # use std::sync::Arc;
+/// # use std::collections::HashSet;
+/// # use glot::core::collect::{Registries, types::FileComments, types::FileImports};
+/// # let source_map = Arc::new(SourceMap::default());
+/// # let registries = Registries::default();
+/// # let file_comments = FileComments::default();
+/// # let file_imports = FileImports::default();
+/// # let checked_attributes = vec![];
+/// # let ignore_texts = HashSet::new();
+/// # let module = todo!();
+///
+/// let analyzer = FileAnalyzer::new(
+///     "src/app/page.tsx",
+///     &source_map,
+///     &file_comments,
+///     &checked_attributes,
+///     &ignore_texts,
+///     &registries,
+///     &file_imports,
+/// );
+///
+/// let result = analyzer.analyze(&module);
+/// // result.hardcoded_issues: Vec<HardcodedTextIssue>
+/// // result.raw_calls: Vec<RawTranslationCall> (to be resolved in Phase 3)
+/// // result.schema_calls: Vec<SchemaCallInfo>
+/// ```
 pub struct FileAnalyzer<'a> {
-    // === Shared fields ===
+    // ============================================================
+    // Shared fields (used by all analysis types)
+    // ============================================================
+
+    /// Path to the file being analyzed (relative to source root).
     file_path: &'a str,
+
+    /// SWC source map for looking up line/column positions.
     source_map: &'a SourceMap,
+
+    /// Parsed comments and suppressions from Phase 1.
     file_comments: &'a FileComments,
+
+    /// Current JSX traversal state (in context, attribute, expression, etc.).
     jsx_state: JsxState,
+
+    /// Stack of statement contexts for determining comment style.
     stmt_context: Vec<StmtContext>,
 
-    // === HardcodedChecker specific ===
+    // ============================================================
+    // Hardcoded text detection fields
+    // ============================================================
+
+    /// JSX attributes to check for hardcoded text (from config).
+    /// e.g., ["placeholder", "title", "alt", "aria-label"]
     checked_attributes: &'a [String],
+
+    /// Hardcoded text values to ignore (from config `ignoreTexts`).
     ignore_texts: &'a HashSet<String>,
 
-    // === TranslationCallCollector specific ===
+    // ============================================================
+    // Translation call collection fields
+    // ============================================================
+
+    /// Tracks bindings for translation functions (e.g., `t`, `tMessages`).
+    /// Handles scoping, shadowing, and translation sources (direct, props, fn params).
     binding_context: BindingContext,
+
+    /// Analyzes translation call arguments to resolve keys.
+    /// Handles literals, template strings, object access, array iteration, etc.
     value_analyzer: ValueAnalyzer<'a>,
+
+    /// Registries from Phase 1 (translation props, fn calls, key objects, etc.).
     registries: &'a Registries,
 
-    // === Output ===
+    // ============================================================
+    // Output (accumulated during traversal)
+    // ============================================================
+
+    /// Hardcoded text issues collected during traversal.
     hardcoded_issues: Vec<HardcodedTextIssue>,
+
+    /// Raw translation calls collected during traversal.
     raw_calls: Vec<RawTranslationCall>,
+
+    /// Schema function calls collected during traversal.
     schema_calls: Vec<SchemaCallInfo>,
 }
 
@@ -161,9 +273,15 @@ impl<'a> FileAnalyzer<'a> {
     }
 
     // ============================================================
-    // HardcodedChecker methods
+    // Hardcoded text detection methods
     // ============================================================
 
+    /// Check if hardcoded text should be reported for a given line.
+    ///
+    /// Returns false if:
+    /// - Line is suppressed with `glot-disable-next-line hardcoded`
+    /// - Text is in the ignore list (config `ignoreTexts`)
+    /// - Text contains no alphabetic characters (pure numbers/symbols)
     fn should_report_hardcoded(&self, line: usize, text: &str) -> bool {
         if self
             .file_comments
@@ -179,7 +297,19 @@ impl<'a> FileAnalyzer<'a> {
         contains_alphabetic(text)
     }
 
-    /// Determine the correct comment style for a source line.
+    /// Determine the correct comment style (JSX vs JS) for a source line.
+    ///
+    /// This affects the suppress comment format shown to users:
+    /// - `CommentStyle::Jsx` → `{/* glot-disable-next-line */}`
+    /// - `CommentStyle::Js` → `// glot-disable-next-line`
+    ///
+    /// # Logic
+    ///
+    /// 1. JSX attributes always use JS style (e.g., `<div title="text">`)
+    /// 2. Ternary branches in JSX expressions use JS style (`: "text"`)
+    /// 3. Statement-level JSX uses JS style (e.g., `return <div>text</div>`)
+    /// 4. JSX children use JSX style (e.g., `<div>text</div>`)
+    /// 5. Default to JS style for non-JSX contexts
     fn decide_comment_style(&self, source_line: &str, line: usize) -> CommentStyle {
         let trimmed_line = source_line.trim_start();
 
@@ -210,6 +340,7 @@ impl<'a> FileAnalyzer<'a> {
         CommentStyle::Js
     }
 
+    /// Record a hardcoded text issue with source context.
     fn add_hardcoded_issue(&mut self, value: &str, loc: Loc) {
         let source_line = loc
             .file
@@ -228,12 +359,20 @@ impl<'a> FileAnalyzer<'a> {
         });
     }
 
+    /// Check a text value and record as hardcoded issue if it should be reported.
     fn check_hardcoded_line(&mut self, value: &str, loc: Loc) {
         if self.should_report_hardcoded(loc.line, value) {
             self.add_hardcoded_issue(value, loc);
         }
     }
 
+    /// Check an expression for hardcoded text (string literals, templates, conditionals).
+    ///
+    /// Recursively walks through:
+    /// - String literals: `"text"`
+    /// - Template literals: `` `text ${expr}` ``
+    /// - Logical operators: `condition && "text"`, `a || "text"`
+    /// - Ternary operators: `condition ? "text" : "other"`
     fn check_expr(&mut self, expr: &Expr) {
         match expr {
             Expr::Lit(Lit::Str(s)) => {
@@ -264,11 +403,13 @@ impl<'a> FileAnalyzer<'a> {
     }
 
     // ============================================================
-    // TranslationCallCollector methods
+    // Translation call collection methods
     // ============================================================
 
-    /// Compute comment style for current JSX state.
-    /// Create SourceContext from Loc.
+    /// Create SourceContext from a source location.
+    ///
+    /// Looks up the source line and determines the appropriate comment style
+    /// based on current JSX state.
     fn make_source_context(&self, loc: &Loc) -> SourceContext {
         let source_line = loc
             .file
@@ -284,7 +425,14 @@ impl<'a> FileAnalyzer<'a> {
         )
     }
 
-    /// Collect a translation call.
+    /// Record a raw translation call for later resolution in Phase 3.
+    ///
+    /// # Parameters
+    ///
+    /// - `loc`: Source location of the call
+    /// - `translation_source`: Where the translation function came from (direct, props, fn params)
+    /// - `argument`: The key argument (resolved, unresolved literal, template, etc.)
+    /// - `call_kind`: Direct call (`t()`) or method call (`t.raw()`, `t.rich()`)
     fn collect_translation_call(
         &mut self,
         loc: Loc,
@@ -304,7 +452,19 @@ impl<'a> FileAnalyzer<'a> {
     // ============================================================
     // Binding registration methods
     // ============================================================
+    //
+    // These methods detect and register translation function bindings
+    // as we traverse the AST. They handle:
+    // - Translation hooks: `const t = useTranslations("namespace")`
+    // - Translation props: `function Component({ t }: { t: TranslationFunction })`
+    // - Translation fn params: `getServerSideTranslations((t) => t("key"))`
+    // - Shadowing detection: `const t = "something else"` shadows outer `t`
 
+    /// Extract the object name from a computed member access expression.
+    ///
+    /// Examples:
+    /// - `KEYS[index]` → Some("KEYS")
+    /// - `obj[prop]` → Some("obj")
     fn extract_object_access_name(expr: &Expr) -> Option<String> {
         match expr {
             Expr::Member(member) if member.prop.is_computed() => match &*member.obj {
@@ -315,6 +475,11 @@ impl<'a> FileAnalyzer<'a> {
         }
     }
 
+    /// Register translation function bindings from function parameters.
+    ///
+    /// Looks for props destructuring patterns that match registered translation props
+    /// from Phase 1. For example, if `ComponentA` is known to receive prop `tMessages`,
+    /// then `function ComponentA({ tMessages })` will register `tMessages` as a translation binding.
     fn register_translation_props_from_params(
         &mut self,
         component_name: &str,
@@ -326,6 +491,11 @@ impl<'a> FileAnalyzer<'a> {
         self.register_translation_props_from_pat(component_name, &first_param.pat);
     }
 
+    /// Register translation props from a destructuring pattern.
+    ///
+    /// Handles both:
+    /// - `{ t }` → prop name and binding name are both "t"
+    /// - `{ t: translate }` → prop name is "t", binding name is "translate"
     fn register_translation_props_from_pat(&mut self, component_name: &str, pat: &Pat) {
         match pat {
             Pat::Object(obj_pat) => {
@@ -353,6 +523,7 @@ impl<'a> FileAnalyzer<'a> {
         }
     }
 
+    /// Extract the binding name from a pattern (identifier or assignment).
     fn extract_binding_name_from_pat(pat: &Pat) -> Option<String> {
         match pat {
             Pat::Ident(ident) => Some(ident.id.sym.to_string()),
@@ -367,6 +538,10 @@ impl<'a> FileAnalyzer<'a> {
         }
     }
 
+    /// Check if a prop matches a registered translation prop and register the binding if so.
+    ///
+    /// Looks up `{component_name}:{prop_name}` in the translation prop registry from Phase 1.
+    /// If found, registers `binding_name` as a translation function binding with the prop's namespaces.
     fn try_register_translation_prop(
         &mut self,
         component_name: &str,
@@ -387,6 +562,13 @@ impl<'a> FileAnalyzer<'a> {
         }
     }
 
+    /// Register translation function bindings from function parameters.
+    ///
+    /// Handles registration from Phase 1's translation function call registry.
+    /// For example, if `getStaticProps` calls `getServerSideTranslations` passing
+    /// its first parameter as `t`, we'll register that parameter as a translation binding.
+    ///
+    /// Also detects shadowing: if a parameter name matches an outer binding, mark it as shadowed.
     fn register_translation_fn_params(&mut self, fn_name: &str, params: &[Pat]) {
         let is_default_export = self
             .registries
@@ -444,6 +626,10 @@ impl<'a> FileAnalyzer<'a> {
         }
     }
 
+    /// Extract a React component defined as an arrow function.
+    ///
+    /// Example: `const MyComponent = (props) => <div>{props.children}</div>`
+    /// Returns: `Some(("MyComponent", arrow_expr))`
     fn extract_arrow_component(decl: &VarDeclarator) -> Option<(String, &swc_ecma_ast::ArrowExpr)> {
         let Pat::Ident(binding_ident) = &decl.name else {
             return None;
@@ -460,7 +646,9 @@ impl<'a> FileAnalyzer<'a> {
     }
 
     /// Extract the first parameter name from an arrow function.
-    /// Used for iterator detection: array.map(item => ...) -> Some("item")
+    ///
+    /// Used for iterator detection to enable key resolution in patterns like:
+    /// `KEYS.map(item => t(\`prefix.\${item}\`))` → registers "item" as iterator over "KEYS"
     fn extract_arrow_first_param(expr: &Expr) -> Option<String> {
         if let Expr::Arrow(arrow) = expr
             && let Some(first_param) = arrow.params.first()
@@ -471,6 +659,10 @@ impl<'a> FileAnalyzer<'a> {
         None
     }
 
+    /// Execute a closure with a statement context active for a specific line.
+    ///
+    /// This tracks that JSX on a given line is part of a specific kind of statement,
+    /// which helps determine the correct comment style for hardcoded text issues.
     fn with_stmt_context<F>(&mut self, line: usize, kind: StmtKind, f: F)
     where
         F: FnOnce(&mut Self),
@@ -480,6 +672,7 @@ impl<'a> FileAnalyzer<'a> {
         self.stmt_context.pop();
     }
 
+    /// Get the statement context for a specific line, if any.
     fn statement_context_for_line(&self, line: usize) -> Option<StmtKind> {
         self.stmt_context.last().and_then(|ctx| {
             if ctx.line == line {
@@ -490,6 +683,10 @@ impl<'a> FileAnalyzer<'a> {
         })
     }
 
+    /// Check if a statement kind should force JS comment style for a given line.
+    ///
+    /// Returns true if the line shows JavaScript syntax before the JSX, indicating
+    /// the JSX is part of a JS statement (e.g., `return <div>` or `const x = <div>`).
     fn should_force_js_for_statement(&self, kind: StmtKind, trimmed_line: &str) -> bool {
         let lt_pos = trimmed_line.find('<');
         match kind {
