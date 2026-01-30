@@ -13,6 +13,8 @@
 
 use std::collections::HashSet;
 
+use std::collections::HashMap;
+
 use crate::core::{CommentStyle, SourceContext, SourceLocation};
 use crate::core::{
     FileKeyUsages, FullKey, ResolvedKeyUsage, SchemaSource, UnresolvedKeyUsage,
@@ -20,9 +22,9 @@ use crate::core::{
 };
 use crate::core::{
     collect::SuppressibleRule,
-    collect::types::{FileComments, Registries},
+    collect::types::FileComments,
     extract::{RawTranslationCall, TranslationCallKind, TranslationSource, ValueSource},
-    schema::{SchemaCallInfo, expand_schema_keys},
+    schema::{ExpandResult, SchemaCallInfo, SchemaRegistry},
 };
 
 /// Resolve translation calls and schema calls to key usages.
@@ -36,7 +38,8 @@ pub fn resolve_translation_calls(
     schema_calls: &[SchemaCallInfo],
     file_path: &str,
     file_comments: &FileComments,
-    registries: &Registries,
+    schema_cache: &HashMap<String, ExpandResult>,
+    schema_registry: &SchemaRegistry,
     available_keys: &HashSet<String>,
 ) -> FileKeyUsages {
     let mut resolved = Vec::new();
@@ -59,7 +62,8 @@ pub fn resolve_translation_calls(
             call,
             file_path,
             file_comments,
-            registries,
+            schema_cache,
+            schema_registry,
             &mut resolved,
             &mut unresolved,
         );
@@ -156,52 +160,63 @@ fn resolve_schema_call(
     call: &SchemaCallInfo,
     file_path: &str,
     file_comments: &FileComments,
-    registries: &Registries,
+    schema_cache: &HashMap<String, ExpandResult>,
+    schema_registry: &SchemaRegistry,
     resolved: &mut Vec<ResolvedKeyUsage>,
     unresolved: &mut Vec<UnresolvedKeyUsage>,
 ) {
-    let mut visited = HashSet::new();
-    let expand_result = expand_schema_keys(
-        &call.schema_name,
-        &call.namespace,
-        &registries.schema,
-        &mut visited,
-    );
+    // Look up pre-computed expansion (O(1) HashMap lookup)
+    let cached_result = match schema_cache.get(&call.schema_name) {
+        Some(result) => result,
+        None => {
+            // Schema not in registry (shouldn't happen if Phase 1 worked correctly)
+            return;
+        }
+    };
 
-    // Build context for this schema call location
-    // Note: schema calls don't have source_line in SchemaCallInfo, use empty string
     let location = SourceLocation::new(file_path, call.line, call.col);
     let context = SourceContext::new(location, "", CommentStyle::Js);
-
     let suppressed_rules = collect_suppressed_rules(file_comments, call.line);
 
     // Get schema file path for from_schema info
-    let schema_file = registries
-        .schema
+    let schema_file = schema_registry
         .get(&call.schema_name)
         .map(|s| s.file_path.clone())
         .unwrap_or_else(|| "unknown".to_string());
 
-    for key in expand_result.keys {
-        if !key.has_namespace {
-            // Namespace could not be determined
+    // Apply namespace to cached raw_keys
+    for cached_key in &cached_result.keys {
+        let full_key = match &call.namespace {
+            Some(ns) => {
+                // Apply namespace: "Form" + "titleRequired" → "Form.titleRequired"
+                format!("{}.{}", ns, cached_key.raw_key)
+            }
+            None => {
+                // No namespace from call site, use raw_key as-is
+                cached_key.raw_key.clone()
+            }
+        };
+
+        let has_namespace = call.namespace.is_some();
+
+        if !has_namespace {
+            // Namespace could not be determined at call site
             unresolved.push(UnresolvedKeyUsage {
                 context: context.clone(),
                 reason: UsageUnresolvedKeyReason::UnknownNamespace {
-                    schema_name: key.from_schema.clone(),
-                    raw_key: key.raw_key.clone(),
+                    schema_name: call.schema_name.clone(),
+                    raw_key: cached_key.raw_key.clone(),
                 },
                 hint: None,
                 pattern: None,
             });
         } else {
-            // Successfully resolved with namespace
             resolved.push(ResolvedKeyUsage {
-                key: FullKey::new(key.full_key),
+                key: FullKey::new(full_key),
                 context: context.clone(),
                 suppressed_rules: suppressed_rules.clone(),
                 from_schema: Some(SchemaSource {
-                    schema_name: key.from_schema.clone(),
+                    schema_name: call.schema_name.clone(),
                     schema_file: schema_file.clone(),
                 }),
             });
