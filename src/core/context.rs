@@ -4,28 +4,28 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
-use anyhow::{Context as _, Result, anyhow};
+use anyhow::{anyhow, Context as _, Result};
 use rayon::prelude::*;
 use swc_ecma_visit::VisitWith;
 
 use crate::{
     cli::args::CommonArgs,
-    config::{Config, load_config},
+    config::{load_config, Config},
     core::{
-        AllKeyUsages, AllLocaleMessages, LocaleMessages,
         collect::{
-            AllFileComments, AllFileImports, CommentCollector, FileImports, Registries,
-            RegistryCollector, TranslationFnCall, TranslationProp, make_registry_key,
-            make_translation_fn_call_key, make_translation_prop_key, resolve_import_path,
+            make_registry_key, make_translation_fn_call_key, make_translation_prop_key,
+            resolve_import_path, AllFileComments, AllFileImports, CommentCollector, FileImports,
+            Registries, RegistryCollector, TranslationFnCall, TranslationProp,
         },
         extract::FileAnalyzer,
         file_scanner::scan_files,
         parsers::{
             json::scan_message_files,
-            jsx::{ParsedJSX, parse_jsx_source},
+            jsx::{parse_jsx_source, ParsedJSX},
         },
         resolve::resolve_translation_calls,
-        schema::{ExpandResult, SchemaRegistry, expand_schema_keys},
+        schema::{expand_schema_keys, ExpandResult, SchemaRegistry},
+        AllKeyUsages, AllLocaleMessages, LocaleMessages,
     },
     issues::{HardcodedTextIssue, ParseErrorFileType, ParseErrorIssue},
 };
@@ -878,8 +878,8 @@ mod tests {
 
     #[test]
     fn test_schema_cache_reuses_expansions() {
-        use crate::core::schema::types::{SchemaFunction, SchemaRegistry};
         use super::build_schema_cache;
+        use crate::core::schema::types::{SchemaFunction, SchemaRegistry};
 
         // Create registry with one schema
         let mut registry = SchemaRegistry::new();
