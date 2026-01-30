@@ -4,28 +4,28 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 
-use anyhow::{anyhow, Context as _, Result};
+use anyhow::{Context as _, Result, anyhow};
 use rayon::prelude::*;
 use swc_ecma_visit::VisitWith;
 
 use crate::{
     cli::args::CommonArgs,
-    config::{load_config, Config},
+    config::{Config, load_config},
     core::{
+        AllKeyUsages, AllLocaleMessages, LocaleMessages,
         collect::{
-            make_registry_key, make_translation_fn_call_key, make_translation_prop_key,
-            resolve_import_path, AllFileComments, AllFileImports, CommentCollector, FileImports,
-            Registries, RegistryCollector, TranslationFnCall, TranslationProp,
+            AllFileComments, AllFileImports, CommentCollector, FileImports, Registries,
+            RegistryCollector, TranslationFnCall, TranslationProp, make_registry_key,
+            make_translation_fn_call_key, make_translation_prop_key, resolve_import_path,
         },
         extract::FileAnalyzer,
         file_scanner::scan_files,
         parsers::{
             json::scan_message_files,
-            jsx::{parse_jsx_source, ParsedJSX},
+            jsx::{ParsedJSX, parse_jsx_source},
         },
         resolve::resolve_translation_calls,
-        schema::{expand_schema_keys, ExpandResult, SchemaRegistry},
-        AllKeyUsages, AllLocaleMessages, LocaleMessages,
+        schema::{ExpandResult, SchemaRegistry, expand_schema_keys},
     },
     issues::{HardcodedTextIssue, ParseErrorFileType, ParseErrorIssue},
 };
