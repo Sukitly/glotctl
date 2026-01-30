@@ -5,12 +5,13 @@
 //! passed to FileAnalyzer in Phase 2 for immediate use, avoiding re-parsing.
 
 use std::collections::HashMap;
-use swc_common::{SourceMap, comments::SingleThreadedComments};
+use swc_common::SourceMap;
 
 use crate::core::collect::comments::directive::Directive;
 use crate::core::collect::types::{
     Declarations, DisabledRange, FileComments, SuppressibleRule, Suppressions,
 };
+use crate::core::parsers::jsx::ExtractedComments;
 
 /// Collects all glot comments from a file.
 pub struct CommentCollector;
@@ -23,9 +24,9 @@ impl CommentCollector {
     /// 2. Key declarations (glot-message-keys)
     ///
     /// # Arguments
-    /// * `swc_comments` - SWC parsed comments
+    /// * `swc_comments` - Extracted comments from parsing
     /// * `source_map` - Source map for line number lookup
-    pub fn collect(swc_comments: &SingleThreadedComments, source_map: &SourceMap) -> FileComments {
+    pub fn collect(swc_comments: &ExtractedComments, source_map: &SourceMap) -> FileComments {
         let mut suppressions = Suppressions::default();
         let mut declaration_entries = HashMap::new();
 
@@ -109,7 +110,9 @@ mod tests {
 
     /// Helper to parse source and collect comments
     fn parse_and_collect(source: &str) -> FileComments {
-        let parsed = parse_jsx_source(source.to_string(), "test.tsx").unwrap();
+        use std::sync::Arc;
+        let source_map = Arc::new(swc_common::SourceMap::default());
+        let parsed = parse_jsx_source(source.to_string(), "test.tsx", source_map).unwrap();
         CommentCollector::collect(&parsed.comments, &parsed.source_map)
     }
 
