@@ -60,6 +60,7 @@ impl CliTest {
         cmd.current_dir(&self.project_dir);
         cmd.env_clear();
         cmd.env("NO_COLOR", "1"); // Disable colors for consistent test output
+        cmd.env("GLOT_DISABLE_TIMING", "1"); // Disable timing for stable snapshots
         cmd
     }
 
