@@ -4,6 +4,7 @@
 //! Separate from core logic to allow glot to be used as a library.
 
 use std::io::{self, Write};
+use std::time::Duration;
 
 use colored::Colorize;
 use unicode_width::UnicodeWidthStr;
@@ -114,6 +115,21 @@ pub fn print_parse_error_to<W: Write>(count: usize, verbose: bool, writer: &mut 
             "-v".cyan()
         );
     }
+}
+
+/// Print command execution time in human-readable format.
+pub fn print_execution_time(duration: Duration) {
+    // Allow disabling timing output via environment variable (useful for tests)
+    if std::env::var("GLOT_DISABLE_TIMING").is_ok() {
+        return;
+    }
+    print_execution_time_to(duration, &mut io::stdout().lock());
+}
+
+/// Print execution time to a custom writer (for testing).
+pub fn print_execution_time_to<W: Write>(duration: Duration, writer: &mut W) {
+    let millis = duration.as_millis();
+    let _ = writeln!(writer, "{}", format!("Completed in {}ms", millis).dimmed());
 }
 
 // ============================================================
@@ -755,5 +771,21 @@ mod tests {
         // Just verify it doesn't panic and contains expected content
         assert!(output_str.contains("hello World"));
         assert!(output_str.contains("^"));
+    }
+
+    #[test]
+    fn test_print_execution_time() {
+        let mut output = Vec::new();
+        print_execution_time_to(Duration::from_millis(1234), &mut output);
+        let stripped = strip_ansi(&String::from_utf8(output).unwrap());
+        assert!(stripped.contains("Completed in 1234ms"));
+    }
+
+    #[test]
+    fn test_print_execution_time_sub_second() {
+        let mut output = Vec::new();
+        print_execution_time_to(Duration::from_millis(45), &mut output);
+        let stripped = strip_ansi(&String::from_utf8(output).unwrap());
+        assert!(stripped.contains("Completed in 45ms"));
     }
 }
