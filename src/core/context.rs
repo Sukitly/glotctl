@@ -212,25 +212,7 @@ impl CheckContext {
         // Note: config's source_root is used for file scanning,
         // but CLI's source_root already determined where to find the config
 
-        let scan_result = scan_files(
-            path,
-            &config.includes,
-            &config.ignores,
-            config.ignore_test_files,
-            verbose,
-        );
-
-        if scan_result.skipped_count > 0 {
-            eprintln!(
-                "Warning: {} path(s) skipped due to access errors{}",
-                scan_result.skipped_count,
-                if verbose { "" } else { " (use -v for details)" }
-            );
-        }
-
-        let ignore_texts = config.ignore_texts.iter().cloned().collect();
-
-        // Initialize messages early to catch errors during context creation
+        // Compute message directory before parallel section (it depends on config)
         let message_dir = {
             let p = Path::new(&config.messages_root);
             if p.is_absolute() {
@@ -247,7 +229,33 @@ impl CheckContext {
                 }
             }
         };
-        let scan_results = scan_message_files(&message_dir)?;
+
+        // Run file scanning and message scanning in parallel
+        let (scan_result, scan_message_result) = rayon::join(
+            || {
+                scan_files(
+                    path,
+                    &config.includes,
+                    &config.ignores,
+                    config.ignore_test_files,
+                    verbose,
+                )
+            },
+            || scan_message_files(&message_dir),
+        );
+
+        if scan_result.skipped_count > 0 {
+            eprintln!(
+                "Warning: {} path(s) skipped due to access errors{}",
+                scan_result.skipped_count,
+                if verbose { "" } else { " (use -v for details)" }
+            );
+        }
+
+        let ignore_texts = config.ignore_texts.iter().cloned().collect();
+
+        // Propagate message scan errors
+        let scan_results = scan_message_result?;
 
         // Convert message warnings to ParseErrorIssue
         let message_parse_errors: Vec<ParseErrorIssue> = scan_results

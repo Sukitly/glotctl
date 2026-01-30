@@ -1,6 +1,7 @@
 use std::{fs, path::Path};
 
 use anyhow::{Context, Result, bail};
+use rayon::prelude::*;
 use serde_json::Value;
 
 use crate::core::{
@@ -211,7 +212,6 @@ pub fn extract_locale(path: impl AsRef<Path>) -> Option<String> {
 
 pub fn scan_message_files(message_dir: impl AsRef<Path>) -> Result<ScanMessagesResult> {
     let message_dir = message_dir.as_ref();
-    let mut result = ScanMessagesResult::default();
 
     if !message_dir.exists() {
         bail!(
@@ -225,24 +225,54 @@ pub fn scan_message_files(message_dir: impl AsRef<Path>) -> Result<ScanMessagesR
         bail!("'{}' is not a directory.", message_dir.display());
     }
 
-    for entry in fs::read_dir(message_dir)? {
-        let entry = entry?;
-        let path = entry.path();
-
-        if path.extension().and_then(|e| e.to_str()) == Some("json")
-            && let Some(locale) = extract_locale(&path)
-        {
-            match parse_json_file(&path, &locale) {
-                Ok(messages) => {
-                    result.messages.insert(locale, messages);
-                }
-                Err(e) => {
-                    result.warnings.push(MessageScanWarning {
-                        file_path: path.to_string_lossy().to_string(),
-                        error: e.to_string(),
-                    });
-                }
+    // Collect all JSON file paths first (fs::read_dir iterator is not Send)
+    let json_paths: Vec<_> = fs::read_dir(message_dir)?
+        .filter_map(|entry| {
+            let entry = entry.ok()?;
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) == Some("json") {
+                Some(path)
+            } else {
+                None
             }
+        })
+        .collect();
+
+    // Parse JSON files in parallel
+    let parse_results: Vec<_> = json_paths
+        .par_iter()
+        .map(|path| {
+            if let Some(locale) = extract_locale(path) {
+                match parse_json_file(path, &locale) {
+                    Ok(messages) => (Some((locale, messages)), None),
+                    Err(e) => (
+                        None,
+                        Some(MessageScanWarning {
+                            file_path: path.to_string_lossy().to_string(),
+                            error: e.to_string(),
+                        }),
+                    ),
+                }
+            } else {
+                (
+                    None,
+                    Some(MessageScanWarning {
+                        file_path: path.to_string_lossy().to_string(),
+                        error: "Failed to extract locale from filename".to_string(),
+                    }),
+                )
+            }
+        })
+        .collect();
+
+    // Merge results sequentially (fast since there are few locale files)
+    let mut result = ScanMessagesResult::default();
+    for (messages_opt, warning_opt) in parse_results {
+        if let Some((locale, messages)) = messages_opt {
+            result.messages.insert(locale, messages);
+        }
+        if let Some(warning) = warning_opt {
+            result.warnings.push(warning);
         }
     }
 

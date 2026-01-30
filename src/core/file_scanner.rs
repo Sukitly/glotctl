@@ -1,10 +1,12 @@
 use std::{
     collections::HashSet,
     path::{Path, PathBuf},
+    sync::Mutex,
 };
 
 use colored::Colorize;
 use glob::{Pattern, glob};
+use rayon::prelude::*;
 use walkdir::WalkDir;
 
 use crate::config::TEST_FILE_PATTERNS;
@@ -28,9 +30,6 @@ pub fn scan_files(
     ignore_test_files: bool,
     verbose: bool,
 ) -> ScanResult {
-    let mut files: HashSet<String> = HashSet::new();
-    let mut skipped_count = 0;
-
     // Separate ignore patterns into literal paths and glob patterns
     let mut literal_ignore_paths: Vec<PathBuf> = Vec::new();
     let mut glob_patterns: Vec<Pattern> = Vec::new();
@@ -112,14 +111,28 @@ pub fn scan_files(
         paths
     };
 
-    for dir in dirs_to_scan {
+    // Use parallel iteration for directories
+    // Collect to local HashSet per thread, then merge to minimize lock contention
+    let files_mutex = Mutex::new(HashSet::new());
+    let skipped_count_mutex = Mutex::new(0);
+    let warnings_mutex = Mutex::new(Vec::new());
+
+    dirs_to_scan.par_iter().for_each(|dir| {
+        let mut local_files = HashSet::new();
+        let mut local_skipped = 0;
+        let mut local_warnings = Vec::new();
+
         for entry in WalkDir::new(dir) {
             let entry = match entry {
                 Ok(e) => e,
                 Err(e) => {
-                    skipped_count += 1;
+                    local_skipped += 1;
                     if verbose {
-                        eprintln!("{} Cannot access path: {}", "warning:".bold().yellow(), e);
+                        local_warnings.push(format!(
+                            "{} Cannot access path: {}",
+                            "warning:".bold().yellow(),
+                            e
+                        ));
                     }
                     continue;
                 }
@@ -141,10 +154,27 @@ pub fn scan_files(
             }
 
             if path.is_file() && is_scannable_file(path) {
-                files.insert(path_str.into());
+                local_files.insert(path_str.into());
             }
         }
+
+        // Merge local results into shared state (one lock per directory)
+        files_mutex.lock().unwrap().extend(local_files);
+        *skipped_count_mutex.lock().unwrap() += local_skipped;
+        if !local_warnings.is_empty() {
+            warnings_mutex.lock().unwrap().extend(local_warnings);
+        }
+    });
+
+    // Print warnings after parallel section for clean output
+    if verbose {
+        for warning in warnings_mutex.into_inner().unwrap() {
+            eprintln!("{}", warning);
+        }
     }
+
+    let files = files_mutex.into_inner().unwrap();
+    let skipped_count = *skipped_count_mutex.lock().unwrap();
 
     ScanResult {
         files,
