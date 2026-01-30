@@ -42,6 +42,12 @@ pub struct GlotMcpServer {
     tool_router: ToolRouter<Self>,
 }
 
+impl Default for GlotMcpServer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[tool_router]
 impl GlotMcpServer {
     pub fn new() -> Self {
@@ -54,7 +60,7 @@ impl GlotMcpServer {
     #[tool(
         description = "Scan for hardcoded text in JSX/TSX files that should use translations. Returns paginated list of issues."
     )]
-    async fn scan_hardcoded(
+    pub async fn scan_hardcoded(
         &self,
         params: Parameters<ScanHardcodedParams>,
     ) -> Result<CallToolResult, McpError> {
@@ -112,7 +118,7 @@ impl GlotMcpServer {
     #[tool(
         description = "Get statistics of all i18n issues without detailed items. Use this first to understand the overall state before diving into details."
     )]
-    async fn scan_overview(
+    pub async fn scan_overview(
         &self,
         params: Parameters<ScanOverviewParams>,
     ) -> Result<CallToolResult, McpError> {
@@ -195,7 +201,7 @@ impl GlotMcpServer {
     #[tool(
         description = "Scan for keys used in code but missing from primary locale. Returns paginated list."
     )]
-    async fn scan_primary_missing(
+    pub async fn scan_primary_missing(
         &self,
         params: Parameters<ScanPrimaryMissingParams>,
     ) -> Result<CallToolResult, McpError> {
@@ -254,7 +260,7 @@ impl GlotMcpServer {
     #[tool(
         description = "Scan for keys that exist in primary locale but missing in other locales. Returns paginated list with code usage locations to help prioritize fixes."
     )]
-    async fn scan_replica_lag(
+    pub async fn scan_replica_lag(
         &self,
         params: Parameters<ScanReplicaLagParams>,
     ) -> Result<CallToolResult, McpError> {
@@ -319,7 +325,7 @@ impl GlotMcpServer {
     #[tool(
         description = "Scan for translation values identical to primary locale. These may indicate text was copied without translation. Returns paginated list with code usage locations."
     )]
-    async fn scan_untranslated(
+    pub async fn scan_untranslated(
         &self,
         params: Parameters<ScanUntranslatedParams>,
     ) -> Result<CallToolResult, McpError> {
@@ -384,7 +390,7 @@ impl GlotMcpServer {
     #[tool(
         description = "Scan for type mismatches between locales. For example: primary has array but replica has string. This causes runtime crashes. Returns paginated list with code usage locations."
     )]
-    async fn scan_type_mismatch(
+    pub async fn scan_type_mismatch(
         &self,
         params: Parameters<ScanTypeMismatchParams>,
     ) -> Result<CallToolResult, McpError> {
@@ -460,7 +466,7 @@ impl GlotMcpServer {
     #[tool(
         description = "Add translation keys to multiple locale files. Supports nested keys (e.g., 'common.title') and string arrays."
     )]
-    async fn add_translations(
+    pub async fn add_translations(
         &self,
         params: Parameters<AddTranslationsParams>,
     ) -> Result<CallToolResult, McpError> {
@@ -531,7 +537,7 @@ impl GlotMcpServer {
 
     /// Get available locales and their file paths
     #[tool(description = "Get available locales and their file paths.")]
-    async fn get_locales(
+    pub async fn get_locales(
         &self,
         params: Parameters<GetLocalesParams>,
     ) -> Result<CallToolResult, McpError> {
@@ -575,7 +581,7 @@ impl GlotMcpServer {
 
     /// Get the current glot configuration
     #[tool(description = "Get the current glot configuration.")]
-    async fn get_config(
+    pub async fn get_config(
         &self,
         params: Parameters<GetConfigParams>,
     ) -> Result<CallToolResult, McpError> {
