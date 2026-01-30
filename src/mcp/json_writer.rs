@@ -23,6 +23,7 @@ impl KeyAction {
     }
 }
 
+#[derive(Debug)]
 pub struct JsonWriter {
     file_path: PathBuf,
     root: Value,
@@ -97,5 +98,255 @@ impl JsonWriter {
         fs::write(&self.file_path, content)
             .with_context(|| format!("Failed to write file: {}", self.file_path.display()))?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    use std::fs;
+    use tempfile::TempDir;
+
+    fn temp_json_path(temp_dir: &TempDir, name: &str) -> PathBuf {
+        temp_dir.path().join(name)
+    }
+
+    #[test]
+    fn test_open_or_create_new_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let path = temp_json_path(&temp_dir, "new.json");
+
+        let writer = JsonWriter::open_or_create(&path).unwrap();
+
+        assert_eq!(writer.root, json!({}));
+        assert_eq!(writer.file_path, path);
+    }
+
+    #[test]
+    fn test_open_or_create_existing_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let path = temp_json_path(&temp_dir, "existing.json");
+
+        fs::write(&path, r#"{"key": "value", "num": 42}"#).unwrap();
+
+        let writer = JsonWriter::open_or_create(&path).unwrap();
+
+        assert_eq!(writer.root, json!({"key": "value", "num": 42}));
+    }
+
+    #[test]
+    fn test_open_or_create_empty_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let path = temp_json_path(&temp_dir, "empty.json");
+
+        fs::write(&path, "").unwrap();
+
+        let writer = JsonWriter::open_or_create(&path).unwrap();
+
+        assert_eq!(writer.root, json!({}));
+    }
+
+    #[test]
+    fn test_open_or_create_whitespace_only_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let path = temp_json_path(&temp_dir, "whitespace.json");
+
+        fs::write(&path, "  \n\t  \n").unwrap();
+
+        let writer = JsonWriter::open_or_create(&path).unwrap();
+
+        assert_eq!(writer.root, json!({}));
+    }
+
+    #[test]
+    fn test_open_or_create_malformed_json() {
+        let temp_dir = TempDir::new().unwrap();
+        let path = temp_json_path(&temp_dir, "malformed.json");
+
+        fs::write(&path, "{invalid json}").unwrap();
+
+        let result = JsonWriter::open_or_create(&path);
+
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Failed to parse JSON")
+        );
+    }
+
+    #[test]
+    fn test_add_value_simple_key() {
+        let temp_dir = TempDir::new().unwrap();
+        let path = temp_json_path(&temp_dir, "test.json");
+
+        let mut writer = JsonWriter::open_or_create(&path).unwrap();
+        let action = writer.add_value("key", json!("value"));
+
+        assert_eq!(action, KeyAction::Added);
+        assert_eq!(writer.root, json!({"key": "value"}));
+    }
+
+    #[test]
+    fn test_add_value_nested_key() {
+        let temp_dir = TempDir::new().unwrap();
+        let path = temp_json_path(&temp_dir, "test.json");
+
+        let mut writer = JsonWriter::open_or_create(&path).unwrap();
+        let action = writer.add_value("common.submit", json!("Submit"));
+
+        assert_eq!(action, KeyAction::Added);
+        assert_eq!(writer.root, json!({"common": {"submit": "Submit"}}));
+    }
+
+    #[test]
+    fn test_add_value_deep_nesting() {
+        let temp_dir = TempDir::new().unwrap();
+        let path = temp_json_path(&temp_dir, "test.json");
+
+        let mut writer = JsonWriter::open_or_create(&path).unwrap();
+        let action = writer.add_value("a.b.c.d.e", json!("deep"));
+
+        assert_eq!(action, KeyAction::Added);
+        assert_eq!(
+            writer.root,
+            json!({"a": {"b": {"c": {"d": {"e": "deep"}}}}})
+        );
+    }
+
+    #[test]
+    fn test_add_value_creates_intermediate_objects() {
+        let temp_dir = TempDir::new().unwrap();
+        let path = temp_json_path(&temp_dir, "test.json");
+
+        let mut writer = JsonWriter::open_or_create(&path).unwrap();
+        writer.add_value("existing.key", json!("first"));
+        let action = writer.add_value("existing.other.nested", json!("second"));
+
+        assert_eq!(action, KeyAction::Added);
+        assert_eq!(
+            writer.root,
+            json!({"existing": {"key": "first", "other": {"nested": "second"}}})
+        );
+    }
+
+    #[test]
+    fn test_add_value_overwrites_non_object_intermediate() {
+        let temp_dir = TempDir::new().unwrap();
+        let path = temp_json_path(&temp_dir, "test.json");
+
+        fs::write(&path, r#"{"items": "wrong type"}"#).unwrap();
+
+        let mut writer = JsonWriter::open_or_create(&path).unwrap();
+        let action = writer.add_value("items.nested.key", json!("value"));
+
+        assert_eq!(action, KeyAction::Added);
+        assert_eq!(writer.root, json!({"items": {"nested": {"key": "value"}}}));
+    }
+
+    #[test]
+    fn test_add_value_returns_added_for_new_key() {
+        let temp_dir = TempDir::new().unwrap();
+        let path = temp_json_path(&temp_dir, "test.json");
+
+        let mut writer = JsonWriter::open_or_create(&path).unwrap();
+        let action = writer.add_value("newKey", json!("value"));
+
+        assert_eq!(action, KeyAction::Added);
+    }
+
+    #[test]
+    fn test_add_value_returns_updated_for_existing_key() {
+        let temp_dir = TempDir::new().unwrap();
+        let path = temp_json_path(&temp_dir, "test.json");
+
+        fs::write(&path, r#"{"key": "old value"}"#).unwrap();
+
+        let mut writer = JsonWriter::open_or_create(&path).unwrap();
+        let action = writer.add_value("key", json!("new value"));
+
+        assert_eq!(action, KeyAction::Updated);
+        assert_eq!(writer.root, json!({"key": "new value"}));
+    }
+
+    #[test]
+    fn test_add_value_supports_array_values() {
+        let temp_dir = TempDir::new().unwrap();
+        let path = temp_json_path(&temp_dir, "test.json");
+
+        let mut writer = JsonWriter::open_or_create(&path).unwrap();
+        writer.add_value("items", json!(["one", "two", "three"]));
+
+        assert_eq!(writer.root, json!({"items": ["one", "two", "three"]}));
+    }
+
+    #[test]
+    fn test_add_value_supports_object_values() {
+        let temp_dir = TempDir::new().unwrap();
+        let path = temp_json_path(&temp_dir, "test.json");
+
+        let mut writer = JsonWriter::open_or_create(&path).unwrap();
+        writer.add_value("config", json!({"setting": "value", "enabled": true}));
+
+        assert_eq!(
+            writer.root,
+            json!({"config": {"setting": "value", "enabled": true}})
+        );
+    }
+
+    #[test]
+    fn test_save_writes_formatted_json() {
+        let temp_dir = TempDir::new().unwrap();
+        let path = temp_json_path(&temp_dir, "output.json");
+
+        let mut writer = JsonWriter::open_or_create(&path).unwrap();
+        writer.add_value("key1", json!("value1"));
+        writer.add_value("key2", json!(42));
+        writer.save().unwrap();
+
+        let content = fs::read_to_string(&path).unwrap();
+
+        // Check pretty formatting (multiline)
+        assert!(content.contains('\n'));
+        // Verify content
+        let parsed: Value = serde_json::from_str(&content).unwrap();
+        assert_eq!(parsed, json!({"key1": "value1", "key2": 42}));
+    }
+
+    #[test]
+    fn test_save_adds_trailing_newline() {
+        let temp_dir = TempDir::new().unwrap();
+        let path = temp_json_path(&temp_dir, "output.json");
+
+        let mut writer = JsonWriter::open_or_create(&path).unwrap();
+        writer.add_value("test", json!("value"));
+        writer.save().unwrap();
+
+        let content = fs::read_to_string(&path).unwrap();
+
+        assert!(content.ends_with('\n'));
+    }
+
+    #[test]
+    fn test_key_action_as_str() {
+        assert_eq!(KeyAction::Added.as_str(), "added");
+        assert_eq!(KeyAction::Updated.as_str(), "updated");
+    }
+
+    #[test]
+    fn test_multiple_operations() {
+        let temp_dir = TempDir::new().unwrap();
+        let path = temp_json_path(&temp_dir, "multi.json");
+
+        let mut writer = JsonWriter::open_or_create(&path).unwrap();
+
+        assert_eq!(writer.add_value("a", json!(1)), KeyAction::Added);
+        assert_eq!(writer.add_value("b.c", json!(2)), KeyAction::Added);
+        assert_eq!(writer.add_value("a", json!(3)), KeyAction::Updated);
+        assert_eq!(writer.add_value("b.d", json!(4)), KeyAction::Added);
+
+        assert_eq!(writer.root, json!({"a": 3, "b": {"c": 2, "d": 4}}));
     }
 }
