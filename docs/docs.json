@@ -32,8 +32,12 @@
             "pages": [
               "detection/hardcoded-text",
               "detection/missing-keys",
+              "detection/unresolved-keys",
+              "detection/replica-lag",
+              "detection/unused-keys",
               "detection/orphan-keys",
-              "detection/untranslated"
+              "detection/untranslated",
+              "detection/type-mismatch"
             ]
           },
           {

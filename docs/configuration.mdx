@@ -23,7 +23,8 @@ Or create `.glotrc.json` manually.
 | Option                                  | Type       | Default                         | Description                              |
 | --------------------------------------- | ---------- | ------------------------------- | ---------------------------------------- |
 | [primaryLocale](#primarylocale)         | `string`   | `"en"`                          | Primary locale for missing key detection |
-| [messagesDir](#messagesdir)             | `string`   | `"./messages"`                  | Path to locale JSON files                |
+| [messagesRoot](#messagesroot)           | `string`   | `"./messages"`                  | Path to locale JSON files                |
+| [sourceRoot](#sourceroot)               | `string`   | `"./"`                          | Source code root directory               |
 | [includes](#includes)                   | `string[]` | [See below](#includes)          | Directories to scan for TSX/JSX          |
 | [ignores](#ignores)                     | `string[]` | `[]`                            | Paths or glob patterns to exclude        |
 | [ignoreTestFiles](#ignoretestfiles)     | `boolean`  | `true`                          | Skip test files automatically            |
@@ -50,9 +51,9 @@ The primary locale for your application. Missing key detection uses this locale 
 
 </Accordion>
 
-<Accordion title="messagesDir">
+<Accordion title="messagesRoot">
 
-### messagesDir
+### messagesRoot
 
 Path to the directory containing your locale JSON files.
 
@@ -62,7 +63,7 @@ Path to the directory containing your locale JSON files.
 
 ```json
 {
-  "messagesDir": "./messages"
+  "messagesRoot": "./messages"
 }
 ```
 
@@ -75,6 +76,30 @@ messages/
 ├── fr.json
 └── ...
 ```
+
+<Note>
+  For backward compatibility, `messagesDir` is also accepted as an alias.
+</Note>
+
+</Accordion>
+
+<Accordion title="sourceRoot">
+
+### sourceRoot
+
+The root directory for source code scanning. Paths in `includes` are relative to this directory.
+
+| Type     | Default |
+| -------- | ------- |
+| `string` | `"./"` |
+
+```json
+{
+  "sourceRoot": "./src"
+}
+```
+
+This is useful when your source code is in a subdirectory or when working in a monorepo.
 
 </Accordion>
 
@@ -274,7 +299,8 @@ A complete configuration file:
 ```json .glotrc.json
 {
   "primaryLocale": "en",
-  "messagesDir": "./locales",
+  "messagesRoot": "./locales",
+  "sourceRoot": "./",
   "includes": ["src/app/[locale]", "src/components", "src/features"],
   "ignores": ["**/node_modules/**", "**/*.stories.tsx", "**/mocks/**"],
   "ignoreTestFiles": true,

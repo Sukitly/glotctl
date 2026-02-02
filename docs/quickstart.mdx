@@ -77,7 +77,8 @@ This creates a default configuration:
 ```json
 {
   "primaryLocale": "en",
-  "messagesDir": "./messages",
+  "messagesRoot": "./messages",
+  "sourceRoot": "./",
   "includes": [
     "src/app/[locale]",
     "src/components",
@@ -130,10 +131,16 @@ bunx glot check
 
 Or check for specific issue types:
 
-- [hardcoded](/detection/hardcoded-text) - Untranslated text in JSX/TSX
-- [missing](/detection/missing-keys) - Keys used but not defined in locale files
-- [orphan](/detection/orphan-keys) - Unused keys in locale files
-- [untranslated](/detection/untranslated) - Values identical to primary locale
+| Type | Description |
+|------|-------------|
+| [hardcoded](/detection/hardcoded-text) | Untranslated text in JSX/TSX |
+| [missing](/detection/missing-keys) | Keys used but not defined in locale files |
+| [unused](/detection/unused-keys) | Keys in primary locale not used in code |
+| [orphan](/detection/orphan-keys) | Keys in non-primary locales but not in primary |
+| [replica-lag](/detection/replica-lag) | Keys in primary locale missing from other locales |
+| [untranslated](/detection/untranslated) | Values identical to primary locale |
+| [type-mismatch](/detection/type-mismatch) | Type conflicts between locales |
+| [unresolved](/detection/unresolved-keys) | Dynamic keys that cannot be analyzed |
 
 <CodeGroup>
 ```bash npm
@@ -141,18 +148,11 @@ Or check for specific issue types:
 npx glot check hardcoded
 
 # Only missing translation keys
-
 npx glot check missing
 
-# Only orphan (unused) keys
-
-npx glot check orphan
-
-# Only untranslated values
-
-npx glot check untranslated
-
-````
+# Multiple specific checks
+npx glot check hardcoded missing unused
+```
 
 ```bash pnpm
 # Only hardcoded text
@@ -161,12 +161,9 @@ pnpm exec glot check hardcoded
 # Only missing translation keys
 pnpm exec glot check missing
 
-# Only orphan (unused) keys
-pnpm exec glot check orphan
-
-# Only untranslated values
-pnpm exec glot check untranslated
-````
+# Multiple specific checks
+pnpm exec glot check hardcoded missing unused
+```
 
 ```bash yarn
 # Only hardcoded text
@@ -175,11 +172,8 @@ yarn glot check hardcoded
 # Only missing translation keys
 yarn glot check missing
 
-# Only orphan (unused) keys
-yarn glot check orphan
-
-# Only untranslated values
-yarn glot check untranslated
+# Multiple specific checks
+yarn glot check hardcoded missing unused
 ```
 
 ```bash bun
@@ -189,11 +183,8 @@ bunx glot check hardcoded
 # Only missing translation keys
 bunx glot check missing
 
-# Only orphan (unused) keys
-bunx glot check orphan
-
-# Only untranslated values
-bunx glot check untranslated
+# Multiple specific checks
+bunx glot check hardcoded missing unused
 ```
 
 </CodeGroup>
