@@ -395,6 +395,8 @@ pub struct KeyDeclaration {
 pub struct Declarations {
     /// Line number -> key declaration
     pub entries: HashMap<usize, KeyDeclaration>,
+    /// All comment line numbers (used for skipping over consecutive comments)
+    pub comment_lines: HashSet<usize>,
 }
 
 /// All glot comments collected from a single file.
