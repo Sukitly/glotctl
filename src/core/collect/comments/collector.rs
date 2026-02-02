@@ -3,8 +3,32 @@
 //! This module collects all glot comments (suppression directives and key declarations)
 //! from a file's SingleThreadedComments during Phase 1. The collected FileComments are then
 //! passed to FileAnalyzer in Phase 2 for immediate use, avoiding re-parsing.
+//!
+//! # Consecutive Comment Handling
+//!
+//! When multiple glot directives appear on consecutive lines, they are merged and applied
+//! to the next non-comment line. For example:
+//!
+//! ```tsx
+//! {/* glot-disable-next-line untranslated */}
+//! {/* glot-message-keys "Common.*" */}
+//! {t(`${key}`)}  // <- Both directives apply to this line
+//! ```
+//!
+//! **Important**: Blank lines break the consecutive comment chain. If there's a blank line
+//! between a directive and the target code, the directive will NOT apply to that code.
+//!
+//! ```tsx
+//! {/* glot-disable-next-line untranslated */}
+//!
+//! {t(`${key}`)}  // <- Directive does NOT apply (blank line breaks chain)
+//! ```
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+
+/// Maximum number of consecutive comment lines to traverse when looking for
+/// the target code line or searching backwards for declarations.
+pub const MAX_COMMENT_CHAIN_LINES: usize = 10;
 use swc_common::SourceMap;
 
 use crate::core::collect::comments::directive::Directive;
@@ -30,21 +54,30 @@ impl CommentCollector {
         let mut suppressions = Suppressions::default();
         let mut declaration_entries = HashMap::new();
 
-        // Collect and sort all comments by line number
+        // Collect all comments with their line numbers (computed once)
         let (leading, trailing) = swc_comments.borrow_all();
-        let mut all_comments: Vec<_> = leading
+        let mut comments_with_lines: Vec<_> = leading
             .iter()
             .chain(trailing.iter())
             .flat_map(|(_, cmts)| cmts.iter())
+            .map(|cmt| {
+                let line = source_map.lookup_char_pos(cmt.span.lo).line;
+                (line, cmt)
+            })
             .collect();
-        all_comments.sort_by_key(|cmt| source_map.lookup_char_pos(cmt.span.lo).line);
+
+        // Sort by line number
+        comments_with_lines.sort_by_key(|(line, _)| *line);
+
+        // Collect all comment line numbers for consecutive comment handling
+        let comment_lines: HashSet<usize> =
+            comments_with_lines.iter().map(|(line, _)| *line).collect();
 
         // Track open disable ranges per rule
         let mut open_ranges: HashMap<SuppressibleRule, usize> = HashMap::new();
 
-        for cmt in all_comments {
+        for (line, cmt) in comments_with_lines {
             let text = cmt.text.trim();
-            let line = source_map.lookup_char_pos(cmt.span.lo).line;
 
             if let Some(directive) = Directive::parse(text) {
                 match directive {
@@ -66,13 +99,14 @@ impl CommentCollector {
                         }
                     }
                     Directive::DisableNextLine { rules } => {
-                        let next_line = line + 1;
+                        // Find the next non-comment line
+                        let target_line = Self::find_next_non_comment_line(line, &comment_lines);
                         for rule in rules {
                             suppressions
                                 .disabled_lines
                                 .entry(rule)
                                 .or_default()
-                                .insert(next_line);
+                                .insert(target_line);
                         }
                     }
                     Directive::MessageKeys(decl) => {
@@ -98,8 +132,24 @@ impl CommentCollector {
             suppressions,
             declarations: Declarations {
                 entries: declaration_entries,
+                comment_lines,
             },
         }
+    }
+
+    /// Find the next non-comment line after the given line.
+    ///
+    /// This skips over any consecutive comment lines to find the actual
+    /// code line that the directive should apply to. Limited to [`MAX_COMMENT_CHAIN_LINES`]
+    /// to avoid traversing too far.
+    fn find_next_non_comment_line(line: usize, comment_lines: &HashSet<usize>) -> usize {
+        let mut next = line + 1;
+        let max_line = line + MAX_COMMENT_CHAIN_LINES;
+        // Skip consecutive comment lines (with a reasonable limit to avoid infinite loops)
+        while comment_lines.contains(&next) && next < max_line {
+            next += 1;
+        }
+        next
     }
 }
 
@@ -381,18 +431,185 @@ t(`${dynamicKey}`);
 
 // Line 6
 // glot-disable-next-line
-// Line 8
+const x = 1;
 "#;
         let comments = parse_and_collect(source);
 
         // Declaration on line 3
         assert!(comments.declarations.entries.contains_key(&3));
 
-        // Suppression for line 8 (next line after line 7)
+        // Suppression for line 8 (code after glot-disable-next-line on line 7)
         assert!(
             comments
                 .suppressions
                 .is_suppressed(8, SuppressibleRule::Hardcoded)
+        );
+    }
+
+    // ============================================================
+    // Consecutive comment handling tests
+    // ============================================================
+
+    #[test]
+    fn test_consecutive_comments_suppression_applies_to_code() {
+        // When glot-disable-next-line is followed by another comment,
+        // the suppression should apply to the first non-comment line
+        //
+        // Line numbers in source:
+        //   Line 1: (empty)
+        //   Line 2: {/* glot-disable-next-line untranslated */}
+        //   Line 3: {/* glot-message-keys "Common.*" */}
+        //   Line 4: {t(`${key}`)}
+        let source = r#"
+{/* glot-disable-next-line untranslated */}
+{/* glot-message-keys "Common.*" */}
+{t(`${key}`)}
+"#;
+        let comments = parse_and_collect(source);
+
+        // Line 4 should be suppressed (skipping over the comment on line 3)
+        assert!(
+            comments
+                .suppressions
+                .is_suppressed(4, SuppressibleRule::Untranslated),
+            "Line 4 should be suppressed for Untranslated rule"
+        );
+    }
+
+    #[test]
+    fn test_consecutive_comments_declaration_found() {
+        // Declaration should be found when searching backwards through comments
+        //
+        // Line numbers in source:
+        //   Line 1: (empty)
+        //   Line 2: {/* glot-disable-next-line untranslated */}
+        //   Line 3: {/* glot-message-keys "Common.*" */}  <- declaration
+        //   Line 4: {t(`${key}`)}  <- code line, should find declaration on line 3
+        let source = r#"
+{/* glot-disable-next-line untranslated */}
+{/* glot-message-keys "Common.*" */}
+{t(`${key}`)}
+"#;
+        let comments = parse_and_collect(source);
+
+        // Declaration should be accessible for line 4 (t() call)
+        let decl = comments.declarations.get_declaration(4);
+        assert!(decl.is_some(), "Declaration should be found for line 4");
+        assert_eq!(decl.unwrap().absolute_patterns, vec!["Common.*"]);
+    }
+
+    #[test]
+    fn test_multiple_consecutive_comments() {
+        // Multiple glot directives on consecutive lines
+        //
+        // Line numbers in source:
+        //   Line 1: (empty)
+        //   Line 2: {/* glot-disable-next-line hardcoded */}
+        //   Line 3: {/* glot-disable-next-line untranslated */}
+        //   Line 4: {/* glot-message-keys "Status.*" */}  <- declaration
+        //   Line 5: {t(`${dynamicKey}`)}  <- code line, both suppressions apply
+        let source = r#"
+{/* glot-disable-next-line hardcoded */}
+{/* glot-disable-next-line untranslated */}
+{/* glot-message-keys "Status.*" */}
+{t(`${dynamicKey}`)}
+"#;
+        let comments = parse_and_collect(source);
+
+        // Line 5 should be suppressed for both rules
+        assert!(
+            comments
+                .suppressions
+                .is_suppressed(5, SuppressibleRule::Hardcoded),
+            "Line 5 should be suppressed for Hardcoded"
+        );
+        assert!(
+            comments
+                .suppressions
+                .is_suppressed(5, SuppressibleRule::Untranslated),
+            "Line 5 should be suppressed for Untranslated"
+        );
+
+        // Declaration should be found
+        let decl = comments.declarations.get_declaration(5);
+        assert!(decl.is_some());
+        assert_eq!(decl.unwrap().absolute_patterns, vec!["Status.*"]);
+    }
+
+    #[test]
+    fn test_non_consecutive_comments_not_merged() {
+        // Comments separated by blank lines should NOT be merged.
+        // Blank lines are not in comment_lines, so they break the chain.
+        //
+        // Line numbers in source:
+        //   Line 1: (empty)
+        //   Line 2: {/* glot-disable-next-line untranslated */}  <- targets line 3
+        //   Line 3: (empty)  <- blank line, NOT a comment
+        //   Line 4: {t(`${key}`)}  <- NOT suppressed
+        let source = r#"
+{/* glot-disable-next-line untranslated */}
+
+{t(`${key}`)}
+"#;
+        let comments = parse_and_collect(source);
+
+        // Line 4 should NOT be suppressed (blank line breaks the chain)
+        // The directive on line 2 targets line 3 (the blank line), not line 4
+        assert!(
+            !comments
+                .suppressions
+                .is_suppressed(4, SuppressibleRule::Untranslated),
+            "Line 4 should not be suppressed due to blank line gap"
+        );
+    }
+
+    #[test]
+    fn test_declaration_found_through_comment_chain() {
+        // Declaration above other comments should still be found
+        //
+        // Line numbers in source:
+        //   Line 1: (empty)
+        //   Line 2: {/* glot-message-keys "Common.*" */}  <- declaration
+        //   Line 3: {/* glot-disable-next-line untranslated */}  <- comment (skipped)
+        //   Line 4: {t(`${key}`)}  <- code line, searches back through line 3 to find line 2
+        let source = r#"
+{/* glot-message-keys "Common.*" */}
+{/* glot-disable-next-line untranslated */}
+{t(`${key}`)}
+"#;
+        let comments = parse_and_collect(source);
+
+        // Declaration on line 2 should be found for line 4
+        let decl = comments.declarations.get_declaration(4);
+        assert!(
+            decl.is_some(),
+            "Declaration should be found through comment chain"
+        );
+        assert_eq!(decl.unwrap().absolute_patterns, vec!["Common.*"]);
+    }
+
+    #[test]
+    fn test_declaration_not_found_with_blank_line_gap() {
+        // Declaration separated by blank line should NOT be found.
+        // Blank lines are not in comment_lines, so they break the backward search.
+        //
+        // Line numbers in source:
+        //   Line 1: (empty)
+        //   Line 2: {/* glot-message-keys "Common.*" */}  <- declaration
+        //   Line 3: (empty)  <- blank line, NOT a comment, breaks chain
+        //   Line 4: {t(`${key}`)}  <- code line, search stops at line 3
+        let source = r#"
+{/* glot-message-keys "Common.*" */}
+
+{t(`${key}`)}
+"#;
+        let comments = parse_and_collect(source);
+
+        // Declaration on line 2 should NOT be found for line 4 (blank line breaks chain)
+        let decl = comments.declarations.get_declaration(4);
+        assert!(
+            decl.is_none(),
+            "Declaration should not be found due to blank line gap"
         );
     }
 }

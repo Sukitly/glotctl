@@ -6,6 +6,7 @@
 
 use std::collections::HashSet;
 
+use crate::core::collect::comments::collector::MAX_COMMENT_CHAIN_LINES;
 use crate::core::collect::types::{Declarations, KeyDeclaration};
 use crate::core::utils::{expand_glob_pattern, is_glob_pattern};
 
@@ -121,19 +122,46 @@ impl KeyDeclaration {
 }
 
 impl Declarations {
-    /// Get declaration for a line. Also checks the previous line
-    /// (declaration on the line before the `t()` call).
+    /// Get declaration for a line.
+    ///
+    /// This method searches backwards from the given line, skipping over
+    /// consecutive comment lines to find the nearest declaration. This allows
+    /// multiple glot directives to appear on consecutive lines:
+    ///
+    /// ```tsx
+    /// {/* glot-disable-next-line untranslated */}
+    /// {/* glot-message-keys "Common.*" */}
+    /// {t(`${key}`)}  // <- declaration found from line above
+    /// ```
+    ///
+    /// **Note**: Blank lines break the search chain. The search is also limited
+    /// to [`MAX_COMMENT_CHAIN_LINES`] to avoid traversing too far.
     pub fn get_declaration(&self, line: usize) -> Option<&KeyDeclaration> {
         // Check current line first
         if let Some(decl) = self.entries.get(&line) {
             return Some(decl);
         }
-        // Check previous line (declaration on the line before the t() call)
-        if line > 1
-            && let Some(decl) = self.entries.get(&(line - 1))
-        {
-            return Some(decl);
+
+        // Search backwards through previous lines, skipping comments
+        // Limit to reasonable range to avoid searching too far
+        let mut prev = line.saturating_sub(1);
+        let min_line = line.saturating_sub(MAX_COMMENT_CHAIN_LINES);
+
+        while prev >= 1 && prev >= min_line {
+            // Check if this line has a declaration
+            if let Some(decl) = self.entries.get(&prev) {
+                return Some(decl);
+            }
+
+            // If this line is not a comment, stop searching
+            // (declarations must be on immediately preceding comment lines)
+            if !self.comment_lines.contains(&prev) {
+                break;
+            }
+
+            prev = prev.saturating_sub(1);
         }
+
         None
     }
 }
