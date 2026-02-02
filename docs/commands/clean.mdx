@@ -33,17 +33,28 @@ bunx glot clean [OPTIONS]
   shows what would be deleted.
 </ParamField>
 
-<ParamField path="--unused" type="boolean" default="false">
-  Only clean unused keys (defined in locale files but not used in code).
+<ParamField path="--rules" type="string[]" default="all">
+  Rules to clean. Can be specified multiple times. If not specified, all rules are applied.
+  
+  Possible values:
+  - `unused` - Keys defined in locale files but not used in code
+  - `orphan` - Keys in non-primary locales but not in primary locale
 </ParamField>
 
-<ParamField path="--orphan" type="boolean" default="false">
-  Only clean orphan keys (exist in non-primary locales but not in primary
-  locale).
+<ParamField path="--source-root" type="string">
+  Override the source code root directory. Defaults to the value from configuration file.
 </ParamField>
 
-<ParamField path="--path" type="string" default=".">
-  Directory to check.
+<ParamField path="--messages-root" type="string">
+  Override the messages directory path. Defaults to the value from configuration file.
+</ParamField>
+
+<ParamField path="--primary-locale" type="string">
+  Override the primary locale. Defaults to the value from configuration file.
+</ParamField>
+
+<ParamField path="-v, --verbose" type="boolean" default="false">
+  Enable verbose output for debugging.
 </ParamField>
 
 ## Dry-Run Mode (Default)
@@ -132,19 +143,19 @@ Remove keys that exist in locale files but are never used in code:
 
 <CodeGroup>
 ```bash npm
-npx glot clean --unused --apply
+npx glot clean --rules unused --apply
 ```
 
 ```bash pnpm
-pnpm exec glot clean --unused --apply
+pnpm exec glot clean --rules unused --apply
 ```
 
 ```bash yarn
-yarn glot clean --unused --apply
+yarn glot clean --rules unused --apply
 ```
 
 ```bash bun
-bunx glot clean --unused --apply
+bunx glot clean --rules unused --apply
 ```
 
 </CodeGroup>
@@ -155,25 +166,25 @@ Remove keys that exist in non-primary locales but not in the primary locale:
 
 <CodeGroup>
 ```bash npm
-npx glot clean --orphan --apply
+npx glot clean --rules orphan --apply
 ```
 
 ```bash pnpm
-pnpm exec glot clean --orphan --apply
+pnpm exec glot clean --rules orphan --apply
 ```
 
 ```bash yarn
-yarn glot clean --orphan --apply
+yarn glot clean --rules orphan --apply
 ```
 
 ```bash bun
-bunx glot clean --orphan --apply
+bunx glot clean --rules orphan --apply
 ```
 
 </CodeGroup>
 
 <Note>
-  When neither `--unused` nor `--orphan` is specified, both types are cleaned.
+  When `--rules` is not specified, both `unused` and `orphan` keys are cleaned.
 </Note>
 
 ## Safety Checks
@@ -275,23 +286,23 @@ bunx glot clean --apply
 
 </CodeGroup>
 
-### Clean Only Unused Keys in Specific Directory
+### Clean Only Unused Keys with Custom Source Root
 
 <CodeGroup>
 ```bash npm
-npx glot clean --unused --apply --path ./src
+npx glot clean --rules unused --apply --source-root ./src
 ```
 
 ```bash pnpm
-pnpm exec glot clean --unused --apply --path ./src
+pnpm exec glot clean --rules unused --apply --source-root ./src
 ```
 
 ```bash yarn
-yarn glot clean --unused --apply --path ./src
+yarn glot clean --rules unused --apply --source-root ./src
 ```
 
 ```bash bun
-bunx glot clean --unused --apply --path ./src
+bunx glot clean --rules unused --apply --source-root ./src
 ```
 
 </CodeGroup>

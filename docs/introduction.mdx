@@ -23,11 +23,23 @@ Glot is a fast Rust-based CLI tool for checking internationalization (i18n) issu
   >
     Identify translation keys used in code but missing from your locale files
   </Card>
+  <Card title="Unused Key Detection" icon="trash" href="/detection/unused-keys">
+    Find translation keys defined in primary locale but never used in code
+  </Card>
   <Card title="Orphan Key Detection" icon="broom" href="/detection/orphan-keys">
-    Find unused translation keys defined in locale files but never used in code
+    Find keys in non-primary locales that don't exist in primary locale
+  </Card>
+  <Card title="Replica Lag Detection" icon="clock" href="/detection/replica-lag">
+    Find keys in primary locale missing from other locales
   </Card>
   <Card title="Untranslated Detection" icon="language" href="/detection/untranslated">
     Detect values identical to primary locale that may need translation
+  </Card>
+  <Card title="Type Mismatch Detection" icon="exclamation" href="/detection/type-mismatch">
+    Detect type conflicts between locales (string vs array) that cause runtime errors
+  </Card>
+  <Card title="Unresolved Key Detection" icon="question" href="/detection/unresolved-keys">
+    Find dynamic keys that cannot be statically analyzed
   </Card>
   <Card title="Multi-language Support" icon="globe">
     Detects text in any language using Unicode alphabetic character detection

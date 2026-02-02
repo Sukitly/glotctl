@@ -33,12 +33,20 @@ bunx glot fix [OPTIONS]
   only shows what would be changed.
 </ParamField>
 
-<ParamField path="--path" type="string" default=".">
-  Directory to process.
+<ParamField path="--source-root" type="string">
+  Override the source code root directory. Defaults to the value from configuration file.
+</ParamField>
+
+<ParamField path="--messages-root" type="string">
+  Override the messages directory path. Defaults to the value from configuration file.
+</ParamField>
+
+<ParamField path="--primary-locale" type="string">
+  Override the primary locale. Defaults to the value from configuration file.
 </ParamField>
 
 <ParamField path="-v, --verbose" type="boolean" default="false">
-  Enable verbose output.
+  Enable verbose output for debugging.
 </ParamField>
 
 ## Why Use Fix?
