@@ -22,3 +22,7 @@ test-example name:
 # Test with verbose
 test-example-v name:
     cargo build && cd examples/{{name}} && ../../target/debug/glot check -v
+
+# Release a new version (patch, minor, or major)
+release level="patch":
+    ./scripts/release.sh {{level}}
