@@ -1,0 +1,18 @@
+---
+source: tests/cli/baseline.rs
+info:
+  program: glot
+  args:
+    - baseline
+    - "--apply"
+  env:
+    GLOT_DISABLE_TIMING: "1"
+    NO_COLOR: "1"
+---
+success: true
+exit_code: 0
+----- stdout -----
+Inserted 1 comment(s) in 1 file(s) (processed 1 issue(s)):
+  - hardcoded: 1 comment(s) (from 1 issue(s))
+
+----- stderr -----

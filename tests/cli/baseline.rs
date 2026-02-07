@@ -527,6 +527,95 @@ export function App({ isPending }) {
 }
 
 #[test]
+fn test_baseline_hardcoded_logical_or_multiline_uses_js_comment() -> Result<()> {
+    // Multi-line logical OR inside JSX expression: the fallback string is on
+    // a continuation line inside the expression container, so it needs `// ...`
+    // comment style, not `{/* ... */}`.
+    let test = CliTest::new()?;
+    setup_config(&test)?;
+
+    test.write_file(
+        "src/app.tsx",
+        r#"export function App({ title }) {
+    return (
+        <div>
+            <p>
+                {title ||
+                    "Default title"}
+            </p>
+        </div>
+    );
+}
+"#,
+    )?;
+
+    test.write_file("messages/en.json", r#"{}"#)?;
+
+    let mut cmd = test.baseline_command();
+    cmd.arg("--apply");
+    assert_cmd_snapshot!(cmd);
+
+    let content = test.read_file("src/app.tsx")?;
+    assert_comment_insertions(&content, JS_HARDCODED, &["\"Default title\""]);
+    assert!(
+        !content.contains(JSX_HARDCODED),
+        "Expected no JSX comments for continuation line in expression, got:\n{}",
+        content
+    );
+    Ok(())
+}
+
+#[test]
+fn test_baseline_untranslated_logical_or_multiline_uses_js_comment() -> Result<()> {
+    // Multi-line logical OR with t() call on continuation line:
+    //   {currentChapterTitle ||
+    //     t("chapterNumber", { number: currentChapter })}
+    // The t() call is on a different line from the opening `{`, so the
+    // disable comment should use `// ...` style, not `{/* ... */}`.
+    let test = CliTest::new()?;
+    setup_config(&test)?;
+
+    test.write_file(
+        "src/app.tsx",
+        r#"import { useTranslations } from "next-intl";
+export function App({ dynamicTitle }) {
+    const t = useTranslations("Common");
+    return (
+        <div>
+            <p>
+                {dynamicTitle ||
+                    t("fallbackTitle")}
+            </p>
+        </div>
+    );
+}
+"#,
+    )?;
+
+    test.write_file(
+        "messages/en.json",
+        r#"{"Common": {"fallbackTitle": "Fallback"}}"#,
+    )?;
+    test.write_file(
+        "messages/zh.json",
+        r#"{"Common": {"fallbackTitle": "Fallback"}}"#,
+    )?;
+
+    let mut cmd = test.baseline_command();
+    cmd.arg("--apply");
+    assert_cmd_snapshot!(cmd);
+
+    let content = test.read_file("src/app.tsx")?;
+    assert_comment_insertions(&content, JS_UNTRANSLATED, &["t(\"fallbackTitle\")"]);
+    assert!(
+        !content.contains(JSX_UNTRANSLATED),
+        "Expected no JSX comments for continuation line in expression, got:\n{}",
+        content
+    );
+    Ok(())
+}
+
+#[test]
 fn test_baseline_map_expression() -> Result<()> {
     // {items.map(...)} - elements inside map are in expression context
     let test = CliTest::new()?;

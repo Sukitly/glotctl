@@ -57,6 +57,9 @@ struct JsxState {
     in_checked_attr: bool,
     /// Inside a JSX expression container `{...}`.
     in_expr: bool,
+    /// The line where the current expression container opens (1-indexed).
+    /// Only meaningful when `in_expr` is true.
+    expr_start_line: usize,
 }
 
 /// Kind of JavaScript statement that produces JSX.
@@ -93,6 +96,7 @@ impl JsxState {
             in_attr: false,
             in_checked_attr: false,
             in_expr: false,
+            expr_start_line: 0,
         }
     }
 }
@@ -315,10 +319,15 @@ impl<'a> FileAnalyzer<'a> {
             return CommentStyle::Js;
         }
 
-        // B) Ternary branches inside JSX expressions -> JS comment
-        if self.jsx_state.in_expr
-            && (trimmed_line.starts_with(':') || trimmed_line.starts_with('?'))
-        {
+        // B) Continuation lines inside JSX expression containers -> JS comment
+        // When in_expr is true and the issue is on a different line from the
+        // opening `{`, we're on a continuation line inside a multi-line expression:
+        //   {currentChapterTitle ||
+        //     t("chapterNumber", { number: currentChapter })}
+        // Here `t(...)` needs `// ...` comment, not `{/* ... */}`.
+        // When the issue is on the same line as `{` (e.g., `{t("greeting")}`),
+        // the comment goes above in JSX children context → JSX style.
+        if self.jsx_state.in_expr && line != self.jsx_state.expr_start_line {
             return CommentStyle::Js;
         }
 
@@ -780,7 +789,9 @@ impl<'a> Visit for FileAnalyzer<'a> {
 
     fn visit_jsx_expr_container(&mut self, node: &JSXExprContainer) {
         let prev_state = self.jsx_state;
+        let expr_line = self.source_map.lookup_char_pos(node.span.lo).line;
         self.jsx_state.in_expr = true;
+        self.jsx_state.expr_start_line = expr_line;
 
         // HardcodedChecker logic: check expressions for string literals
         // Only check if we're not in an attribute, or if we're in a checked attribute
