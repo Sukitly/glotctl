@@ -216,122 +216,18 @@ Each issue shows:
 - File path and location
 - Source code context with a pointer
 
-## Existing Projects: Establish a Baseline
+## Existing Projects
 
-If your project already has many hardcoded strings, fixing them all at once isn't practical. Use the `baseline` command to suppress existing warnings and start fresh.
+If your project already has many hardcoded strings, use the [baseline command](/commands/baseline) to suppress existing warnings and start fresh:
 
-### Preview Changes (Dry Run)
-
-First, see what comments would be inserted:
-
-<CodeGroup>
-```bash npm
-npx glot baseline
-```
-
-```bash pnpm
-pnpm exec glot baseline
-```
-
-```bash yarn
-yarn glot baseline
-```
-
-```bash bun
-bunx glot baseline
-```
-
-</CodeGroup>
-
-Output:
-
-```
-Dry-run mode: showing comments that would be inserted
-
-./src/components/Button.tsx:5
-  Would add: // glot-disable-next-line
-  Before: return <button>Submit</button>;
-
-2 comments would be inserted. Run with --apply to insert.
-```
-
-### Apply the Baseline
-
-Insert the suppression comments:
-
-<CodeGroup>
-```bash npm
+```bash
 npx glot baseline --apply
 ```
 
-```bash pnpm
-pnpm exec glot baseline --apply
-```
-
-```bash yarn
-yarn glot baseline --apply
-```
-
-```bash bun
-bunx glot baseline --apply
-```
-
-</CodeGroup>
-
-This inserts `// glot-disable-next-line` comments above each hardcoded text:
-
-```tsx
-export function Button() {
-  // glot-disable-next-line
-  return <button>Submit</button>;
-}
-```
-
-Now you can:
-
-1. Add glot to CI immediately - new hardcoded text will be caught
-2. Gradually fix existing issues and remove the suppression comments over time
+This inserts `// glot-disable-next-line` comments above each hardcoded text, so you can add glot to CI immediately and gradually fix existing issues over time.
 
 <Tip>
-  See [Baseline Command](/commands/baseline) for more options and details.
-</Tip>
-
-## Dynamic Keys: Auto-Insert Declarations
-
-If your project uses dynamic translation keys like `` t(`items.${type}`) ``, use the `fix` command to automatically declare them:
-
-<CodeGroup>
-```bash npm
-npx glot fix --apply
-```
-
-```bash pnpm
-pnpm exec glot fix --apply
-```
-
-```bash yarn
-yarn glot fix --apply
-```
-
-```bash bun
-bunx glot fix --apply
-```
-
-</CodeGroup>
-
-This inserts `glot-message-keys` comments with inferred patterns:
-
-```tsx
-// Before
-t(`${prefix}.submit`)
-
-// After
-{/* glot-message-keys "Common.*.submit" */}
-t(`${prefix}.submit`)
-```
-
-<Tip>
-  See [Fix Command](/commands/fix) for more options and details.
+  If your project uses dynamic translation keys like `` t(`items.${type}`) ``, use [glot fix](/commands/fix) to auto-insert `glot-message-keys` declarations.
 </Tip>
 
 ## Fixing Issues
@@ -381,64 +277,13 @@ For convenience, add glot commands to your `package.json`:
 
 ## Using with CI
 
-Glot returns exit code 1 when issues are found, making it perfect for CI pipelines:
+Glot returns exit code 1 when errors are found (exit 0 for warnings only), making it ideal for CI pipelines. Add a step to your workflow:
 
-<CodeGroup>
-```yaml npm .github/workflows/i18n.yml
-name: i18n Check
-on: [push, pull_request]
-
-jobs:
-check:
-runs-on: ubuntu-latest
-steps: - uses: actions/checkout@v4 - uses: actions/setup-node@v4 - run: npm ci - run: npx glot check
-
-````
-
-```yaml pnpm .github/workflows/i18n.yml
-name: i18n Check
-on: [push, pull_request]
-
-jobs:
-  check:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-      - run: pnpm install
-      - run: pnpm exec glot check
-````
-
-```yaml yarn .github/workflows/i18n.yml
-name: i18n Check
-on: [push, pull_request]
-
-jobs:
-  check:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-      - run: yarn install
-      - run: yarn glot check
+```bash
+npx glot check
 ```
 
-```yaml bun .github/workflows/i18n.yml
-name: i18n Check
-on: [push, pull_request]
-
-jobs:
-  check:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-      - run: bun install
-      - run: bunx glot check
-```
-
-</CodeGroup>
+See [Check Command — Severity](/commands/check#severity) for which check types are errors vs warnings, and [Check Command — CI Examples](/commands/check#ci-examples) for full GitHub Actions examples.
 
 ## Next Steps
 

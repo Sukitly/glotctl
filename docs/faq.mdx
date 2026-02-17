@@ -57,6 +57,41 @@ Without `--apply`, these commands only show a preview (dry run). All other comma
 
 </Accordion>
 
+<Accordion title="How fast is glot?">
+
+Glot is built in Rust and uses swc for parsing, making it very fast. Typical performance:
+
+- **Small projects** (~50 files): under 1 second
+- **Medium projects** (~500 files): 1–3 seconds
+- **Large projects** (~2000+ files): 3–10 seconds
+
+Performance depends on the number of files scanned and locale file sizes. You can limit what's scanned via the `includes` and `ignores` configuration options.
+
+</Accordion>
+
+<Accordion title="What versions of Next.js and next-intl are supported?">
+
+Glot works with any version of **Next.js** (App Router and Pages Router) and any version of **next-intl**, as long as your project follows the standard patterns:
+
+- `useTranslations` / `getTranslations` for obtaining translation functions
+- JSON-based locale files (e.g., `messages/en.json`)
+
+Glot analyzes source code statically — it doesn't import or execute your project, so there are no runtime version constraints.
+
+</Accordion>
+
+<Accordion title="Does glot work on Windows, macOS, and Linux?">
+
+**Yes.** Glot is distributed as a pre-compiled npm package with binaries for:
+
+- macOS (Apple Silicon and Intel)
+- Linux (x64 and ARM64)
+- Windows (x64)
+
+If you install via `npm install -D glotctl`, the correct binary is selected automatically.
+
+</Accordion>
+
 ## Detection Issues
 
 <Accordion title="Why is some text not being detected?">

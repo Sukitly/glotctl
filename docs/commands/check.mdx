@@ -41,6 +41,25 @@ You can run specific checks or all checks at once:
 | `type-mismatch` | Find type conflicts between primary and replica locales (string vs array)    |
 | `unresolved`    | Find keys that cannot be statically resolved (variables, template literals)  |
 
+### Severity
+
+Each check type has a fixed severity level. **Errors** cause a non-zero exit code (exit 1); **warnings** do not.
+
+| Type            | Severity  | Exit Code |
+| --------------- | --------- | --------- |
+| `hardcoded`     | Error     | 1         |
+| `missing`       | Error     | 1         |
+| `type-mismatch` | Error     | 1         |
+| `orphan`        | Warning   | 0         |
+| `untranslated`  | Warning   | 0         |
+| `unused`        | Warning   | 0         |
+| `replica-lag`   | Warning   | 0         |
+| `unresolved`    | Warning   | 0         |
+
+<Tip>
+In CI pipelines, only errors will fail the build. Warnings are informational and won't block your workflow.
+</Tip>
+
 <CodeGroup>
 ```bash npm
 # Run all checks (default)
@@ -331,6 +350,70 @@ Checking file: ./src/components/Form.tsx
 error: "Submit"  hardcoded-text
   --> ./src/components/Button.tsx:5:22
 ```
+
+## CI Examples
+
+Glot works well in CI pipelines. Here are GitHub Actions examples:
+
+<CodeGroup>
+```yaml npm .github/workflows/i18n.yml
+name: i18n Check
+on: [push, pull_request]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+      - run: npm ci
+      - run: npx glot check
+```
+
+```yaml pnpm .github/workflows/i18n.yml
+name: i18n Check
+on: [push, pull_request]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+      - run: pnpm install
+      - run: pnpm exec glot check
+```
+
+```yaml yarn .github/workflows/i18n.yml
+name: i18n Check
+on: [push, pull_request]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+      - run: yarn install
+      - run: yarn glot check
+```
+
+```yaml bun .github/workflows/i18n.yml
+name: i18n Check
+on: [push, pull_request]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install
+      - run: bunx glot check
+```
+
+</CodeGroup>
 
 ## Related
 
