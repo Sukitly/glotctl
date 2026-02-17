@@ -1,0 +1,4 @@
+[default.extend-words]
+# German words used in i18n documentation examples
+Funktion = "Funktion"
+Produktname = "Produktname"
