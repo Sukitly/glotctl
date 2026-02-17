@@ -49,6 +49,25 @@ Glot is a fast Rust-based CLI tool for checking internationalization (i18n) issu
   </Card>
 </CardGroup>
 
+## Scope
+
+Glot is designed specifically for **Next.js** projects using **[next-intl](https://next-intl-docs.vercel.app/)** as the i18n library. It is not a general-purpose i18n linter.
+
+**Supported:**
+- Next.js App Router and Pages Router
+- next-intl's `useTranslations`, `getTranslations`, `t()`, `t.rich()`, `t.raw()`, `t.markup()`
+- TSX/JSX files with `.tsx`, `.jsx`, `.ts`, `.js` extensions
+- JSON-based locale files
+
+**Not supported:**
+- Other frameworks (Vue, Angular, Svelte, etc.)
+- Other i18n libraries (react-intl, i18next, lingui, etc.)
+- Non-JSON translation formats (YAML, PO, XLIFF, etc.)
+
+<Tip>
+If your project doesn't use next-intl, glot's hardcoded text detection still works — but translation key analysis (missing, unused, orphan, etc.) requires next-intl patterns.
+</Tip>
+
 ## Why Glot?
 
 - **Fast**: Built in Rust using the same parser as Next.js (swc)
@@ -58,14 +77,9 @@ Glot is a fast Rust-based CLI tool for checking internationalization (i18n) issu
 
 ## How It Works
 
-Glot parses your TSX/JSX files using the swc AST parser and visits each node to detect:
+Glot parses your TSX/JSX files using the [swc](https://swc.rs/) AST parser (the same parser used by Next.js) and performs static analysis to detect hardcoded text, track translation function usage, and resolve dynamic keys.
 
-1. **Text content** in JSX elements: `<button>Submit</button>`
-2. **String expressions**: `<div>{"Hello"}</div>`
-3. **Conditional text**: `{loading ? "Loading..." : "Done"}`
-4. **Attribute values**: `<input placeholder="Enter email" />`
-
-Any text containing at least one Unicode alphabetic character is flagged as potentially hardcoded.
+For a detailed breakdown of all supported patterns, detection capabilities, and known limitations, see [How Detection Works](/how-it-works).
 
 ## Quick Example
 

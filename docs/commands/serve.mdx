@@ -1,0 +1,133 @@
+---
+title: glot serve
+description: Start the MCP server for AI code agents
+---
+
+The `serve` command starts a [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server that allows AI code agents to analyze and fix i18n issues in your project.
+
+## Usage
+
+<CodeGroup>
+```bash npm
+npx glot serve
+```
+
+```bash pnpm
+pnpm exec glot serve
+```
+
+```bash yarn
+yarn glot serve
+```
+
+```bash bun
+bunx glot serve
+```
+
+</CodeGroup>
+
+## How It Works
+
+The server communicates over **stdio** using the MCP protocol. It is not intended to be run directly by users — instead, configure your code agent to launch it automatically.
+
+When started, the server:
+
+1. Reads the `.glotrc.json` configuration from the project
+2. Exposes 9 tools for scanning issues and modifying translation files
+3. Communicates with the agent via JSON-RPC over stdin/stdout
+
+## Available Tools
+
+The MCP server provides 9 tools:
+
+| Tool | Description |
+|------|-------------|
+| `get_config` | Returns the current glot configuration |
+| `get_locales` | Lists available locale files with key counts |
+| `scan_overview` | Returns statistics of all i18n issues |
+| `scan_hardcoded` | Returns detailed hardcoded text issues |
+| `scan_primary_missing` | Lists keys used in code but missing from primary locale |
+| `scan_replica_lag` | Lists keys missing from non-primary locales |
+| `scan_untranslated` | Lists values identical to the primary locale |
+| `scan_type_mismatch` | Lists type conflicts between locales |
+| `add_translations` | Adds translation keys to locale files |
+
+For detailed tool documentation including input/output schemas, see [MCP Server](/agents/mcp).
+
+## Agent Configuration
+
+You don't typically run `glot serve` directly. Instead, configure your code agent to use it:
+
+<Accordion title="Claude Code">
+
+```bash
+claude mcp add --transport stdio glot -- npx glot serve
+```
+
+Or create `.mcp.json` in your project root:
+
+```json
+{
+  "mcpServers": {
+    "glot": {
+      "command": "npx",
+      "args": ["glot", "serve"]
+    }
+  }
+}
+```
+
+</Accordion>
+
+<Accordion title="Cursor">
+
+Create `.cursor/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "glot": {
+      "command": "npx",
+      "args": ["glot", "serve"]
+    }
+  }
+}
+```
+
+</Accordion>
+
+<Accordion title="OpenCode">
+
+Configure in `opencode.json`:
+
+```json
+{
+  "mcp": {
+    "glot": {
+      "type": "local",
+      "command": ["npx", "glot", "serve"],
+      "enabled": true
+    }
+  }
+}
+```
+
+</Accordion>
+
+## Prerequisites
+
+Before using the MCP server:
+
+1. Install glotctl as a dev dependency (see [Quick Start](/quickstart#installation))
+2. Initialize configuration with `glot init` (see [glot init](/commands/init))
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="MCP Server Tools" icon="server" href="/agents/mcp">
+    Detailed tool documentation and workflows
+  </Card>
+  <Card title="Agent Skill" icon="brain" href="/agents/skill">
+    Install the glot-i18n skill for guided workflows
+  </Card>
+</CardGroup>

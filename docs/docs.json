@@ -24,7 +24,8 @@
               "commands/check",
               "commands/baseline",
               "commands/fix",
-              "commands/clean"
+              "commands/clean",
+              "commands/serve"
             ]
           },
           {
@@ -49,7 +50,7 @@
           },
           {
             "group": "Reference",
-            "pages": ["configuration", "directives", "how-it-works"]
+            "pages": ["configuration", "directives", "how-it-works", "faq"]
           }
         ]
       }

@@ -1,0 +1,219 @@
+---
+title: FAQ & Troubleshooting
+description: Frequently asked questions and common issues
+---
+
+## General
+
+<Accordion title="Does glot work with i18next / react-intl / other i18n libraries?">
+
+**No.** Glot is designed specifically for [next-intl](https://next-intl-docs.vercel.app/). Translation key analysis (missing, unused, orphan, replica-lag, etc.) relies on next-intl's `useTranslations` and `getTranslations` patterns.
+
+However, **hardcoded text detection** works regardless of your i18n library — it simply finds text in JSX/TSX that isn't wrapped in a translation function.
+
+</Accordion>
+
+<Accordion title="Does glot work with Vue, Angular, or Svelte?">
+
+**No.** Glot only parses JSX/TSX files and is built for Next.js projects. It uses swc (the same parser Next.js uses) to parse your source code.
+
+</Accordion>
+
+<Accordion title="Does glot support YAML, PO, or XLIFF translation files?">
+
+**No.** Glot only supports JSON locale files (e.g., `messages/en.json`). This is the format used by next-intl.
+
+</Accordion>
+
+<Accordion title="Can I use glot in a monorepo?">
+
+Yes. Set `sourceRoot` and `messagesRoot` to point to the correct locations:
+
+```json .glotrc.json
+{
+  "primaryLocale": "en",
+  "messagesRoot": "./packages/i18n/messages",
+  "includes": [
+    "apps/web/src/app/[locale]",
+    "apps/web/src/components",
+    "packages/ui/src"
+  ]
+}
+```
+
+See [Common Configurations](/configuration#common-configurations) for more examples.
+
+</Accordion>
+
+<Accordion title="Does glot modify my source code?">
+
+Only two commands modify files, and both require explicit `--apply` flags:
+
+- `glot baseline --apply` — inserts `// glot-disable-next-line` comments
+- `glot fix --apply` — inserts `/* glot-message-keys */` comments
+- `glot clean --apply` — removes unused keys from JSON locale files
+
+Without `--apply`, these commands only show a preview (dry run). All other commands (`check`, `init`, `serve`) are read-only.
+
+</Accordion>
+
+## Detection Issues
+
+<Accordion title="Why is some text not being detected?">
+
+Common reasons:
+
+1. **File not in `includes` paths** — glot only scans directories listed in your `.glotrc.json` `includes` config. Check that the file's directory is included.
+
+2. **File is a test file** — by default, `ignoreTestFiles` is `true`, which skips `*.test.*`, `*.spec.*`, and `__tests__/` files.
+
+3. **Text has no alphabetic characters** — glot only flags text containing at least one Unicode alphabetic character. Pure numbers (`123`) and symbols (`---`, `$100`) are ignored.
+
+4. **Suppressed by directive** — check if there's a `glot-disable-next-line` or `glot-disable` comment above the text.
+
+5. **Attribute not in `checkedAttributes`** — only attributes listed in `checkedAttributes` are checked. Custom attributes like `label` or `description` are not checked by default.
+
+6. **Text matches `ignoreTexts` pattern** — check your `.glotrc.json` for ignored text patterns.
+
+Run with `-v` (verbose) to see which files are being scanned:
+
+```bash
+npx glot check -v
+```
+
+</Accordion>
+
+<Accordion title="I'm getting false positives — how do I suppress them?">
+
+Several options, from most to least specific:
+
+1. **Single line**: Add `// glot-disable-next-line` (or `{/* glot-disable-next-line */}` in JSX) above the line.
+
+2. **Block**: Wrap with `// glot-disable` and `// glot-enable`.
+
+3. **Specific text patterns**: Add to `ignoreTexts` in `.glotrc.json`:
+   ```json
+   { "ignoreTexts": ["TODO", "N/A", "Lorem ipsum"] }
+   ```
+
+4. **Entire file**: Place `// glot-disable` on line 1 or 2.
+
+5. **Entire directory**: Add the path to `ignores` in `.glotrc.json`.
+
+See [Directives](/directives) for details.
+
+</Accordion>
+
+<Accordion title='Why does "glot clean" refuse to run?'>
+
+`glot clean` refuses to run when your code has **unresolved dynamic keys** — translation keys that use variables or template literals that glot can't statically analyze:
+
+```tsx
+// glot can't know which keys this uses
+t(`status.${code}`)
+```
+
+This is a safety feature to prevent accidentally deleting keys that are used dynamically.
+
+**Fix**: Declare your dynamic keys with `glot-message-keys` annotations:
+
+```tsx
+// glot-message-keys "status.active", "status.inactive", "status.pending"
+t(`status.${code}`)
+```
+
+Or use the `fix` command to auto-insert them:
+
+```bash
+npx glot fix --apply
+```
+
+Then `glot clean` will run safely.
+
+See [Unresolved Keys](/detection/unresolved-keys) and [glot fix](/commands/fix) for details.
+
+</Accordion>
+
+<Accordion title="Why are brand names / technical terms flagged?">
+
+Glot flags any text containing alphabetic characters. Brand names like "Google" or technical terms like "TypeScript" will be flagged.
+
+Suppress them per-line:
+
+```tsx
+{/* glot-disable-next-line */}
+<span>Acme Corporation</span>
+```
+
+Or globally via `ignoreTexts`:
+
+```json
+{ "ignoreTexts": ["Acme Corporation", "TypeScript"] }
+```
+
+</Accordion>
+
+## Configuration Issues
+
+<Accordion title='Glot says "Directory does not exist" for my includes path'>
+
+Glot validates that directories in `includes` exist. Common causes:
+
+1. **Wrong relative path** — paths in `includes` are relative to `sourceRoot`. If `sourceRoot` is `"./src"` and you have `"includes": ["app"]`, glot looks for `./src/app`.
+
+2. **Dynamic route syntax** — `[locale]` is treated as a literal folder name. Make sure the folder `[locale]` actually exists on disk.
+
+3. **Missing directory** — the directory may not exist in your project. Update `includes` to match your actual structure.
+
+</Accordion>
+
+<Accordion title="Where should I place .glotrc.json?">
+
+Place it in your **project root** (next to `package.json`). Glot searches upward from the current directory until it finds `.glotrc.json` or a `.git` directory.
+
+See [Configuration Resolution](/configuration#configuration-resolution) for the full search algorithm.
+
+</Accordion>
+
+## CI / Integration Issues
+
+<Accordion title="What exit codes does glot use?">
+
+| Code | Meaning |
+|------|---------|
+| 0 | No errors (warnings may exist) |
+| 1 | Errors found |
+
+**Errors** (exit code 1): hardcoded text, missing keys, type mismatches.
+
+**Warnings** (exit code 0): orphan keys, untranslated values, unused keys, replica-lag, unresolved keys.
+
+This means `glot check` in CI will only fail the build on actual errors, not warnings.
+
+</Accordion>
+
+<Accordion title="How do I adopt glot in a project with many existing issues?">
+
+Use the **baseline** workflow:
+
+1. Run `npx glot baseline --apply` to suppress all existing hardcoded text warnings
+2. Add `glot check` to CI — new issues will be caught immediately
+3. Gradually fix existing issues and remove suppression comments over time
+
+See [Baseline Command](/commands/baseline) for details.
+
+</Accordion>
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Configuration" icon="gear" href="/configuration">
+    Full configuration reference
+  </Card>
+  <Card title="Directives" icon="code" href="/directives">
+    Inline suppression directives
+  </Card>
+  <Card title="How Detection Works" icon="microscope" href="/how-it-works">
+    Supported patterns and limitations
+  </Card>
+</CardGroup>
