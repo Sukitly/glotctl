@@ -212,61 +212,19 @@ const statusKeys = { /* ... */ };
 
 ## glot-message-keys Annotation
 
-### Exact Keys
-
-List specific keys:
+Use `glot-message-keys` comments to declare which keys a dynamic expression uses:
 
 ```tsx
+// Exact keys
 // glot-message-keys "auth.login", "auth.logout", "auth.register"
-const action = getAction();
 <button>{t(`auth.${action}`)}</button>
-```
 
-### Glob Patterns
-
-Use `*` for wildcards:
-
-```tsx
-// glot-message-keys "pages.*"
-<title>{t(`pages.${pageName}`)}</title>
-
+// Glob patterns
 // glot-message-keys "errors.*.title", "errors.*.message"
-<div>
-  <h2>{t(`errors.${code}.title`)}</h2>
-  <p>{t(`errors.${code}.message`)}</p>
-</div>
+<h2>{t(`errors.${code}.title`)}</h2>
 ```
 
-### Multiple Annotations
-
-Use multiple comments for complex patterns:
-
-```tsx
-// glot-message-keys "user.*.name", "user.*.email"
-// glot-message-keys "admin.*.name", "admin.*.email"
-function renderProfile(role, userId) {
-  return (
-    <div>
-      <span>{t(`${role}.${userId}.name`)}</span>
-      <span>{t(`${role}.${userId}.email`)}</span>
-    </div>
-  );
-}
-```
-
-### Placement
-
-Place annotations **before** the dynamic key usage:
-
-```tsx
-// ✓ Correct - before the usage
-// glot-message-keys "status.*"
-return <span>{t(`status.${code}`)}</span>;
-
-// ✗ Wrong - after the usage
-return <span>{t(`status.${code}`)}</span>;
-// glot-message-keys "status.*"
-```
+Place annotations **before** the dynamic key usage. For full syntax reference (relative patterns, glob matching, JSX comments, multiple annotations), see [Directives — Dynamic Key Declaration](/directives#dynamic-key-declaration).
 
 ## Common Patterns
 

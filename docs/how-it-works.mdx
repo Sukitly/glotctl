@@ -352,98 +352,22 @@ OUTER.map(item => (
 
 ## glot-message-keys Annotation
 
-For dynamic keys that can't be statically analyzed, use `glot-message-keys` to declare expected keys.
-
-### Absolute Patterns
-
-Specify full key paths:
+For dynamic keys that can't be statically analyzed, use `glot-message-keys` to declare expected keys. This tells glot which keys are actually used, enabling safe cleanup with `glot clean` and suppressing unresolved key warnings.
 
 ```tsx
-// glot-message-keys "Namespace.key.path"
-t(dynamicKey);
-
-// Multiple keys
 // glot-message-keys "Status.active", "Status.inactive", "Status.pending"
 t(status);
+
+// Glob patterns
+// glot-message-keys "errors.*"
+t(`errors.${code}`);
 ```
 
-### Relative Patterns
-
-Patterns starting with `.` are expanded with the current namespace:
-
-```tsx
-const t = useTranslations("CharacterForm");
-
-// glot-message-keys ".items.*.title"
-t(`items.${idx}.title`);
-// Expands to: CharacterForm.items.*.title
-```
+You can also auto-insert these annotations with `glot fix --apply`.
 
 <Tip>
-Use relative patterns in components that receive `t` as a prop - they work with any namespace the component is called with.
+For full syntax (absolute patterns, relative patterns, glob matching, JSX comments), see [Directives — Dynamic Key Declaration](/directives#dynamic-key-declaration).
 </Tip>
-
-### Glob Pattern Matching
-
-Use `*` to match key segments:
-
-```tsx
-// glot-message-keys "errors.*"
-// Matches: errors.E001, errors.E002, errors.notFound
-
-// glot-message-keys "form.*.label"
-// Matches: form.email.label, form.password.label
-
-// glot-message-keys "step*.title"
-// Matches: step.title, step1.title, step2.title
-
-// Multiple wildcards
-// glot-message-keys "form.*.*.text"
-// Matches: form.email.hint.text, form.password.error.text
-```
-
-### JSX vs JS Comments
-
-Use the appropriate comment syntax based on context:
-
-```tsx
-// In JavaScript context
-// glot-message-keys "Common.key"
-const label = t(dynamicKey);
-
-// In JSX context
-{/* glot-message-keys "Common.key" */}
-<span>{t(dynamicKey)}</span>
-```
-
-### Auto-Inserting with glot fix
-
-Instead of manually adding `glot-message-keys` comments, use the `fix` command:
-
-```bash
-# Preview changes
-npx glot fix
-
-# Apply changes
-npx glot fix --apply
-```
-
-Glot analyzes template literal keys and infers the appropriate pattern. For example:
-
-```tsx
-// Before
-t(`${prefix}.submit`)
-
-// After (glot fix --apply)
-{/* glot-message-keys "Common.*.submit" */}
-t(`${prefix}.submit`)
-```
-
-<Note>
-`glot fix` only works for template literal keys with expressions. Pure variable keys like `t(keyName)` cannot have patterns inferred and must be declared manually.
-</Note>
-
-See [glot fix](/commands/fix) for details.
 
 ---
 
