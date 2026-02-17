@@ -24,8 +24,7 @@
               "commands/check",
               "commands/baseline",
               "commands/fix",
-              "commands/clean",
-              "commands/serve"
+              "commands/clean"
             ]
           },
           {
@@ -43,10 +42,7 @@
           },
           {
             "group": "Code Agents",
-            "pages": [
-              "agents/mcp",
-              "agents/skill"
-            ]
+            "pages": ["agents/mcp", "agents/skill"]
           },
           {
             "group": "Reference",
