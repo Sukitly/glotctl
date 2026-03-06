@@ -60,8 +60,9 @@ pub fn parse_jsx_source(
     GLOBALS.set(&Globals::new(), || {
         let source_file = source_map.new_source_file(FileName::Real(file_path.into()).into(), code);
 
+        let is_tsx = file_path.ends_with(".tsx") || file_path.ends_with(".jsx");
         let syntax = Syntax::Typescript(TsSyntax {
-            tsx: true,
+            tsx: is_tsx,
             ..Default::default()
         });
 

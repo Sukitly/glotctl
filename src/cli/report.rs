@@ -106,14 +106,23 @@ pub fn print_parse_error(count: usize, verbose: bool) {
 
 /// Print a parse error to a custom writer.
 pub fn print_parse_error_to<W: Write>(count: usize, verbose: bool, writer: &mut W) {
-    if count > 0 && !verbose {
-        let _ = writeln!(
-            writer,
-            "{} {} file(s) could not be parsed (use {} for details)",
-            "error:".bold().red(),
-            count,
-            "-v".cyan()
-        );
+    if count > 0 {
+        if verbose {
+            let _ = writeln!(
+                writer,
+                "{} {} file(s) could not be parsed",
+                "error:".bold().red(),
+                count,
+            );
+        } else {
+            let _ = writeln!(
+                writer,
+                "{} {} file(s) could not be parsed (use {} for details)",
+                "error:".bold().red(),
+                count,
+                "-v".cyan()
+            );
+        }
     }
 }
 
