@@ -1,0 +1,23 @@
+---
+source: tests/cli/check.rs
+info:
+  program: glot
+  args:
+    - check
+    - untranslated
+  env:
+    GLOT_DISABLE_TIMING: "1"
+    NO_COLOR: "1"
+---
+success: true
+exit_code: 0
+----- stdout -----
+warning: "Common.submit"  [untranslated]
+  --> ./messages/en.json:3:1
+  = note: ("Submit") identical in: ja; empty in: zh
+  = used: (no usages found)
+
+
+✘ 1 problems (0 errors, 1 warning)
+
+----- stderr -----
