@@ -2089,6 +2089,97 @@ export default function App() {
     Ok(())
 }
 
+#[test]
+fn test_untranslated_empty_string() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    test.write_file(
+        "messages/en.json",
+        r#"{
+            "Common": {
+                "submit": "Submit",
+                "cancel": "Cancel"
+            }
+        }"#,
+    )?;
+
+    // Chinese locale has empty string values (not translated yet)
+    test.write_file(
+        "messages/zh.json",
+        r#"{
+            "Common": {
+                "submit": "",
+                "cancel": "取消"
+            }
+        }"#,
+    )?;
+
+    test.write_file("src/app.tsx", r#"const x = 1;"#)?;
+
+    // Should detect empty string as untranslated
+    assert_cmd_snapshot!(test.check_command().arg("untranslated"));
+
+    Ok(())
+}
+
+#[test]
+fn test_untranslated_empty_and_identical() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    test.write_file(
+        "messages/en.json",
+        r#"{
+            "Common": {
+                "submit": "Submit"
+            }
+        }"#,
+    )?;
+
+    // zh has empty string, ja has identical value
+    test.write_file(
+        "messages/zh.json",
+        r#"{
+            "Common": {
+                "submit": ""
+            }
+        }"#,
+    )?;
+
+    test.write_file(
+        "messages/ja.json",
+        r#"{
+            "Common": {
+                "submit": "Submit"
+            }
+        }"#,
+    )?;
+
+    test.write_file("src/app.tsx", r#"const x = 1;"#)?;
+
+    // Should detect both empty and identical as untranslated
+    assert_cmd_snapshot!(test.check_command().arg("untranslated"));
+
+    Ok(())
+}
+
 // ============================================================
 // Type Mismatch Tests
 // ============================================================

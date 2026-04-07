@@ -289,7 +289,7 @@ The `usages` array contains up to 3 code locations where the key is used. `total
 
 ### `scan_untranslated`
 
-Lists translation values that are identical to the primary locale, which may indicate they haven't been translated yet. Includes code usage locations.
+Lists translation values that are identical to the primary locale or are empty strings, which may indicate they haven't been translated yet. Includes code usage locations.
 
 **Input:**
 
@@ -312,6 +312,7 @@ Lists translation values that are identical to the primary locale, which may ind
       "line": 5,
       "primaryLocale": "en",
       "identicalIn": ["es", "fr"],
+      "emptyIn": ["ko"],
       "usages": [
         { "filePath": "./src/components/Button.tsx", "line": 12, "col": 8 }
       ],
@@ -326,7 +327,7 @@ Lists translation values that are identical to the primary locale, which may ind
 }
 ```
 
-The `identicalIn` array lists locales where the value is identical to the primary locale. The `usages` array contains up to 3 code locations where the key is used.
+The `identicalIn` array lists locales where the value is identical to the primary locale. The `emptyIn` array lists locales where the value is an empty string. The `usages` array contains up to 3 code locations where the key is used.
 
 ### `scan_type_mismatch`
 

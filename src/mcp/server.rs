@@ -149,6 +149,9 @@ impl GlotMcpServer {
             for locale in &issue.identical_in {
                 untranslated_locales.insert(locale.clone());
             }
+            for locale in &issue.empty_in {
+                untranslated_locales.insert(locale.clone());
+            }
         }
 
         let mut type_mismatch_locales: HashSet<String> = HashSet::new();
@@ -343,6 +346,7 @@ impl GlotMcpServer {
                     context,
                     primary_locale,
                     identical_in,
+                    empty_in,
                     usages,
                 } = issue;
                 let (usages, total_usages) = to_usage_locations(&usages);
@@ -354,6 +358,7 @@ impl GlotMcpServer {
                     file_path,
                     line,
                     identical_in,
+                    empty_in,
                     primary_locale,
                     usages,
                     total_usages,

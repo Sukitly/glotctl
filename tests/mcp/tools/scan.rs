@@ -1,4 +1,7 @@
-use glot::mcp::{GlotMcpServer, types::ScanTypeMismatchParams};
+use glot::mcp::{
+    GlotMcpServer,
+    types::{ScanTypeMismatchParams, ScanUntranslatedParams},
+};
 use rmcp::handler::server::wrapper::Parameters;
 use serde_json::json;
 
@@ -386,4 +389,107 @@ async fn test_scan_hardcoded_no_issues() {
     // Should work even with no TSX files
     assert_eq!(json_result["totalCount"], 0);
     assert_eq!(json_result["totalFileCount"], 0);
+}
+
+// ============================================================================
+// scan_untranslated tests
+// ============================================================================
+
+#[tokio::test]
+async fn test_scan_untranslated_empty_string() {
+    let fixture = McpTestFixture::with_messages(vec![
+        (
+            "en",
+            json!({"common": {"submit": "Submit", "cancel": "Cancel"}}),
+        ),
+        ("zh", json!({"common": {"submit": "", "cancel": "取消"}})),
+    ])
+    .unwrap();
+    let server = GlotMcpServer::new();
+
+    let params = Parameters(ScanUntranslatedParams {
+        project_root_path: fixture.root(),
+        limit: None,
+        offset: None,
+    });
+
+    let result = server.scan_untranslated(params).await.unwrap();
+    let json_result = extract_tool_result_json(&result);
+
+    assert_eq!(json_result["totalCount"], 1);
+
+    let items = json_result["items"].as_array().unwrap();
+    assert_eq!(items.len(), 1);
+
+    let item = &items[0];
+    assert_eq!(item["key"], "common.submit");
+    assert_eq!(item["value"], "Submit");
+
+    // Should be in emptyIn, not identicalIn
+    let identical_in = item["identicalIn"].as_array().unwrap();
+    assert!(identical_in.is_empty());
+
+    let empty_in = item["emptyIn"].as_array().unwrap();
+    assert_eq!(empty_in.len(), 1);
+    assert_eq!(empty_in[0], "zh");
+}
+
+#[tokio::test]
+async fn test_scan_untranslated_empty_and_identical() {
+    let fixture = McpTestFixture::with_messages(vec![
+        ("en", json!({"common": {"submit": "Submit"}})),
+        ("zh", json!({"common": {"submit": ""}})),
+        ("ja", json!({"common": {"submit": "Submit"}})),
+    ])
+    .unwrap();
+    let server = GlotMcpServer::new();
+
+    let params = Parameters(ScanUntranslatedParams {
+        project_root_path: fixture.root(),
+        limit: None,
+        offset: None,
+    });
+
+    let result = server.scan_untranslated(params).await.unwrap();
+    let json_result = extract_tool_result_json(&result);
+
+    assert_eq!(json_result["totalCount"], 1);
+
+    let item = &json_result["items"][0];
+    assert_eq!(item["key"], "common.submit");
+
+    let identical_in = item["identicalIn"].as_array().unwrap();
+    assert_eq!(identical_in.len(), 1);
+    assert_eq!(identical_in[0], "ja");
+
+    let empty_in = item["emptyIn"].as_array().unwrap();
+    assert_eq!(empty_in.len(), 1);
+    assert_eq!(empty_in[0], "zh");
+}
+
+#[tokio::test]
+async fn test_scan_overview_counts_empty_as_untranslated() {
+    use glot::mcp::types::ScanOverviewParams;
+
+    let fixture = McpTestFixture::with_messages(vec![
+        ("en", json!({"common": {"submit": "Submit"}})),
+        ("zh", json!({"common": {"submit": ""}})),
+    ])
+    .unwrap();
+    let server = GlotMcpServer::new();
+
+    let params = Parameters(ScanOverviewParams {
+        project_root_path: fixture.root(),
+    });
+
+    let result = server.scan_overview(params).await.unwrap();
+    let json_result = extract_tool_result_json(&result);
+
+    assert_eq!(json_result["untranslated"]["totalCount"], 1);
+
+    let affected = json_result["untranslated"]["affectedLocales"]
+        .as_array()
+        .unwrap();
+    assert_eq!(affected.len(), 1);
+    assert_eq!(affected[0], "zh");
 }

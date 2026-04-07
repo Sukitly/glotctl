@@ -132,6 +132,7 @@ mod tests {
             context: msg_ctx,
             primary_locale: "en".to_string(),
             identical_in: vec!["zh".to_string()],
+            empty_in: vec![],
             usages: vec![usage1, usage2],
         };
 
@@ -177,6 +178,7 @@ mod tests {
             context: msg_ctx,
             primary_locale: "en".to_string(),
             identical_in: vec!["zh".to_string()],
+            empty_in: vec![],
             usages: vec![], // No usages
         };
 
