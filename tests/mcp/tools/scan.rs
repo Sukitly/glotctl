@@ -1,4 +1,7 @@
-use glot::mcp::{GlotMcpServer, types::{ScanTypeMismatchParams, ScanUntranslatedParams}};
+use glot::mcp::{
+    GlotMcpServer,
+    types::{ScanTypeMismatchParams, ScanUntranslatedParams},
+};
 use rmcp::handler::server::wrapper::Parameters;
 use serde_json::json;
 
@@ -395,7 +398,10 @@ async fn test_scan_hardcoded_no_issues() {
 #[tokio::test]
 async fn test_scan_untranslated_empty_string() {
     let fixture = McpTestFixture::with_messages(vec![
-        ("en", json!({"common": {"submit": "Submit", "cancel": "Cancel"}})),
+        (
+            "en",
+            json!({"common": {"submit": "Submit", "cancel": "Cancel"}}),
+        ),
         ("zh", json!({"common": {"submit": "", "cancel": "取消"}})),
     ])
     .unwrap();
@@ -481,7 +487,9 @@ async fn test_scan_overview_counts_empty_as_untranslated() {
 
     assert_eq!(json_result["untranslated"]["totalCount"], 1);
 
-    let affected = json_result["untranslated"]["affectedLocales"].as_array().unwrap();
+    let affected = json_result["untranslated"]["affectedLocales"]
+        .as_array()
+        .unwrap();
     assert_eq!(affected.len(), 1);
     assert_eq!(affected[0], "zh");
 }
