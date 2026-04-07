@@ -235,6 +235,8 @@ pub struct UntranslatedIssue {
     pub primary_locale: String,
     /// Locales where the value is identical to primary.
     pub identical_in: Vec<String>,
+    /// Locales where the value is an empty string.
+    pub empty_in: Vec<String>,
     /// Locations where this key is used in code.
     pub usages: Vec<ResolvedKeyUsage>,
 }
@@ -562,11 +564,14 @@ impl Report for UntranslatedIssue {
     }
 
     fn details(&self) -> Option<String> {
-        Some(format!(
-            "(\"{}\") identical in: {}",
-            self.context.value,
-            self.identical_in.join(", ")
-        ))
+        let mut parts = Vec::new();
+        if !self.identical_in.is_empty() {
+            parts.push(format!("identical in: {}", self.identical_in.join(", ")));
+        }
+        if !self.empty_in.is_empty() {
+            parts.push(format!("empty in: {}", self.empty_in.join(", ")));
+        }
+        Some(format!("(\"{}\") {}", self.context.value, parts.join("; ")))
     }
 
     fn usages(&self) -> &[ResolvedKeyUsage] {
@@ -843,6 +848,7 @@ mod tests {
             context: ctx,
             primary_locale: "en".to_string(),
             identical_in: vec!["zh".to_string()],
+            empty_in: vec![],
             usages: vec![],
         };
 

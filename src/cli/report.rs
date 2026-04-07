@@ -600,6 +600,7 @@ mod tests {
             context: msg_ctx,
             primary_locale: "en".to_string(),
             identical_in: vec!["zh".to_string(), "ja".to_string()],
+            empty_in: vec![],
             usages: vec![],
         });
 

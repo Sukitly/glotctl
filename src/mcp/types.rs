@@ -445,6 +445,8 @@ pub struct UntranslatedItem {
     pub line: usize,
     /// Locales where the value is identical to primary locale
     pub identical_in: Vec<String>,
+    /// Locales where the value is an empty string
+    pub empty_in: Vec<String>,
     pub primary_locale: String,
     /// Locations where this key is used in code (max 3)
     pub usages: Vec<KeyUsageLocation>,

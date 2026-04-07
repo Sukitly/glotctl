@@ -74,17 +74,25 @@ pub fn check_untranslated(
         }
 
         // Collect locales with identical values
-        let mut identical_in: Vec<String> = all_messages
-            .iter()
-            .filter(|(locale, msgs)| {
-                *locale != primary_locale
-                    && msgs.get(key).map(|e| &e.context.value) == Some(&primary_entry.context.value)
-            })
-            .map(|(locale, _)| locale.clone())
-            .collect();
-        identical_in.sort();
+        let mut identical_in: Vec<String> = Vec::new();
+        let mut empty_in: Vec<String> = Vec::new();
 
-        if !identical_in.is_empty() {
+        for (locale, msgs) in all_messages.iter() {
+            if *locale == primary_locale {
+                continue;
+            }
+            if let Some(entry) = msgs.get(key) {
+                if entry.context.value == primary_entry.context.value {
+                    identical_in.push(locale.clone());
+                } else if entry.context.value.is_empty() {
+                    empty_in.push(locale.clone());
+                }
+            }
+        }
+        identical_in.sort();
+        empty_in.sort();
+
+        if !identical_in.is_empty() || !empty_in.is_empty() {
             let usages: Vec<ResolvedKeyUsage> = non_suppressed.into_iter().collect();
 
             issues.push(UntranslatedIssue {
@@ -99,6 +107,7 @@ pub fn check_untranslated(
                 ),
                 primary_locale: primary_locale.to_string(),
                 identical_in,
+                empty_in,
                 usages,
             });
         }
@@ -226,6 +235,47 @@ mod tests {
         let issues = check_untranslated("en", &primary_messages, &all_messages, &key_usages);
         assert_eq!(issues.len(), 1);
         assert_eq!(issues[0].identical_in, vec!["ja", "zh"]); // Sorted
+    }
+
+    #[test]
+    fn test_check_untranslated_empty_string() {
+        let primary_messages = create_message_map("en.json", &[("Common.submit", "Submit")]);
+        let mut all_messages = HashMap::new();
+        all_messages.insert("en".to_string(), primary_messages.clone());
+        all_messages.insert(
+            "zh".to_string(),
+            create_message_map("zh.json", &[("Common.submit", "")]),
+        );
+
+        let key_usages = KeyUsageMap::new();
+
+        let issues = check_untranslated("en", &primary_messages, &all_messages, &key_usages);
+        assert_eq!(issues.len(), 1);
+        assert_eq!(issues[0].context.key, "Common.submit");
+        assert!(issues[0].identical_in.is_empty());
+        assert_eq!(issues[0].empty_in, vec!["zh"]);
+    }
+
+    #[test]
+    fn test_check_untranslated_empty_and_identical() {
+        let primary_messages = create_message_map("en.json", &[("Common.ok", "OK")]);
+        let mut all_messages = HashMap::new();
+        all_messages.insert("en".to_string(), primary_messages.clone());
+        all_messages.insert(
+            "zh".to_string(),
+            create_message_map("zh.json", &[("Common.ok", "")]),
+        );
+        all_messages.insert(
+            "ja".to_string(),
+            create_message_map("ja.json", &[("Common.ok", "OK")]),
+        );
+
+        let key_usages = KeyUsageMap::new();
+
+        let issues = check_untranslated("en", &primary_messages, &all_messages, &key_usages);
+        assert_eq!(issues.len(), 1);
+        assert_eq!(issues[0].identical_in, vec!["ja"]);
+        assert_eq!(issues[0].empty_in, vec!["zh"]);
     }
 
     #[test]
