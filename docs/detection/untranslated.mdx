@@ -5,20 +5,21 @@ description: Understanding untranslated value detection
 
 <Info>**Severity: Warning** — does not affect exit code or fail CI builds.</Info>
 
-Glot detects translation values in non-primary locales that are identical to the primary locale, which may indicate they haven't been translated yet.
+Glot detects translation values in non-primary locales that are identical to the primary locale or are empty strings, which may indicate they haven't been translated yet.
 
 ## What Are Untranslated Values?
 
 An untranslated value occurs when:
 
 1. A key exists in both the primary locale and a non-primary locale
-2. The value in the non-primary locale is **identical** to the primary locale
+2. The value in the non-primary locale is **identical** to the primary locale, **or** is an **empty string**
 
 This typically happens when:
 
 - Locale files are copy-pasted and translations are forgotten
 - A new key is added to all locales but only translated in the primary locale
 - Translations are incomplete or rushed
+- Translation tools or scripts create placeholder keys with empty values
 
 ## Example
 
@@ -33,7 +34,7 @@ Primary locale file:
 }
 ```
 
-Non-primary locale with untranslated values:
+Non-primary locale with untranslated values (identical to primary):
 
 ```json messages/zh.json
 {
@@ -47,22 +48,55 @@ Non-primary locale with untranslated values:
 Glot output:
 
 ```
-warning: "Common.submit"  untranslated
-  --> ./messages/en.json:3:0
+warning: "common.submit"  [untranslated]
+  --> ./messages/en.json:3:1
   = note: ("Submit") identical in: zh
   = used: (no usages found)
 
-warning: "Common.cancel"  untranslated
-  --> ./messages/en.json:4:0
+warning: "common.cancel"  [untranslated]
+  --> ./messages/en.json:4:1
   = note: ("Cancel") identical in: zh
   = used: (no usages found)
 
 ✘ 2 problems (0 errors, 2 warnings)
 ```
 
+### Empty String Values
+
+Non-primary locale with empty string values:
+
+```json messages/zh.json
+{
+  "common": {
+    "submit": "",
+    "cancel": "取消"
+  }
+}
+```
+
+Glot output:
+
+```
+warning: "common.submit"  [untranslated]
+  --> ./messages/en.json:3:1
+  = note: ("Submit") empty in: zh
+  = used: (no usages found)
+
+✘ 1 problems (0 errors, 1 warning)
+```
+
+When a key has both identical and empty values across different locales, both are shown:
+
+```
+warning: "common.submit"  [untranslated]
+  --> ./messages/en.json:3:1
+  = note: ("Submit") identical in: ja; empty in: zh
+  = used: (no usages found)
+```
+
 The output shows:
 - **File location**: Points to the primary locale file (`en.json`) as the source of truth
-- **Note**: Shows the value and which locales have identical (untranslated) values
+- **Note**: Shows the value and which locales have identical or empty (untranslated) values
 - **Used**: Shows where the key is used in code (clickable in IDEs), or "(no usages found)" if unused
 
 ## Detection Rules
@@ -97,9 +131,23 @@ Pure numbers and symbols are skipped since they're often legitimately the same a
 
 These won't be flagged even if identical across locales.
 
+### Empty String Values Are Flagged
+
+Empty string values in non-primary locales are always flagged, as they clearly indicate missing translations:
+
+```json messages/zh.json
+{
+  "common": {
+    "greeting": ""
+  }
+}
+```
+
+This will be flagged regardless of the primary locale value.
+
 ### Exact Match Required
 
-Only values that are **exactly identical** to the primary locale are flagged:
+For identical value detection, only values that are **exactly identical** to the primary locale are flagged:
 
 ```json messages/en.json
 {
@@ -258,6 +306,21 @@ Sometimes developers use English placeholder text intending to translate later:
 ```
 
 The untranslated check helps catch these before they reach production.
+
+### Empty Strings from Translation Tools
+
+Some translation tools or scripts create keys with empty string values as placeholders:
+
+```json messages/ko.json
+{
+  "newFeature": {
+    "title": "",
+    "description": ""
+  }
+}
+```
+
+These are detected and reported as untranslated.
 
 ## Related
 
