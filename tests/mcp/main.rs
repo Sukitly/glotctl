@@ -27,10 +27,15 @@ impl McpTestFixture {
         let messages_dir = project_root.join("messages");
         fs::create_dir_all(&messages_dir)?;
 
-        Ok(Self {
+        let fixture = Self {
             _temp_dir: temp_dir,
             project_root,
-        })
+        };
+
+        // Write next-intl config by default (most tests assume next-intl project structure)
+        fixture.write_config(&serde_json::json!({ "framework": "next-intl" }))?;
+
+        Ok(fixture)
     }
 
     /// Create a test project with locale message files

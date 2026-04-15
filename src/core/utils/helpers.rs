@@ -15,11 +15,20 @@ pub fn unwrap_paren(expr: &Expr) -> &Expr {
 }
 
 /// Translation hook function names from next-intl.
-pub const TRANSLATION_HOOKS: &[&str] = &["useTranslations", "getTranslations"];
+pub const NEXT_INTL_HOOKS: &[&str] = &["useTranslations", "getTranslations"];
 
-/// Check if a function name is a translation hook (useTranslations or getTranslations).
+/// Translation hook function names from react-i18next.
+pub const REACT_I18NEXT_HOOKS: &[&str] = &["useTranslation"];
+
+/// Check if a function name is a translation hook (any supported framework).
 pub fn is_translation_hook(name: &str) -> bool {
-    TRANSLATION_HOOKS.contains(&name)
+    NEXT_INTL_HOOKS.contains(&name) || REACT_I18NEXT_HOOKS.contains(&name)
+}
+
+/// Check if the hook returns an object that needs destructuring (react-i18next).
+/// e.g., `const { t } = useTranslation("ns")`
+pub fn is_destructuring_hook(name: &str) -> bool {
+    REACT_I18NEXT_HOOKS.contains(&name)
 }
 
 /// Extract namespace from translation hook call.
@@ -33,4 +42,37 @@ pub fn extract_namespace_from_call(call: &CallExpr) -> Option<String> {
             None
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_translation_hook_next_intl() {
+        assert!(is_translation_hook("useTranslations"));
+        assert!(is_translation_hook("getTranslations"));
+    }
+
+    #[test]
+    fn test_is_translation_hook_react_i18next() {
+        assert!(is_translation_hook("useTranslation"));
+    }
+
+    #[test]
+    fn test_is_translation_hook_unknown() {
+        assert!(!is_translation_hook("useFormatter"));
+        assert!(!is_translation_hook("t"));
+    }
+
+    #[test]
+    fn test_is_destructuring_hook_react_i18next() {
+        assert!(is_destructuring_hook("useTranslation"));
+    }
+
+    #[test]
+    fn test_is_destructuring_hook_next_intl_returns_false() {
+        assert!(!is_destructuring_hook("useTranslations"));
+        assert!(!is_destructuring_hook("getTranslations"));
+    }
 }

@@ -655,7 +655,7 @@ impl ServerHandler for GlotMcpServer {
     fn get_info(&self) -> ServerInfo {
         ServerInfo {
             instructions: Some(
-                "Glot MCP helps AI agents complete i18n translation work for next-intl projects.\n\n\
+                "Glot MCP helps AI agents complete i18n translation work for React i18n projects (next-intl, react-i18next).\n\n\
                  Available tools:\n\
                  1. get_config - Get project configuration\n\
                  2. get_locales - Get available locale files and their key counts\n\

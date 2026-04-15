@@ -37,6 +37,15 @@ impl CliTest {
         Ok(test)
     }
 
+    /// Create a test with a next-intl config and a source file.
+    /// Use this for tests that rely on next-intl defaults (e.g., app/[locale]/ paths).
+    pub fn with_next_intl_file(path: &str, content: &str) -> Result<Self> {
+        let test = Self::new()?;
+        test.write_file(".glotrc.json", r#"{ "framework": "next-intl" }"#)?;
+        test.write_file(path, content)?;
+        Ok(test)
+    }
+
     pub fn write_file(&self, path: &str, content: &str) -> Result<()> {
         let file_path = self.project_dir.join(path);
 

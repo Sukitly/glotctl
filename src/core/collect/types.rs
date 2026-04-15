@@ -1480,4 +1480,66 @@ mod tests {
         let prop = &collector.translation_props[0];
         assert_eq!(prop.component_name, "Child");
     }
+
+    // ============================================================
+    // react-i18next: useTranslation destructuring binding tests
+    // ============================================================
+
+    #[test]
+    fn test_collect_translation_prop_react_i18next_destructuring() {
+        let code = r#"
+            const { t } = useTranslation("MyNs");
+            <MyComponent t={t} />;
+        "#;
+        let collector = parse_and_collect(code);
+
+        assert_eq!(collector.translation_props.len(), 1);
+        let prop = &collector.translation_props[0];
+        assert_eq!(prop.component_name, "MyComponent");
+        assert_eq!(prop.prop_name, "t");
+        assert_eq!(prop.namespaces, vec![Some("MyNs".to_string())]);
+    }
+
+    #[test]
+    fn test_collect_translation_prop_react_i18next_no_namespace() {
+        let code = r#"
+            const { t } = useTranslation();
+            <MyComponent t={t} />;
+        "#;
+        let collector = parse_and_collect(code);
+
+        assert_eq!(collector.translation_props.len(), 1);
+        let prop = &collector.translation_props[0];
+        assert_eq!(prop.namespaces, vec![None]);
+    }
+
+    #[test]
+    fn test_react_i18next_only_registers_t_binding() {
+        // Only the "t" binding from destructuring should be tracked
+        let code = r#"
+            const { t, i18n } = useTranslation("MyNs");
+            <MyComponent t={t} />;
+            <OtherComponent i18n={i18n} />;
+        "#;
+        let collector = parse_and_collect(code);
+
+        // t should be recognized as translation prop
+        assert_eq!(collector.translation_props.len(), 1);
+        let prop = &collector.translation_props[0];
+        assert_eq!(prop.prop_name, "t");
+    }
+
+    #[test]
+    fn test_react_i18next_renamed_t_not_tracked() {
+        // Renaming: const { t: translate } = useTranslation("ns")
+        // "translate" is not "t", so it should NOT be tracked
+        let code = r#"
+            const { t: translate } = useTranslation("MyNs");
+            <MyComponent translate={translate} />;
+        "#;
+        let collector = parse_and_collect(code);
+
+        // translate is not tracked as a translation binding
+        assert_eq!(collector.translation_props.len(), 0);
+    }
 }

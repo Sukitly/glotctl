@@ -5,11 +5,13 @@ info:
   args:
     - check
   env:
+    GLOT_DISABLE_TIMING: "1"
     NO_COLOR: "1"
 ---
-success: true
-exit_code: 0
+success: false
+exit_code: 2
 ----- stdout -----
-✓ Checked 2 source files, 2 locale files - no issues found
 
 ----- stderr -----
+Error: Messages directory './src/locales' does not exist.
+Hint: Check your .glotrc.json 'messagesDir' setting.

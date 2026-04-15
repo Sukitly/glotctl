@@ -23,11 +23,12 @@ async fn test_get_config_defaults() {
     let result = server.get_config(params).await.unwrap();
     let json_result = extract_tool_result_json(&result);
 
-    // Check default config values
+    // Check config values (loaded from fixture's next-intl config)
     assert_eq!(json_result["config"]["messagesRoot"], "./messages");
     assert_eq!(json_result["config"]["primaryLocale"], "en");
     assert!(json_result["config"]["includes"].is_array());
-    assert_eq!(json_result["fromFile"], false);
+    assert_eq!(json_result["config"]["framework"], "next-intl");
+    assert_eq!(json_result["fromFile"], true);
 }
 
 #[tokio::test]

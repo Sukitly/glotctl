@@ -20,6 +20,17 @@ use serde::{Deserialize, Serialize};
 
 pub const CONFIG_FILE_NAME: &str = ".glotrc.json";
 
+/// Supported i18n framework.
+#[derive(
+    Debug, Deserialize, Serialize, Clone, Copy, Default, PartialEq, Eq, schemars::JsonSchema,
+)]
+#[serde(rename_all = "kebab-case")]
+pub enum Framework {
+    #[default]
+    ReactI18next,
+    NextIntl,
+}
+
 pub const TEST_FILE_PATTERNS: &[&str] = &[
     "**/*.test.tsx",
     "**/*.test.ts",
@@ -32,9 +43,54 @@ pub const TEST_FILE_PATTERNS: &[&str] = &[
     "**/__tests__/**",
 ];
 
+/// Raw config as deserialized from JSON. Framework-dependent fields use Option
+/// to distinguish "not set" from "explicitly set".
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RawConfig {
+    #[serde(default)]
+    framework: Framework,
+    #[serde(default)]
+    ignores: Vec<String>,
+    includes: Option<Vec<String>>,
+    #[serde(default = "default_checked_attributes")]
+    checked_attributes: Vec<String>,
+    #[serde(default)]
+    ignore_texts: Vec<String>,
+    #[serde(alias = "messagesDir")]
+    messages_root: Option<String>,
+    #[serde(default = "default_primary_locale")]
+    primary_locale: String,
+    source_root: Option<String>,
+    #[serde(default = "default_ignore_test_files")]
+    ignore_test_files: bool,
+}
+
+impl RawConfig {
+    /// Resolve framework-dependent defaults for fields that were not explicitly set.
+    fn into_config(self) -> Config {
+        let fw = self.framework;
+        Config {
+            framework: fw,
+            ignores: self.ignores,
+            includes: self.includes.unwrap_or_else(|| default_includes_for(fw)),
+            checked_attributes: self.checked_attributes,
+            ignore_texts: self.ignore_texts,
+            messages_root: self
+                .messages_root
+                .unwrap_or_else(|| default_messages_root_for(fw)),
+            primary_locale: self.primary_locale,
+            source_root: self.source_root.unwrap_or_else(default_source_root),
+            ignore_test_files: self.ignore_test_files,
+        }
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Config {
+    #[serde(default)]
+    pub framework: Framework,
     #[serde(default)]
     pub ignores: Vec<String>,
     #[serde(default = "default_includes")]
@@ -54,21 +110,30 @@ pub struct Config {
 }
 
 fn default_includes() -> Vec<String> {
-    let root_dirs = ["src", ""];
-    let sub_dirs = ["app/[locale]", "components"];
+    default_includes_for(Framework::default())
+}
 
-    root_dirs
-        .iter()
-        .flat_map(|root| {
-            sub_dirs.iter().map(move |sub| {
-                if root.is_empty() {
-                    sub.to_string()
-                } else {
-                    format!("{}/{}", root, sub)
-                }
-            })
-        })
-        .collect()
+fn default_includes_for(framework: Framework) -> Vec<String> {
+    match framework {
+        Framework::ReactI18next => vec!["src/components".to_string()],
+        Framework::NextIntl => {
+            let root_dirs = ["src", ""];
+            let sub_dirs = ["app/[locale]", "components"];
+
+            root_dirs
+                .iter()
+                .flat_map(|root| {
+                    sub_dirs.iter().map(move |sub| {
+                        if root.is_empty() {
+                            sub.to_string()
+                        } else {
+                            format!("{}/{}", root, sub)
+                        }
+                    })
+                })
+                .collect()
+        }
+    }
 }
 
 fn default_checked_attributes() -> Vec<String> {
@@ -87,7 +152,14 @@ fn default_checked_attributes() -> Vec<String> {
 }
 
 fn default_messages_root() -> String {
-    "./messages".to_string()
+    default_messages_root_for(Framework::default())
+}
+
+fn default_messages_root_for(framework: Framework) -> String {
+    match framework {
+        Framework::ReactI18next => "./src/locales".to_string(),
+        Framework::NextIntl => "./messages".to_string(),
+    }
 }
 
 fn default_source_root() -> String {
@@ -104,20 +176,26 @@ fn default_ignore_test_files() -> bool {
 
 impl Default for Config {
     fn default() -> Self {
+        Self::for_framework(Framework::default())
+    }
+}
+
+impl Config {
+    /// Create a config with defaults appropriate for the given framework.
+    pub fn for_framework(framework: Framework) -> Self {
         Self {
+            framework,
             ignores: Vec::new(),
-            includes: default_includes(),
+            includes: default_includes_for(framework),
             checked_attributes: default_checked_attributes(),
             ignore_texts: Vec::new(),
-            messages_root: default_messages_root(),
+            messages_root: default_messages_root_for(framework),
             primary_locale: default_primary_locale(),
             source_root: default_source_root(),
             ignore_test_files: default_ignore_test_files(),
         }
     }
-}
 
-impl Config {
     /// Validate configuration values.
     ///
     /// Returns an error if any glob patterns in `ignores` or `includes` are invalid.
@@ -143,8 +221,8 @@ impl Config {
     }
 }
 
-pub fn default_config_json() -> Result<String> {
-    let config = Config::default();
+pub fn default_config_json(framework: Framework) -> Result<String> {
+    let config = Config::for_framework(framework);
     serde_json::to_string_pretty(&config).context("Failed to generate default config.")
 }
 
@@ -176,8 +254,9 @@ pub fn load_config(start_dir: &Path) -> Result<ConfigLoadResult> {
     match find_config_file(start_dir) {
         Some(path) => {
             let content = fs::read_to_string(&path)?;
-            let config: Config = serde_json::from_str(&content)
+            let raw: RawConfig = serde_json::from_str(&content)
                 .with_context(|| format!("Failed to parse config file: {:?}", path))?;
+            let config = raw.into_config();
             config.validate()?;
             Ok(ConfigLoadResult {
                 config,
@@ -353,5 +432,91 @@ mod tests {
         let json = serde_json::to_string(&config).unwrap();
         assert!(json.contains("messagesRoot"));
         assert!(!json.contains("messagesDir"));
+    }
+
+    // ============================================================
+    // Framework tests
+    // ============================================================
+
+    #[test]
+    fn test_framework_serialization_kebab_case() {
+        let json = serde_json::to_string(&Framework::ReactI18next).unwrap();
+        assert_eq!(json, r#""react-i18next""#);
+
+        let json = serde_json::to_string(&Framework::NextIntl).unwrap();
+        assert_eq!(json, r#""next-intl""#);
+    }
+
+    #[test]
+    fn test_framework_deserialization_kebab_case() {
+        let fw: Framework = serde_json::from_str(r#""react-i18next""#).unwrap();
+        assert_eq!(fw, Framework::ReactI18next);
+
+        let fw: Framework = serde_json::from_str(r#""next-intl""#).unwrap();
+        assert_eq!(fw, Framework::NextIntl);
+    }
+
+    #[test]
+    fn test_framework_default_is_react_i18next() {
+        assert_eq!(Framework::default(), Framework::ReactI18next);
+    }
+
+    #[test]
+    fn test_config_for_framework_react_i18next() {
+        let config = Config::for_framework(Framework::ReactI18next);
+        assert_eq!(config.framework, Framework::ReactI18next);
+        assert_eq!(config.includes, vec!["src/components"]);
+        assert_eq!(config.messages_root, "./src/locales");
+    }
+
+    #[test]
+    fn test_config_for_framework_next_intl() {
+        let config = Config::for_framework(Framework::NextIntl);
+        assert_eq!(config.framework, Framework::NextIntl);
+        assert!(config.includes.iter().any(|i| i.contains("app/[locale]")));
+        assert_eq!(config.messages_root, "./messages");
+    }
+
+    #[test]
+    fn test_no_framework_field_defaults_to_react_i18next() {
+        let json = r#"{ "ignores": [] }"#;
+        let raw: RawConfig = serde_json::from_str(json).unwrap();
+        let config = raw.into_config();
+        assert_eq!(config.framework, Framework::ReactI18next);
+        assert_eq!(config.includes, vec!["src/components"]);
+        assert_eq!(config.messages_root, "./src/locales");
+    }
+
+    #[test]
+    fn test_framework_next_intl_sets_correct_defaults() {
+        let json = r#"{ "framework": "next-intl" }"#;
+        let raw: RawConfig = serde_json::from_str(json).unwrap();
+        let config = raw.into_config();
+        assert_eq!(config.framework, Framework::NextIntl);
+        assert!(config.includes.iter().any(|i| i.contains("app/[locale]")));
+        assert_eq!(config.messages_root, "./messages");
+    }
+
+    #[test]
+    fn test_framework_explicit_override_preserved() {
+        // Even with next-intl framework, explicit messagesRoot should be kept
+        let json = r#"{ "framework": "next-intl", "messagesRoot": "./custom" }"#;
+        let raw: RawConfig = serde_json::from_str(json).unwrap();
+        let config = raw.into_config();
+        assert_eq!(config.framework, Framework::NextIntl);
+        assert_eq!(config.messages_root, "./custom");
+    }
+
+    #[test]
+    fn test_load_config_with_framework_react_i18next() {
+        let dir = tempdir().unwrap();
+        let config_path = dir.path().join(".glotrc.json");
+        fs::write(&config_path, r#"{ "framework": "react-i18next" }"#).unwrap();
+
+        let result = load_config(dir.path()).unwrap();
+        assert!(result.from_file);
+        assert_eq!(result.config.framework, Framework::ReactI18next);
+        assert_eq!(result.config.includes, vec!["src/components"]);
+        assert_eq!(result.config.messages_root, "./src/locales");
     }
 }
