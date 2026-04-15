@@ -63,10 +63,10 @@ fn extract_t_from_object_pat(obj_pat: &ObjectPat) -> Option<String> {
             }
             _ => None,
         };
-        if let Some(ref n) = name {
-            if n == "t" {
-                return Some(n.clone());
-            }
+        if let Some(ref n) = name
+            && n == "t"
+        {
+            return Some(n.clone());
         }
     }
     None
