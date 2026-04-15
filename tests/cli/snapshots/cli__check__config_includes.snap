@@ -13,5 +13,5 @@ exit_code: 2
 ----- stdout -----
 
 ----- stderr -----
-Error: Messages directory './src/locales' does not exist.
+Error: Messages directory './messages' does not exist.
 Hint: Check your .glotrc.json 'messagesDir' setting.

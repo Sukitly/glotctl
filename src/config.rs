@@ -26,8 +26,8 @@ pub const CONFIG_FILE_NAME: &str = ".glotrc.json";
 )]
 #[serde(rename_all = "kebab-case")]
 pub enum Framework {
-    #[default]
     ReactI18next,
+    #[default]
     NextIntl,
 }
 
@@ -457,8 +457,8 @@ mod tests {
     }
 
     #[test]
-    fn test_framework_default_is_react_i18next() {
-        assert_eq!(Framework::default(), Framework::ReactI18next);
+    fn test_framework_default_is_next_intl() {
+        assert_eq!(Framework::default(), Framework::NextIntl);
     }
 
     #[test]
@@ -478,13 +478,15 @@ mod tests {
     }
 
     #[test]
-    fn test_no_framework_field_defaults_to_react_i18next() {
+    fn test_no_framework_field_defaults_to_next_intl() {
+        // Backward compatibility: existing configs without framework field
+        // should behave as next-intl (the original default)
         let json = r#"{ "ignores": [] }"#;
         let raw: RawConfig = serde_json::from_str(json).unwrap();
         let config = raw.into_config();
-        assert_eq!(config.framework, Framework::ReactI18next);
-        assert_eq!(config.includes, vec!["src/components"]);
-        assert_eq!(config.messages_root, "./src/locales");
+        assert_eq!(config.framework, Framework::NextIntl);
+        assert!(config.includes.iter().any(|i| i.contains("app/[locale]")));
+        assert_eq!(config.messages_root, "./messages");
     }
 
     #[test]

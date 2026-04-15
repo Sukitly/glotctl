@@ -1,6 +1,6 @@
 //! Helper functions for AST analysis.
 
-use swc_ecma_ast::{CallExpr, Expr, Lit};
+use swc_ecma_ast::{CallExpr, Expr, Lit, ObjectPat, ObjectPatProp, Pat};
 
 /// Unwrap parentheses and TypeScript type assertions.
 /// Handles: `(expr)`, `expr as T`, `expr as const`, `expr satisfies T`
@@ -29,6 +29,47 @@ pub fn is_translation_hook(name: &str) -> bool {
 /// e.g., `const { t } = useTranslation("ns")`
 pub fn is_destructuring_hook(name: &str) -> bool {
     REACT_I18NEXT_HOOKS.contains(&name)
+}
+
+/// Extract the `t` binding name from a destructuring pattern for react-i18next hooks.
+///
+/// Handles:
+/// - `const { t } = useTranslation("ns")` → Some("t")
+/// - `const { t, i18n } = useTranslation("ns")` → Some("t") (only `t`)
+/// - `const { t: translate } = useTranslation("ns")` → None (renamed away from `t`)
+///
+/// Only the `t` binding is tracked because `useTranslation()` returns an object
+/// with multiple fields (`t`, `i18n`, `ready`), and only `t` is the translation
+/// function. This differs from next-intl where `useTranslations()` returns the
+/// translation function directly.
+pub fn extract_t_from_destructuring(pat: &Pat) -> Option<String> {
+    let Pat::Object(obj_pat) = pat else {
+        return None;
+    };
+    extract_t_from_object_pat(obj_pat)
+}
+
+/// Inner helper: extract `t` from ObjectPat props.
+fn extract_t_from_object_pat(obj_pat: &ObjectPat) -> Option<String> {
+    for prop in &obj_pat.props {
+        let name = match prop {
+            ObjectPatProp::Assign(assign) => Some(assign.key.sym.to_string()),
+            ObjectPatProp::KeyValue(kv) => {
+                if let Pat::Ident(ident) = &*kv.value {
+                    Some(ident.id.sym.to_string())
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        };
+        if let Some(ref n) = name {
+            if n == "t" {
+                return Some(n.clone());
+            }
+        }
+    }
+    None
 }
 
 /// Extract namespace from translation hook call.

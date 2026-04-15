@@ -11,7 +11,10 @@ use swc_ecma_ast::{
     JSXAttrValue, JSXElement, JSXElementName, JSXExpr, ModuleExportName, VarDecl,
 };
 
-use crate::core::utils::{extract_namespace_from_call, is_destructuring_hook, is_translation_hook};
+use crate::core::utils::{
+    extract_namespace_from_call, extract_t_from_destructuring, is_destructuring_hook,
+    is_translation_hook,
+};
 
 use crate::core::collect::registry::helpers::{
     extract_array_properties, extract_jsx_member_name, extract_string_array, extract_string_value,
@@ -170,27 +173,8 @@ impl KeyDataInternalState {
 
                 if is_destructuring_hook(fn_name) {
                     // react-i18next: const { t } = useTranslation("ns")
-                    if let swc_ecma_ast::Pat::Object(obj_pat) = pat {
-                        for prop in &obj_pat.props {
-                            let name = match prop {
-                                swc_ecma_ast::ObjectPatProp::Assign(assign) => {
-                                    Some(assign.key.sym.to_string())
-                                }
-                                swc_ecma_ast::ObjectPatProp::KeyValue(kv) => {
-                                    if let swc_ecma_ast::Pat::Ident(ident) = &*kv.value {
-                                        Some(ident.id.sym.to_string())
-                                    } else {
-                                        None
-                                    }
-                                }
-                                _ => None,
-                            };
-                            if let Some(name) = name {
-                                if name == "t" {
-                                    self.insert_translation_binding(name, namespace.clone());
-                                }
-                            }
-                        }
+                    if let Some(t_name) = extract_t_from_destructuring(pat) {
+                        self.insert_translation_binding(t_name, namespace.clone());
                     }
                 } else if let swc_ecma_ast::Pat::Ident(binding_ident) = pat {
                     // next-intl: const t = useTranslations("ns")

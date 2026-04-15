@@ -36,7 +36,10 @@ use crate::core::{
         FileComments, FileImports, extract_binding_names, make_translation_fn_call_key,
     },
     schema::SchemaCallInfo,
-    utils::{extract_namespace_from_call, is_destructuring_hook, is_translation_hook},
+    utils::{
+        extract_namespace_from_call, extract_t_from_destructuring, is_destructuring_hook,
+        is_translation_hook,
+    },
 };
 
 /// Tracks JSX context state during AST traversal.
@@ -974,28 +977,13 @@ impl<'a> Visit for FileAnalyzer<'a> {
 
                         if is_destructuring_hook(fn_name) {
                             // react-i18next: const { t } = useTranslation("ns")
-                            if let Pat::Object(obj_pat) = &decl.name {
-                                for prop in &obj_pat.props {
-                                    let binding_name = match prop {
-                                        ObjectPatProp::Assign(assign) => {
-                                            Some(assign.key.sym.to_string())
-                                        }
-                                        ObjectPatProp::KeyValue(kv) => {
-                                            Self::extract_binding_name_from_pat(&kv.value)
-                                        }
-                                        _ => None,
-                                    };
-                                    if let Some(name) = binding_name {
-                                        if name == "t" {
-                                            self.binding_context.insert_binding(
-                                                name,
-                                                TranslationSource::Direct {
-                                                    namespace: namespace.clone(),
-                                                },
-                                            );
-                                        }
-                                    }
-                                }
+                            if let Some(t_name) = extract_t_from_destructuring(&decl.name) {
+                                self.binding_context.insert_binding(
+                                    t_name,
+                                    TranslationSource::Direct {
+                                        namespace: namespace.clone(),
+                                    },
+                                );
                             }
                         } else if let Pat::Ident(binding_ident) = &decl.name {
                             // next-intl: const t = useTranslations("ns")

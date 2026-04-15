@@ -10,10 +10,10 @@ use crate::config::{CONFIG_FILE_NAME, Framework, default_config_json};
 /// Detect the i18n framework by inspecting `package.json` dependencies.
 fn detect_framework() -> Framework {
     let Ok(content) = fs::read_to_string("package.json") else {
-        return Framework::default();
+        return Framework::ReactI18next;
     };
     let Ok(pkg) = serde_json::from_str::<serde_json::Value>(&content) else {
-        return Framework::default();
+        return Framework::ReactI18next;
     };
 
     let has_dep = |name: &str| -> bool {
@@ -26,8 +26,11 @@ fn detect_framework() -> Framework {
 
     if has_dep("next-intl") {
         Framework::NextIntl
+    } else if has_dep("react-i18next") || has_dep("i18next") {
+        Framework::ReactI18next
     } else {
-        // Default to react-i18next (covers react-i18next, i18next, or no match)
+        // No recognized i18n dependency found, default to react-i18next
+        // as it's the more common SPA setup.
         Framework::ReactI18next
     }
 }
