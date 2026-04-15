@@ -20,6 +20,15 @@ pub struct McpTestFixture {
 impl McpTestFixture {
     /// Create an empty test project
     pub fn new() -> Result<Self> {
+        Self::with_framework(Some("next-intl"))
+    }
+
+    /// Create a test project without any config file (for testing defaults).
+    pub fn new_without_config() -> Result<Self> {
+        Self::with_framework(None)
+    }
+
+    fn with_framework(framework: Option<&str>) -> Result<Self> {
         let temp_dir = TempDir::new()?;
         let project_root = temp_dir.path().canonicalize()?;
 
@@ -27,10 +36,16 @@ impl McpTestFixture {
         let messages_dir = project_root.join("messages");
         fs::create_dir_all(&messages_dir)?;
 
-        Ok(Self {
+        let fixture = Self {
             _temp_dir: temp_dir,
             project_root,
-        })
+        };
+
+        if let Some(fw) = framework {
+            fixture.write_config(&serde_json::json!({ "framework": fw }))?;
+        }
+
+        Ok(fixture)
     }
 
     /// Create a test project with locale message files

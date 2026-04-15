@@ -1,8 +1,8 @@
-//! Glot - Next.js i18n checker for next-intl
+//! Glot - React i18n checker for next-intl and react-i18next
 //!
 //! Glot is a CLI tool and library for checking internationalization (i18n) issues
-//! in Next.js projects using next-intl. It detects hardcoded text, missing translation
-//! keys, unused keys, and other i18n-related issues.
+//! in React projects using next-intl or react-i18next. It detects hardcoded text,
+//! missing translation keys, unused keys, and other i18n-related issues.
 //!
 //! ## Module Structure
 //!

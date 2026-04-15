@@ -1,9 +1,9 @@
 ---
-source: tests/cli/init.rs
+source: tests/cli/check.rs
 info:
   program: glot
   args:
-    - init
+    - check
   env:
     GLOT_DISABLE_TIMING: "1"
     NO_COLOR: "1"
@@ -11,6 +11,6 @@ info:
 success: true
 exit_code: 0
 ----- stdout -----
-✓ Created .glotrc.json (detected framework: react-i18next)
+✓ Checked 1 source file, 1 locale file - no issues found
 
 ----- stderr -----

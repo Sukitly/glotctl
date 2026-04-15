@@ -5,7 +5,7 @@ use crate::CliTest;
 
 #[test]
 fn test_hardcoded_text() -> Result<()> {
-    let test = CliTest::with_file(
+    let test = CliTest::with_next_intl_file(
         "src/app/[locale]/app.tsx",
         r#"
   export function Button() {
@@ -21,7 +21,7 @@ fn test_hardcoded_text() -> Result<()> {
 
 #[test]
 fn test_clean_file() -> Result<()> {
-    let test = CliTest::with_file(
+    let test = CliTest::with_next_intl_file(
         "app/app.tsx",
         r#"
   export function Button() {
@@ -37,7 +37,7 @@ fn test_clean_file() -> Result<()> {
 
 #[test]
 fn test_multiple_issues() -> Result<()> {
-    let test = CliTest::with_file(
+    let test = CliTest::with_next_intl_file(
         "src/app/[locale]/app.tsx",
         r#"
   export function Card() {
@@ -129,6 +129,8 @@ fn test_config_checked_attributes() -> Result<()> {
 
 #[test]
 fn test_no_config_uses_defaults() -> Result<()> {
+    // Without a config file, Framework defaults to NextIntl (backward compatibility).
+    // Default includes for next-intl: app/[locale], components, src/app/[locale], src/components
     let test = CliTest::new()?;
 
     test.write_file("src/app/[locale]/app.tsx", r#"<div>In src</div>"#)?;
@@ -589,7 +591,7 @@ fn test_orphan_key_multiple_locales() -> Result<()> {
 
 #[test]
 fn test_subcommand_hardcoded() -> Result<()> {
-    let test = CliTest::with_file(
+    let test = CliTest::with_next_intl_file(
         "src/app/[locale]/app.tsx",
         r#"
   export function Button() {
@@ -3668,6 +3670,129 @@ export function Component() {
 
     // Should complete successfully and report many unused keys
     assert_cmd_snapshot!(test.check_command().arg("unused"));
+
+    Ok(())
+}
+
+// ============================================================
+// Group F: react-i18next Tests
+// ============================================================
+
+#[test]
+fn test_react_i18next_hardcoded_text() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "framework": "react-i18next",
+            "includes": ["src/components"],
+            "messagesRoot": "./src/locales",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    test.write_file("src/locales/en.json", r#"{}"#)?;
+
+    test.write_file(
+        "src/components/app.tsx",
+        r#"
+import { useTranslation } from 'react-i18next';
+
+export function App() {
+    const { t } = useTranslation();
+    return (
+        <div>
+            <h1>Welcome to our app</h1>
+            <p>{t('description')}</p>
+        </div>
+    );
+}
+"#,
+    )?;
+
+    assert_cmd_snapshot!(test.check_command().arg("hardcoded"));
+
+    Ok(())
+}
+
+#[test]
+fn test_react_i18next_translation_recognized() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "framework": "react-i18next",
+            "includes": ["src/components"],
+            "messagesRoot": "./src/locales",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    test.write_file(
+        "src/locales/en.json",
+        r#"{ "title": "Welcome", "description": "Hello" }"#,
+    )?;
+
+    // All text uses t() — should be clean
+    test.write_file(
+        "src/components/app.tsx",
+        r#"
+import { useTranslation } from 'react-i18next';
+
+export function App() {
+    const { t } = useTranslation();
+    return (
+        <div>
+            <h1>{t('title')}</h1>
+            <p>{t('description')}</p>
+        </div>
+    );
+}
+"#,
+    )?;
+
+    assert_cmd_snapshot!(test.check_command());
+
+    Ok(())
+}
+
+#[test]
+fn test_react_i18next_missing_key() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "framework": "react-i18next",
+            "includes": ["src/components"],
+            "messagesRoot": "./src/locales",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    // Only "title" exists, "description" is missing
+    test.write_file("src/locales/en.json", r#"{ "title": "Welcome" }"#)?;
+
+    test.write_file(
+        "src/components/app.tsx",
+        r#"
+import { useTranslation } from 'react-i18next';
+
+export function App() {
+    const { t } = useTranslation();
+    return (
+        <div>
+            <h1>{t('title')}</h1>
+            <p>{t('description')}</p>
+        </div>
+    );
+}
+"#,
+    )?;
+
+    assert_cmd_snapshot!(test.check_command().arg("missing"));
 
     Ok(())
 }

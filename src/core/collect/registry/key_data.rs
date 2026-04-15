@@ -11,7 +11,10 @@ use swc_ecma_ast::{
     JSXAttrValue, JSXElement, JSXElementName, JSXExpr, ModuleExportName, VarDecl,
 };
 
-use crate::core::utils::{extract_namespace_from_call, is_translation_hook};
+use crate::core::utils::{
+    extract_namespace_from_call, extract_t_from_destructuring, is_destructuring_hook,
+    is_translation_hook,
+};
 
 use crate::core::collect::registry::helpers::{
     extract_array_properties, extract_jsx_member_name, extract_string_array, extract_string_value,
@@ -94,15 +97,15 @@ impl KeyDataInternalState {
         string_arrays: &mut Vec<StringArray>,
     ) {
         for decl in &node.decls {
+            let Some(init) = &decl.init else { continue };
+
+            // Track translation function bindings (supports both Pat::Ident and Pat::Object)
+            self.check_translation_binding(&decl.name, init);
+
             let name = match &decl.name {
                 swc_ecma_ast::Pat::Ident(ident) => ident.id.sym.to_string(),
                 _ => continue,
             };
-
-            let Some(init) = &decl.init else { continue };
-
-            // Track translation function bindings
-            self.check_translation_binding(&name, init);
 
             let inner_expr = unwrap_ts_expr(init);
 
@@ -146,7 +149,11 @@ impl KeyDataInternalState {
     }
 
     /// Check and track a translation binding.
-    fn check_translation_binding(&mut self, var_name: &str, init: &Expr) {
+    ///
+    /// Handles both direct binding and destructuring:
+    /// - next-intl: `const t = useTranslations("ns")` (Pat::Ident)
+    /// - react-i18next: `const { t } = useTranslation("ns")` (Pat::Object)
+    fn check_translation_binding(&mut self, pat: &swc_ecma_ast::Pat, init: &Expr) {
         let call_expr = match init {
             Expr::Call(call) => Some(call),
             Expr::Await(await_expr) => match &*await_expr.arg {
@@ -163,7 +170,16 @@ impl KeyDataInternalState {
             let fn_name = ident.sym.as_str();
             if is_translation_hook(fn_name) {
                 let namespace = extract_namespace_from_call(call);
-                self.insert_translation_binding(var_name.to_string(), namespace);
+
+                if is_destructuring_hook(fn_name) {
+                    // react-i18next: const { t } = useTranslation("ns")
+                    if let Some(t_name) = extract_t_from_destructuring(pat) {
+                        self.insert_translation_binding(t_name, namespace.clone());
+                    }
+                } else if let swc_ecma_ast::Pat::Ident(binding_ident) = pat {
+                    // next-intl: const t = useTranslations("ns")
+                    self.insert_translation_binding(binding_ident.id.sym.to_string(), namespace);
+                }
             }
         }
     }

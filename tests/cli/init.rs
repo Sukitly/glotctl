@@ -67,10 +67,10 @@ fn test_init_config_is_immediately_usable() -> Result<()> {
 
     // Create minimal project structure
     test.write_file(
-        "src/app.tsx",
-        r#"export function App() { return <div>Test</div>; }"#,
+        "src/components/app.tsx",
+        r#"export function App() { return <div>{t('test')}</div>; }"#,
     )?;
-    test.write_file("messages/en.json", "{}")?;
+    test.write_file("src/locales/en.json", "{}")?;
 
     // Verify check command works with initialized config
     let output = test.check_command().output()?;
@@ -79,6 +79,58 @@ fn test_init_config_is_immediately_usable() -> Result<()> {
         "Check command should work with initialized config. stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
+
+    Ok(())
+}
+
+#[test]
+fn test_init_detects_next_intl() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        "package.json",
+        r#"{ "dependencies": { "next-intl": "^3.0.0" } }"#,
+    )?;
+
+    assert_cmd_snapshot!(test.command().arg("init"));
+
+    let content = test.read_file(".glotrc.json")?;
+    let parsed: Value = serde_json::from_str(&content)?;
+    assert_eq!(parsed["framework"], "next-intl");
+    assert_eq!(parsed["messagesRoot"], "./messages");
+
+    Ok(())
+}
+
+#[test]
+fn test_init_detects_react_i18next() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        "package.json",
+        r#"{ "dependencies": { "react-i18next": "^13.0.0", "i18next": "^23.0.0" } }"#,
+    )?;
+
+    assert_cmd_snapshot!(test.command().arg("init"));
+
+    let content = test.read_file(".glotrc.json")?;
+    let parsed: Value = serde_json::from_str(&content)?;
+    assert_eq!(parsed["framework"], "react-i18next");
+    assert_eq!(parsed["messagesRoot"], "./src/locales");
+
+    Ok(())
+}
+
+#[test]
+fn test_init_defaults_to_react_i18next_without_package_json() -> Result<()> {
+    let test = CliTest::new()?;
+
+    // No package.json at all
+    test.command().arg("init").output()?;
+
+    let content = test.read_file(".glotrc.json")?;
+    let parsed: Value = serde_json::from_str(&content)?;
+    assert_eq!(parsed["framework"], "react-i18next");
 
     Ok(())
 }

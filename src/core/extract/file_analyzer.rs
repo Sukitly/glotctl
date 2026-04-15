@@ -36,7 +36,10 @@ use crate::core::{
         FileComments, FileImports, extract_binding_names, make_translation_fn_call_key,
     },
     schema::SchemaCallInfo,
-    utils::{extract_namespace_from_call, is_translation_hook},
+    utils::{
+        extract_namespace_from_call, extract_t_from_destructuring, is_destructuring_hook,
+        is_translation_hook,
+    },
 };
 
 /// Tracks JSX context state during AST traversal.
@@ -969,13 +972,25 @@ impl<'a> Visit for FileAnalyzer<'a> {
                     && let Expr::Ident(ident) = &**expr
                 {
                     let fn_name = ident.sym.as_str();
-                    if is_translation_hook(fn_name)
-                        && let Pat::Ident(binding_ident) = &decl.name
-                    {
-                        let var_name = binding_ident.id.sym.to_string();
+                    if is_translation_hook(fn_name) {
                         let namespace = extract_namespace_from_call(call);
-                        self.binding_context
-                            .insert_binding(var_name, TranslationSource::Direct { namespace });
+
+                        if is_destructuring_hook(fn_name) {
+                            // react-i18next: const { t } = useTranslation("ns")
+                            if let Some(t_name) = extract_t_from_destructuring(&decl.name) {
+                                self.binding_context.insert_binding(
+                                    t_name,
+                                    TranslationSource::Direct {
+                                        namespace: namespace.clone(),
+                                    },
+                                );
+                            }
+                        } else if let Pat::Ident(binding_ident) = &decl.name {
+                            // next-intl: const t = useTranslations("ns")
+                            let var_name = binding_ident.id.sym.to_string();
+                            self.binding_context
+                                .insert_binding(var_name, TranslationSource::Direct { namespace });
+                        }
                     }
                 }
 

@@ -125,6 +125,7 @@ pub struct ConfigDto {
 #[derive(Debug, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ConfigValues {
+    pub framework: crate::config::Framework,
     pub ignores: Vec<String>,
     pub includes: Vec<String>,
     pub checked_attributes: Vec<String>,
@@ -138,6 +139,7 @@ pub struct ConfigValues {
 impl From<crate::config::Config> for ConfigValues {
     fn from(c: crate::config::Config) -> Self {
         Self {
+            framework: c.framework,
             ignores: c.ignores,
             includes: c.includes,
             checked_attributes: c.checked_attributes,

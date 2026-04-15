@@ -13,7 +13,9 @@ use crate::{McpTestFixture, extract_tool_result_json};
 
 #[tokio::test]
 async fn test_get_config_defaults() {
-    let fixture = McpTestFixture::with_messages(vec![("en", json!({}))]).unwrap();
+    // No config file — should use built-in defaults (NextIntl for backward compat)
+    let fixture = McpTestFixture::new_without_config().unwrap();
+    fixture.write_locale_file("en", &json!({})).unwrap();
     let server = GlotMcpServer::new();
 
     let params = Parameters(GetConfigParams {
@@ -23,10 +25,11 @@ async fn test_get_config_defaults() {
     let result = server.get_config(params).await.unwrap();
     let json_result = extract_tool_result_json(&result);
 
-    // Check default config values
+    // Check default config values (NextIntl defaults for backward compatibility)
     assert_eq!(json_result["config"]["messagesRoot"], "./messages");
     assert_eq!(json_result["config"]["primaryLocale"], "en");
     assert!(json_result["config"]["includes"].is_array());
+    assert_eq!(json_result["config"]["framework"], "next-intl");
     assert_eq!(json_result["fromFile"], false);
 }
 
