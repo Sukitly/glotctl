@@ -129,8 +129,9 @@ fn test_config_checked_attributes() -> Result<()> {
 
 #[test]
 fn test_no_config_uses_defaults() -> Result<()> {
+    // Without a config file, Framework defaults to NextIntl (backward compatibility).
+    // Default includes for next-intl: app/[locale], components, src/app/[locale], src/components
     let test = CliTest::new()?;
-    test.write_file(".glotrc.json", r#"{ "framework": "next-intl" }"#)?;
 
     test.write_file("src/app/[locale]/app.tsx", r#"<div>In src</div>"#)?;
     test.write_file("src/lib/utils.tsx", r#"<div>In lib</div>"#)?;
