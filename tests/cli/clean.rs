@@ -57,9 +57,21 @@ fn json_key_exists(value: &Value, key_path: &str) -> bool {
     let parts: Vec<&str> = key_path.split('.').collect();
     let mut current = value;
     for part in parts {
-        match current.get(part) {
-            Some(v) => current = v,
-            None => return false,
+        match current {
+            Value::Object(map) => match map.get(part) {
+                Some(v) => current = v,
+                None => return false,
+            },
+            Value::Array(items) => {
+                let Ok(index) = part.parse::<usize>() else {
+                    return false;
+                };
+                match items.get(index) {
+                    Some(v) => current = v,
+                    None => return false,
+                }
+            }
+            _ => return false,
         }
     }
     true
@@ -697,6 +709,66 @@ export function App() {
             "Account",
             "App.Settings",
             "App.Settings.Account",
+        ],
+    )?;
+
+    Ok(())
+}
+
+#[test]
+fn test_clean_apply_removes_unused_keys_inside_arrays() -> Result<()> {
+    let test = CliTest::new()?;
+    setup_config(&test)?;
+
+    test.write_file(
+        "src/app.tsx",
+        r#"
+const t = useTranslations("Page");
+export function App() {
+    return <div>{t("title")}</div>;
+}
+"#,
+    )?;
+
+    test.write_file(
+        "messages/en.json",
+        r#"{
+  "Page": {
+    "title": "Title"
+  },
+  "BrainstormNovelIdeasWithAI": {
+    "faq": {
+      "items": [
+        {
+          "question": "How is this different from using ChatGPT?",
+          "answer": "ChatGPT gives you text responses."
+        },
+        {
+          "question": "Can I brainstorm and then write later?",
+          "answer": "Absolutely."
+        }
+      ]
+    }
+  }
+}"#,
+    )?;
+
+    let mut cmd = test.clean_command();
+    cmd.arg("--apply");
+    assert_cmd_snapshot!(cmd);
+
+    let content = test.read_file("messages/en.json")?;
+    assert_json_structure(
+        &content,
+        &["Page.title"],
+        &[
+            "BrainstormNovelIdeasWithAI",
+            "BrainstormNovelIdeasWithAI.faq",
+            "BrainstormNovelIdeasWithAI.faq.items",
+            "BrainstormNovelIdeasWithAI.faq.items.0.question",
+            "BrainstormNovelIdeasWithAI.faq.items.0.answer",
+            "BrainstormNovelIdeasWithAI.faq.items.1.question",
+            "BrainstormNovelIdeasWithAI.faq.items.1.answer",
         ],
     )?;
 

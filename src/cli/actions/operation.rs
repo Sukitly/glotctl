@@ -51,20 +51,16 @@ impl DeleteReason {
     }
 }
 
+#[cfg(test)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OperationResult {
     Applied,
     Noop,
 }
 
-impl OperationResult {
-    pub fn is_applied(self) -> bool {
-        matches!(self, OperationResult::Applied)
-    }
-}
-
 impl Operation {
     /// Execute this operation (modify files).
+    #[cfg(test)]
     pub fn execute(&self) -> anyhow::Result<OperationResult> {
         match self {
             Operation::InsertComment {
@@ -92,6 +88,7 @@ impl Operation {
 
     // ========== InsertComment implementation ==========
 
+    #[cfg(test)]
     fn execute_insert_comment(
         context: &SourceContext,
         comment: &str,
@@ -216,6 +213,7 @@ impl Operation {
 
     // ========== DeleteJsonKey implementation ==========
 
+    #[cfg(test)]
     fn execute_delete_json_key(context: &MessageContext) -> anyhow::Result<OperationResult> {
         let file_path = Path::new(context.file_path());
         let key = context.key.as_str();
@@ -228,6 +226,42 @@ impl Operation {
         }
 
         Ok(OperationResult::Noop)
+    }
+
+    pub(crate) fn apply_delete_json_key_ops(ops: &[Operation]) -> anyhow::Result<usize> {
+        if ops.is_empty() {
+            return Ok(0);
+        }
+
+        let mut file_path: Option<&str> = None;
+        let mut keys: Vec<&str> = Vec::new();
+
+        for op in ops {
+            if let Operation::DeleteJsonKey { context, .. } = op {
+                let op_path = context.file_path();
+                if let Some(existing) = file_path {
+                    if existing != op_path {
+                        anyhow::bail!("apply_delete_json_key_ops expects ops from a single file");
+                    }
+                } else {
+                    file_path = Some(op_path);
+                }
+                keys.push(context.key.as_str());
+            }
+        }
+
+        let file_path = match file_path {
+            Some(path) => path,
+            None => return Ok(0),
+        };
+
+        let mut editor = JsonEditor::open(Path::new(file_path))?;
+        let deleted = editor.delete_keys(&keys)?;
+        if deleted > 0 {
+            editor.save()?;
+        }
+
+        Ok(deleted)
     }
 
     pub(crate) fn apply_insert_comment_ops(ops: &[Operation]) -> anyhow::Result<usize> {
@@ -427,6 +461,7 @@ fn detect_comment_style(line: &str) -> Option<CommentStyle> {
     None
 }
 
+#[cfg(test)]
 fn find_mergeable_comment_line(lines: &[String], target_line_idx: usize) -> Option<usize> {
     if target_line_idx < lines.len() && looks_like_glot_comment(&lines[target_line_idx]) {
         return Some(target_line_idx);
@@ -539,6 +574,7 @@ fn select_disable_comment_style(group: &InsertGroup, existing_line: Option<&str>
     }
 }
 
+#[cfg(test)]
 fn merge_directives(
     existing_comment: &str,
     new_comment: &str,
@@ -596,6 +632,7 @@ fn extract_quoted_strings(text: &str) -> Vec<String> {
     patterns
 }
 
+#[cfg(test)]
 fn merge_message_key_patterns(existing: &[String], new: &[String]) -> Vec<String> {
     let mut merged: Vec<String> = Vec::new();
     let mut seen = std::collections::HashSet::new();

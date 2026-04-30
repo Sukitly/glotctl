@@ -1,0 +1,18 @@
+---
+source: tests/cli/clean.rs
+info:
+  program: glot
+  args:
+    - clean
+    - "--apply"
+  env:
+    GLOT_DISABLE_TIMING: "1"
+    NO_COLOR: "1"
+---
+success: true
+exit_code: 0
+----- stdout -----
+Deleted 4 key(s) in 1 file(s) (processed 4 key(s)).
+  - unused: 4 key(s) (from 4 issue(s))
+
+----- stderr -----

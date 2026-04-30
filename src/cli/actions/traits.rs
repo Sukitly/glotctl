@@ -76,7 +76,7 @@ pub(crate) fn execute_operations(ops: &[Operation]) -> Result<ActionStats> {
     let mut changes_applied = 0;
 
     let mut insert_ops_by_file: HashMap<String, Vec<Operation>> = HashMap::new();
-    let mut delete_ops: Vec<Operation> = Vec::new();
+    let mut delete_ops_by_file: HashMap<String, Vec<Operation>> = HashMap::new();
 
     for op in ops {
         match op {
@@ -86,8 +86,11 @@ pub(crate) fn execute_operations(ops: &[Operation]) -> Result<ActionStats> {
                     .or_default()
                     .push(op.clone());
             }
-            Operation::DeleteJsonKey { .. } => {
-                delete_ops.push(op.clone());
+            Operation::DeleteJsonKey { context, .. } => {
+                delete_ops_by_file
+                    .entry(context.file_path().to_string())
+                    .or_default()
+                    .push(op.clone());
             }
         }
     }
@@ -100,13 +103,11 @@ pub(crate) fn execute_operations(ops: &[Operation]) -> Result<ActionStats> {
         }
     }
 
-    for op in delete_ops {
-        let result = op.execute()?;
-        if result.is_applied() {
-            changes_applied += 1;
-            if let Operation::DeleteJsonKey { context, .. } = op {
-                files_modified.insert(context.file_path().to_string());
-            }
+    for (file_path, file_ops) in delete_ops_by_file {
+        let applied = Operation::apply_delete_json_key_ops(&file_ops)?;
+        if applied > 0 {
+            changes_applied += applied;
+            files_modified.insert(file_path);
         }
     }
 
