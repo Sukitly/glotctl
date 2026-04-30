@@ -75,14 +75,15 @@ impl JsonEditor {
     }
 }
 
-/// Delete a key path from a JSON value (e.g., "Common.submit").
+/// Delete a key path from a JSON value (e.g., "Common.submit" or "Faq.items.0.answer").
 fn delete_key_path(value: &mut Value, key_path: &str) -> bool {
     let parts: Vec<&str> = key_path.split('.').collect();
     if parts.is_empty() {
         return false;
     }
 
-    // Navigate to the parent object
+    // Navigate to the parent value. Object segments address object keys;
+    // array segments must be numeric indexes from flattened message paths.
     let mut current = value;
     for part in &parts[..parts.len() - 1] {
         match current {
@@ -93,28 +94,68 @@ fn delete_key_path(value: &mut Value, key_path: &str) -> bool {
                     return false; // Key path doesn't exist
                 }
             }
-            _ => return false, // Not an object
+            Value::Array(items) => {
+                let Ok(index) = part.parse::<usize>() else {
+                    return false;
+                };
+                if let Some(child) = items.get_mut(index) {
+                    current = child;
+                } else {
+                    return false; // Array index doesn't exist
+                }
+            }
+            _ => return false, // Not navigable
         }
     }
 
-    // Delete the final key using shift_remove to preserve order
-    if let Value::Object(map) = current {
-        let final_key = parts[parts.len() - 1];
-        return map.shift_remove(final_key).is_some();
+    let final_part = parts[parts.len() - 1];
+    match current {
+        // Delete the final key using shift_remove to preserve order.
+        Value::Object(map) => map.shift_remove(final_part).is_some(),
+        // Support deleting an array element when the full path points at an index.
+        Value::Array(items) => {
+            let Ok(index) = final_part.parse::<usize>() else {
+                return false;
+            };
+            if index < items.len() {
+                items.remove(index);
+                true
+            } else {
+                false
+            }
+        }
+        _ => false,
     }
-    false
 }
 
 /// Recursively remove empty objects from a JSON value.
 fn remove_empty_objects(value: &mut Value) {
-    if let Value::Object(map) = value {
-        // First, recursively clean children
-        for child in map.values_mut() {
-            remove_empty_objects(child);
-        }
+    match value {
+        Value::Object(map) => {
+            // First, recursively clean children.
+            for child in map.values_mut() {
+                remove_empty_objects(child);
+            }
 
-        // Then, remove any children that are empty objects
-        map.retain(|_, v| !matches!(v, Value::Object(m) if m.is_empty()));
+            // Then, remove any children that are empty containers.
+            map.retain(|_, v| {
+                !matches!(v, Value::Object(m) if m.is_empty())
+                    && !matches!(v, Value::Array(items) if items.is_empty())
+            });
+        }
+        Value::Array(items) => {
+            // First, recursively clean children.
+            for child in items.iter_mut() {
+                remove_empty_objects(child);
+            }
+
+            // Then, remove any array elements that became empty containers.
+            items.retain(|v| {
+                !matches!(v, Value::Object(m) if m.is_empty())
+                    && !matches!(v, Value::Array(items) if items.is_empty())
+            });
+        }
+        _ => {}
     }
 }
 
@@ -264,6 +305,92 @@ mod tests {
         editor.delete_keys(&["key"]).unwrap();
 
         assert_eq!(editor.content(), "{}");
+    }
+
+    #[test]
+    fn test_delete_key_inside_array_object() {
+        let json = r#"{"Faq": {"items": [{"question": "Q1", "answer": "A1"}, {"question": "Q2", "answer": "A2"}]}}"#;
+        let (_temp, path) = create_temp_json(json);
+        let mut editor = JsonEditor::open(&path).unwrap();
+
+        editor.delete_keys(&["Faq.items.0.question"]).unwrap();
+
+        let expected = r#"{
+  "Faq": {
+    "items": [
+      {
+        "answer": "A1"
+      },
+      {
+        "question": "Q2",
+        "answer": "A2"
+      }
+    ]
+  }
+}"#;
+        assert_eq!(editor.content(), expected);
+    }
+
+    #[test]
+    fn test_delete_removes_empty_object_from_array() {
+        let json = r#"{"Faq": {"items": [{"question": "Q1", "answer": "A1"}, {"question": "Q2"}]}, "Other": "value"}"#;
+        let (_temp, path) = create_temp_json(json);
+        let mut editor = JsonEditor::open(&path).unwrap();
+
+        editor.delete_keys(&["Faq.items.1.question"]).unwrap();
+
+        let expected = r#"{
+  "Faq": {
+    "items": [
+      {
+        "question": "Q1",
+        "answer": "A1"
+      }
+    ]
+  },
+  "Other": "value"
+}"#;
+        assert_eq!(editor.content(), expected);
+    }
+
+    #[test]
+    fn test_delete_array_index_out_of_bounds_is_noop() {
+        let json = r#"{"Faq": {"items": [{"question": "Q1"}]}}"#;
+        let (_temp, path) = create_temp_json(json);
+        let mut editor = JsonEditor::open(&path).unwrap();
+
+        editor.delete_keys(&["Faq.items.9.question"]).unwrap();
+
+        let expected = r#"{
+  "Faq": {
+    "items": [
+      {
+        "question": "Q1"
+      }
+    ]
+  }
+}"#;
+        assert_eq!(editor.content(), expected);
+    }
+
+    #[test]
+    fn test_delete_array_non_numeric_segment_is_noop() {
+        let json = r#"{"Faq": {"items": [{"question": "Q1"}]}}"#;
+        let (_temp, path) = create_temp_json(json);
+        let mut editor = JsonEditor::open(&path).unwrap();
+
+        editor.delete_keys(&["Faq.items.first.question"]).unwrap();
+
+        let expected = r#"{
+  "Faq": {
+    "items": [
+      {
+        "question": "Q1"
+      }
+    ]
+  }
+}"#;
+        assert_eq!(editor.content(), expected);
     }
 
     #[test]
