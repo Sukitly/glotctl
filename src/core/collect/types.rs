@@ -282,18 +282,19 @@ pub enum TranslationBindingValue {
     /// Example: `const t = useTranslations("MyNs")` → `Translation(Some("MyNs"))`
     Translation(Option<String>),
 
-    /// A shadowed binding (parameter that shadows outer translation binding).
+    /// A function parameter binding.
     ///
-    /// Example:
-    /// ```typescript
-    /// const t = useTranslations("Outer");
-    /// function inner(t) {  // This 't' shadows the outer 't'
-    ///   // ...
-    /// }
-    /// ```
+    /// Parameters must stop outer translation-binding lookup, but they still
+    /// participate in forwarding analysis when they belong to the current
+    /// function context.
+    ShadowedParam,
+
+    /// A non-translation local binding.
+    ///
+    /// Example: `const t = someOtherValue;`
     ///
     /// When encountered during lookup, indicates "stop searching, this is not a translation".
-    Shadowed,
+    ShadowedLocal,
 }
 
 /// Extract all identifier names from a pattern (handles destructuring).

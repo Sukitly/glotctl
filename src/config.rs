@@ -44,7 +44,7 @@ pub const TEST_FILE_PATTERNS: &[&str] = &[
 ];
 
 /// Additional member-call pattern treated as a translation usage.
-#[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TranslationMemberCallPattern {
     /// Optional object name to match (e.g. `i18n` in `i18n.t(...)`).

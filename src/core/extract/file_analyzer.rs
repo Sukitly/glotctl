@@ -503,10 +503,8 @@ impl<'a> FileAnalyzer<'a> {
 
     /// Resolve a bare callee name to a translation source.
     fn resolve_direct_translation_source(&self, fn_name: &str) -> Option<TranslationSource> {
-        if let Some(translation_source) = self.binding_context.get_binding(fn_name).cloned()
-            && !translation_source.is_shadowed()
-        {
-            return Some(translation_source);
+        if let Some(translation_source) = self.binding_context.get_binding(fn_name).cloned() {
+            return (!translation_source.is_shadowed()).then_some(translation_source);
         }
 
         if self
@@ -528,7 +526,7 @@ impl<'a> FileAnalyzer<'a> {
 
     /// Built-in support for imported i18next singletons such as `i18n.t("...")`.
     fn is_builtin_translation_member_call(&self, object_name: &str, property: &str) -> bool {
-        if property != "t" {
+        if property != "t" || self.binding_context.get_binding(object_name).is_some() {
             return false;
         }
 
@@ -557,18 +555,27 @@ impl<'a> FileAnalyzer<'a> {
                 pattern.import_name.as_deref(),
             ) {
                 (Some(expected_import_from), Some(expected_import_name)) => {
-                    self.file_imports.iter().any(|import| {
-                        import.local_name == object_name
-                            && import.module_path == expected_import_from
-                            && import.imported_name == expected_import_name
-                    })
+                    self.binding_context.get_binding(object_name).is_none()
+                        && self.file_imports.iter().any(|import| {
+                            import.local_name == object_name
+                                && import.module_path == expected_import_from
+                                && import.imported_name == expected_import_name
+                        })
                 }
-                (Some(expected_import_from), None) => self.file_imports.iter().any(|import| {
-                    import.local_name == object_name && import.module_path == expected_import_from
-                }),
-                (None, Some(expected_import_name)) => self.file_imports.iter().any(|import| {
-                    import.local_name == object_name && import.imported_name == expected_import_name
-                }),
+                (Some(expected_import_from), None) => {
+                    self.binding_context.get_binding(object_name).is_none()
+                        && self.file_imports.iter().any(|import| {
+                            import.local_name == object_name
+                                && import.module_path == expected_import_from
+                        })
+                }
+                (None, Some(expected_import_name)) => {
+                    self.binding_context.get_binding(object_name).is_none()
+                        && self.file_imports.iter().any(|import| {
+                            import.local_name == object_name
+                                && import.imported_name == expected_import_name
+                        })
+                }
                 (None, None) => true,
             }
         })
@@ -751,11 +758,10 @@ impl<'a> FileAnalyzer<'a> {
         }
     }
 
-    /// Extract a React component defined as an arrow function.
-    ///
-    /// Example: `const MyComponent = (props) => <div>{props.children}</div>`
-    /// Returns: `Some(("MyComponent", arrow_expr))`
-    fn extract_arrow_component(decl: &VarDeclarator) -> Option<(String, &swc_ecma_ast::ArrowExpr)> {
+    /// Extract a named arrow function initializer from a variable declarator.
+    fn extract_arrow_initializer(
+        decl: &VarDeclarator,
+    ) -> Option<(String, &swc_ecma_ast::ArrowExpr)> {
         let Pat::Ident(binding_ident) = &decl.name else {
             return None;
         };
@@ -766,8 +772,26 @@ impl<'a> FileAnalyzer<'a> {
             return None;
         };
 
-        let component_name = binding_ident.id.sym.to_string();
-        Some((component_name, arrow))
+        let fn_name = binding_ident.id.sym.to_string();
+        Some((fn_name, arrow))
+    }
+
+    /// Extract a named function-expression initializer from a variable declarator.
+    fn extract_function_initializer(
+        decl: &VarDeclarator,
+    ) -> Option<(String, &swc_ecma_ast::Function)> {
+        let Pat::Ident(binding_ident) = &decl.name else {
+            return None;
+        };
+        let Some(init) = &decl.init else {
+            return None;
+        };
+        let Expr::Fn(fn_expr) = &**init else {
+            return None;
+        };
+
+        let fn_name = binding_ident.id.sym.to_string();
+        Some((fn_name, &fn_expr.function))
     }
 
     /// Extract the first parameter name from an arrow function.
@@ -962,12 +986,16 @@ impl<'a> Visit for FileAnalyzer<'a> {
     }
 
     fn visit_fn_decl(&mut self, node: &FnDecl) {
-        self.binding_context.enter_scope();
         let fn_name = node.ident.sym.to_string();
+        let params: Vec<Pat> = node.function.params.iter().map(|p| p.pat.clone()).collect();
+
+        self.binding_context
+            .insert_binding(fn_name.clone(), TranslationSource::Shadowed);
+        self.binding_context.enter_scope();
+        self.binding_context
+            .shadow_bindings(params.iter().flat_map(extract_binding_names));
 
         self.register_translation_props_from_params(&fn_name, &node.function.params);
-
-        let params: Vec<Pat> = node.function.params.iter().map(|p| p.pat.clone()).collect();
         self.register_translation_fn_params(&fn_name, &params);
 
         node.function.visit_children_with(self);
@@ -976,22 +1004,27 @@ impl<'a> Visit for FileAnalyzer<'a> {
 
     fn visit_export_default_decl(&mut self, node: &swc_ecma_ast::ExportDefaultDecl) {
         if let DefaultDecl::Fn(fn_expr) = &node.decl {
-            self.binding_context.enter_scope();
-
             let fn_name = fn_expr
                 .ident
                 .as_ref()
                 .map(|i| i.sym.to_string())
                 .unwrap_or_else(|| "default".to_string());
-
-            self.register_translation_props_from_params(&fn_name, &fn_expr.function.params);
-
             let params: Vec<Pat> = fn_expr
                 .function
                 .params
                 .iter()
                 .map(|p| p.pat.clone())
                 .collect();
+
+            if fn_name != "default" {
+                self.binding_context
+                    .insert_binding(fn_name.clone(), TranslationSource::Shadowed);
+            }
+            self.binding_context.enter_scope();
+            self.binding_context
+                .shadow_bindings(params.iter().flat_map(extract_binding_names));
+
+            self.register_translation_props_from_params(&fn_name, &fn_expr.function.params);
             self.register_translation_fn_params(&fn_name, &params);
 
             fn_expr.function.visit_children_with(self);
@@ -1005,6 +1038,8 @@ impl<'a> Visit for FileAnalyzer<'a> {
     fn visit_export_default_expr(&mut self, node: &swc_ecma_ast::ExportDefaultExpr) {
         if let Expr::Arrow(arrow) = &*node.expr {
             self.binding_context.enter_scope();
+            self.binding_context
+                .shadow_bindings(arrow.params.iter().flat_map(extract_binding_names));
 
             let fn_name = "default";
 
@@ -1019,20 +1054,47 @@ impl<'a> Visit for FileAnalyzer<'a> {
             return;
         }
 
+        if let Expr::Fn(fn_expr) = &*node.expr {
+            self.binding_context.enter_scope();
+            let params: Vec<Pat> = fn_expr
+                .function
+                .params
+                .iter()
+                .map(|p| p.pat.clone())
+                .collect();
+            self.binding_context
+                .shadow_bindings(params.iter().flat_map(extract_binding_names));
+
+            let fn_name = fn_expr
+                .ident
+                .as_ref()
+                .map(|ident| ident.sym.to_string())
+                .unwrap_or_else(|| "default".to_string());
+
+            self.register_translation_props_from_params(&fn_name, &fn_expr.function.params);
+            self.register_translation_fn_params(&fn_name, &params);
+
+            fn_expr.function.visit_children_with(self);
+            self.binding_context.exit_scope();
+            return;
+        }
+
         node.visit_children_with(self);
     }
 
     fn visit_function(&mut self, node: &swc_ecma_ast::Function) {
+        let params: Vec<Pat> = node.params.iter().map(|p| p.pat.clone()).collect();
         self.binding_context.enter_scope();
+        self.binding_context
+            .shadow_bindings(params.iter().flat_map(extract_binding_names));
         node.visit_children_with(self);
         self.binding_context.exit_scope();
     }
 
     fn visit_arrow_expr(&mut self, node: &swc_ecma_ast::ArrowExpr) {
         self.binding_context.enter_scope();
-        for param in &node.params {
-            param.visit_with(self);
-        }
+        self.binding_context
+            .shadow_bindings(node.params.iter().flat_map(extract_binding_names));
         match &*node.body {
             BlockStmtOrExpr::Expr(expr) => {
                 let line = self.source_map.lookup_char_pos(expr.span().lo).line;
@@ -1059,8 +1121,13 @@ impl<'a> Visit for FileAnalyzer<'a> {
 
     fn visit_var_decl(&mut self, node: &VarDecl) {
         for decl in &node.decls {
-            if let Some((fn_name, arrow)) = Self::extract_arrow_component(decl) {
+            self.binding_context
+                .shadow_bindings(extract_binding_names(&decl.name).into_iter());
+
+            if let Some((fn_name, arrow)) = Self::extract_arrow_initializer(decl) {
                 self.binding_context.enter_scope();
+                self.binding_context
+                    .shadow_bindings(arrow.params.iter().flat_map(extract_binding_names));
 
                 if let Some(first_param) = arrow.params.first() {
                     self.register_translation_props_from_pat(&fn_name, first_param);
@@ -1069,6 +1136,20 @@ impl<'a> Visit for FileAnalyzer<'a> {
                 self.register_translation_fn_params(&fn_name, &arrow.params);
 
                 arrow.visit_children_with(self);
+                self.binding_context.exit_scope();
+                continue;
+            }
+
+            if let Some((fn_name, function)) = Self::extract_function_initializer(decl) {
+                self.binding_context.enter_scope();
+                let params: Vec<Pat> = function.params.iter().map(|p| p.pat.clone()).collect();
+                self.binding_context
+                    .shadow_bindings(params.iter().flat_map(extract_binding_names));
+
+                self.register_translation_props_from_params(&fn_name, &function.params);
+                self.register_translation_fn_params(&fn_name, &params);
+
+                function.visit_children_with(self);
                 self.binding_context.exit_scope();
                 continue;
             }

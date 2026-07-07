@@ -134,6 +134,8 @@ pub struct ConfigValues {
     pub primary_locale: String,
     pub source_root: String,
     pub ignore_test_files: bool,
+    pub extra_translation_callees: Vec<String>,
+    pub extra_translation_member_calls: Vec<crate::config::TranslationMemberCallPattern>,
 }
 
 impl From<crate::config::Config> for ConfigValues {
@@ -148,6 +150,8 @@ impl From<crate::config::Config> for ConfigValues {
             primary_locale: c.primary_locale,
             source_root: c.source_root,
             ignore_test_files: c.ignore_test_files,
+            extra_translation_callees: c.extra_translation_callees,
+            extra_translation_member_calls: c.extra_translation_member_calls,
         }
     }
 }
@@ -632,6 +636,34 @@ mod tests {
     }
 
     #[test]
+    fn test_config_values_include_extra_translation_fields() {
+        let values = ConfigValues::from(crate::config::Config {
+            extra_translation_callees: vec!["tt".to_string()],
+            extra_translation_member_calls: vec![crate::config::TranslationMemberCallPattern {
+                object_name: Some("intl".to_string()),
+                property: "translate".to_string(),
+                import_from: Some("./intl".to_string()),
+                import_name: Some("default".to_string()),
+            }],
+            ..crate::config::Config::default()
+        });
+
+        let json = serde_json::to_value(values).unwrap();
+        assert_eq!(json["extraTranslationCallees"], json!(["tt"]));
+        assert_eq!(
+            json["extraTranslationMemberCalls"],
+            json!([
+                {
+                    "objectName": "intl",
+                    "property": "translate",
+                    "importFrom": "./intl",
+                    "importName": "default"
+                }
+            ])
+        );
+    }
+
+    #[test]
     fn test_add_translations_params() {
         let json = json!({
             "project_root_path": "/path",
@@ -729,6 +761,15 @@ mod tests {
         let required = schema_json["required"].as_array().unwrap();
         assert!(required.contains(&json!("locale")));
         assert!(required.contains(&json!("keys")));
+    }
+
+    #[test]
+    fn test_config_values_schema_includes_extra_translation_fields() {
+        let schema = schemars::schema_for!(ConfigValues);
+        let schema_json = serde_json::to_value(&schema).unwrap();
+
+        assert!(schema_json["properties"]["extraTranslationCallees"].is_object());
+        assert!(schema_json["properties"]["extraTranslationMemberCalls"].is_object());
     }
 
     #[test]

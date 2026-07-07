@@ -18,7 +18,9 @@ mod helpers;
 mod key_data;
 mod schema;
 
-use swc_ecma_ast::{ArrowExpr, Decl, DefaultDecl, Expr, FnDecl, Function, VarDecl, VarDeclarator};
+use swc_ecma_ast::{
+    ArrowExpr, Decl, DefaultDecl, Expr, FnDecl, Function, Pat, VarDecl, VarDeclarator,
+};
 use swc_ecma_visit::{Visit, VisitWith};
 
 use key_data::{FunctionContext, KeyDataInternalState};
@@ -128,13 +130,46 @@ impl RegistryCollector {
         );
     }
 
-    fn push_function_context(&mut self, fn_name: &str, params: &[swc_ecma_ast::Pat]) {
-        self.function_context_stack
-            .push(FunctionContext::new(&self.file_path, fn_name, params));
+    fn enter_function_context(&mut self, registry_names: Vec<String>, params: &[Pat]) -> bool {
+        self.function_context_stack.push(FunctionContext::new(
+            &self.file_path,
+            registry_names,
+            params,
+        ));
+
+        self.scope_depth += 1;
+        self.key_data_state.enter_scope();
+        self.key_data_state
+            .shadow_param_bindings(params.iter().flat_map(extract_binding_names));
+
+        let shadows_t = self.schema_state.check_shadow(params.iter());
+        if shadows_t {
+            self.schema_state.enter_shadow();
+        }
+
+        shadows_t
     }
 
-    fn pop_function_context(&mut self) {
+    fn exit_function_context(&mut self, shadows_t: bool) {
+        if shadows_t {
+            self.schema_state.exit_shadow();
+        }
+        self.key_data_state.exit_scope();
+        self.scope_depth -= 1;
         self.function_context_stack.pop();
+    }
+
+    fn default_export_registry_names(name: Option<&str>) -> Vec<String> {
+        let mut names = Vec::new();
+
+        if let Some(name) = name
+            && name != "default"
+        {
+            names.push(name.to_string());
+        }
+
+        names.push("default".to_string());
+        names
     }
 }
 
@@ -152,9 +187,14 @@ impl Visit for RegistryCollector {
             // Key data logic: collect exported variables
             let is_module_level = self.scope_depth == 0;
             self.check_var_decl(var_decl, true, is_module_level);
-        } else {
-            node.visit_children_with(self);
+
+            for decl in &var_decl.decls {
+                decl.visit_with(self);
+            }
+            return;
         }
+
+        node.visit_children_with(self);
     }
 
     fn visit_export_default_decl(&mut self, node: &swc_ecma_ast::ExportDefaultDecl) {
@@ -162,20 +202,18 @@ impl Visit for RegistryCollector {
             .check_default_export_decl(node, &mut self.default_export_name);
 
         if let DefaultDecl::Fn(fn_expr) = &node.decl {
-            let fn_name = fn_expr
-                .ident
-                .as_ref()
-                .map(|ident| ident.sym.to_string())
-                .unwrap_or_else(|| "default".to_string());
             let params: Vec<_> = fn_expr
                 .function
                 .params
                 .iter()
                 .map(|param| param.pat.clone())
                 .collect();
-            self.push_function_context(&fn_name, &params);
-            fn_expr.function.visit_with(self);
-            self.pop_function_context();
+            let registry_names = Self::default_export_registry_names(
+                fn_expr.ident.as_ref().map(|ident| ident.sym.as_str()),
+            );
+            let shadows_t = self.enter_function_context(registry_names, &params);
+            fn_expr.function.visit_children_with(self);
+            self.exit_function_context(shadows_t);
             return;
         }
 
@@ -188,25 +226,24 @@ impl Visit for RegistryCollector {
 
         match &*node.expr {
             Expr::Arrow(arrow) => {
-                self.push_function_context("default", &arrow.params);
-                arrow.visit_with(self);
-                self.pop_function_context();
+                let shadows_t =
+                    self.enter_function_context(vec!["default".to_string()], &arrow.params);
+                arrow.visit_children_with(self);
+                self.exit_function_context(shadows_t);
             }
             Expr::Fn(fn_expr) => {
-                let fn_name = fn_expr
-                    .ident
-                    .as_ref()
-                    .map(|ident| ident.sym.to_string())
-                    .unwrap_or_else(|| "default".to_string());
                 let params: Vec<_> = fn_expr
                     .function
                     .params
                     .iter()
                     .map(|param| param.pat.clone())
                     .collect();
-                self.push_function_context(&fn_name, &params);
-                fn_expr.function.visit_with(self);
-                self.pop_function_context();
+                let registry_names = Self::default_export_registry_names(
+                    fn_expr.ident.as_ref().map(|ident| ident.sym.as_str()),
+                );
+                let shadows_t = self.enter_function_context(registry_names, &params);
+                fn_expr.function.visit_children_with(self);
+                self.exit_function_context(shadows_t);
             }
             _ => node.visit_children_with(self),
         }
@@ -219,10 +256,9 @@ impl Visit for RegistryCollector {
             .iter()
             .map(|param| param.pat.clone())
             .collect();
-        let fn_name = node.ident.sym.to_string();
-        self.push_function_context(&fn_name, &params);
-        node.function.visit_with(self);
-        self.pop_function_context();
+        let shadows_t = self.enter_function_context(vec![node.ident.sym.to_string()], &params);
+        node.function.visit_children_with(self);
+        self.exit_function_context(shadows_t);
     }
 
     fn visit_var_decl(&mut self, node: &VarDecl) {
@@ -234,14 +270,32 @@ impl Visit for RegistryCollector {
     fn visit_var_declarator(&mut self, node: &VarDeclarator) {
         if let swc_ecma_ast::Pat::Ident(binding_ident) = &node.name
             && let Some(init) = &node.init
-            && let Expr::Arrow(arrow) = &**init
         {
-            let fn_name = binding_ident.id.sym.to_string();
-            self.push_function_context(&fn_name, &arrow.params);
-            node.name.visit_with(self);
-            arrow.visit_with(self);
-            self.pop_function_context();
-            return;
+            let registry_names = vec![binding_ident.id.sym.to_string()];
+
+            match &**init {
+                Expr::Arrow(arrow) => {
+                    let shadows_t = self.enter_function_context(registry_names, &arrow.params);
+                    node.name.visit_with(self);
+                    arrow.visit_children_with(self);
+                    self.exit_function_context(shadows_t);
+                    return;
+                }
+                Expr::Fn(fn_expr) => {
+                    let params: Vec<_> = fn_expr
+                        .function
+                        .params
+                        .iter()
+                        .map(|param| param.pat.clone())
+                        .collect();
+                    let shadows_t = self.enter_function_context(registry_names, &params);
+                    node.name.visit_with(self);
+                    fn_expr.function.visit_children_with(self);
+                    self.exit_function_context(shadows_t);
+                    return;
+                }
+                _ => {}
+            }
         }
 
         node.visit_children_with(self);
@@ -252,60 +306,16 @@ impl Visit for RegistryCollector {
     }
 
     fn visit_function(&mut self, node: &Function) {
-        // Enter scope
-        self.scope_depth += 1;
-        self.key_data_state.enter_scope();
-
-        // Shadow parameter bindings
-        self.key_data_state.shadow_bindings(
-            node.params
-                .iter()
-                .flat_map(|p| extract_binding_names(&p.pat)),
-        );
-
-        // Check for schema t parameter shadowing
-        let shadows_t = self
-            .schema_state
-            .check_shadow(node.params.iter().map(|p| &p.pat));
-        if shadows_t {
-            self.schema_state.enter_shadow();
-        }
-
-        // Visit children
+        let params: Vec<_> = node.params.iter().map(|param| param.pat.clone()).collect();
+        let shadows_t = self.enter_function_context(Vec::new(), &params);
         node.visit_children_with(self);
-
-        // Exit scope
-        if shadows_t {
-            self.schema_state.exit_shadow();
-        }
-        self.key_data_state.exit_scope();
-        self.scope_depth -= 1;
+        self.exit_function_context(shadows_t);
     }
 
     fn visit_arrow_expr(&mut self, node: &ArrowExpr) {
-        // Enter scope
-        self.scope_depth += 1;
-        self.key_data_state.enter_scope();
-
-        // Shadow parameter bindings
-        self.key_data_state
-            .shadow_bindings(node.params.iter().flat_map(extract_binding_names));
-
-        // Check for schema t parameter shadowing
-        let shadows_t = self.schema_state.check_shadow(node.params.iter());
-        if shadows_t {
-            self.schema_state.enter_shadow();
-        }
-
-        // Visit children
+        let shadows_t = self.enter_function_context(Vec::new(), &node.params);
         node.visit_children_with(self);
-
-        // Exit scope
-        if shadows_t {
-            self.schema_state.exit_shadow();
-        }
-        self.key_data_state.exit_scope();
-        self.scope_depth -= 1;
+        self.exit_function_context(shadows_t);
     }
 
     fn visit_call_expr(&mut self, node: &swc_ecma_ast::CallExpr) {

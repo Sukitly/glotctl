@@ -30,6 +30,8 @@ Or create `.glotrc.json` manually.
 | [ignoreTestFiles](#ignoretestfiles)     | `boolean`  | `true`                          | Skip test files automatically            |
 | [ignoreTexts](#ignoretexts)             | `string[]` | `[]`                            | Text patterns to ignore                  |
 | [checkedAttributes](#checkedattributes) | `string[]` | [See below](#checkedattributes) | JSX attributes to check                  |
+| [extraTranslationCallees](#extratranslationcallees) | `string[]` | `[]`              | Additional bare call names to treat as translation usage |
+| [extraTranslationMemberCalls](#extratranslationmembercalls) | `object[]` | `[]`       | Additional constrained member-call patterns to treat as translation usage |
 
 ## Configuration Details
 
@@ -292,6 +294,63 @@ Default value:
 
 </Accordion>
 
+<Accordion title="extraTranslationCallees">
+
+### extraTranslationCallees
+
+Additional bare callee names to treat as translation usage.
+
+| Type       | Default |
+| ---------- | ------- |
+| `string[]` | `[]`    |
+
+```json
+{
+  "extraTranslationCallees": ["tt", "$t"]
+}
+```
+
+Use this for project-specific wrappers when the call itself is the translation API.
+Entries are matched by callee name, so keep the list narrow.
+
+</Accordion>
+
+<Accordion title="extraTranslationMemberCalls">
+
+### extraTranslationMemberCalls
+
+Additional constrained member-call patterns to treat as translation usage.
+
+| Type       | Default |
+| ---------- | ------- |
+| `object[]` | `[]`    |
+
+Each entry supports these fields:
+
+- `property` (required): member name such as `translate`
+- `objectName` (optional): local object name such as `intl`
+- `importFrom` (optional): restrict to a specific import source
+- `importName` (optional): restrict to a specific imported binding such as `default`, `*`, or a named export
+
+At least one of `objectName` or `importFrom` is required.
+
+```json
+{
+  "extraTranslationMemberCalls": [
+    {
+      "objectName": "intl",
+      "property": "translate",
+      "importFrom": "./intl",
+      "importName": "default"
+    }
+  ]
+}
+```
+
+This option is intentionally constrained. It is for known project APIs, not for treating every `.t(...)` call as a translation usage.
+
+</Accordion>
+
 ## Full Example
 
 A complete configuration file:
@@ -305,7 +364,16 @@ A complete configuration file:
   "ignores": ["**/node_modules/**", "**/*.stories.tsx", "**/mocks/**"],
   "ignoreTestFiles": true,
   "ignoreTexts": ["TODO", "FIXME", "N/A"],
-  "checkedAttributes": ["placeholder", "title", "alt", "aria-label"]
+  "checkedAttributes": ["placeholder", "title", "alt", "aria-label"],
+  "extraTranslationCallees": ["tt"],
+  "extraTranslationMemberCalls": [
+    {
+      "objectName": "intl",
+      "property": "translate",
+      "importFrom": "./intl",
+      "importName": "default"
+    }
+  ]
 }
 ```
 
