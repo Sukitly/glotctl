@@ -73,6 +73,10 @@ pub struct CommonArgs {
 pub struct CheckArgs {
     #[command(flatten)]
     pub common: CommonArgs,
+
+    /// Exit with code 1 when any warning is found
+    #[arg(long)]
+    pub error_on_warnings: bool,
 }
 
 #[derive(Debug, Args)]
@@ -152,7 +156,7 @@ pub enum Command {
     Check(CheckCommand),
     /// Remove unused or orphan translation keys from JSON files
     Clean(CleanCommand),
-    /// Insert glot-disable-next-line comments to suppress hardcoded text warnings
+    /// Insert glot-disable-next-line comments to suppress existing issues
     Baseline(BaselineCommand),
     /// Insert glot-message-keys comments for dynamic translation keys
     Fix(FixCommand),

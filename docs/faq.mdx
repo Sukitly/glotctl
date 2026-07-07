@@ -239,13 +239,14 @@ See [Configuration Resolution](/configuration#configuration-resolution) for the 
 | Code | Meaning |
 |------|---------|
 | 0 | No errors (warnings may exist) |
-| 1 | Errors found |
+| 1 | Errors found, or warnings found with `--error-on-warnings` |
+| 2 | Parse/config/runtime error |
 
-**Errors** (exit code 1): hardcoded text, missing keys, type mismatches.
+**Default errors** (exit code 1): hardcoded text, missing keys, replica-lag, untranslated values, type mismatches.
 
-**Warnings** (exit code 0): orphan keys, untranslated values, unused keys, replica-lag, unresolved keys.
+**Default warnings** (exit code 0): orphan keys, unused keys, unresolved keys.
 
-This means `glot check` in CI will only fail the build on actual errors, not warnings.
+Use `glot check --error-on-warnings` in CI if any warning should fail the build. You can also change rule severities with the `severities` configuration option.
 
 </Accordion>
 
@@ -253,7 +254,7 @@ This means `glot check` in CI will only fail the build on actual errors, not war
 
 Use the **baseline** workflow:
 
-1. Run `npx glot baseline --apply` to suppress all existing hardcoded text warnings
+1. Run `npx glot baseline --apply` to suppress all existing hardcoded text issues
 2. Add `glot check` to CI — new issues will be caught immediately
 3. Gradually fix existing issues and remove suppression comments over time
 

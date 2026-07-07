@@ -39,6 +39,11 @@ pub fn report(issues: &[Issue]) {
     report_to(issues, &mut io::stdout().lock());
 }
 
+/// Print issues using per-rule severity overrides from configuration.
+pub fn report_with_config(issues: &[Issue], config: &crate::config::Config) {
+    report_to_with_config(issues, config, &mut io::stdout().lock());
+}
+
 pub fn report_to_stderr(issues: &[Issue]) {
     report_to(issues, &mut io::stderr().lock());
 }
@@ -47,6 +52,25 @@ pub fn report_to_stderr(issues: &[Issue]) {
 ///
 /// Useful for testing or redirecting output.
 pub fn report_to<W: Write>(issues: &[Issue], writer: &mut W) {
+    report_to_with_severity(issues, writer, |issue| issue.report_severity());
+}
+
+/// Print issues to a custom writer using per-rule severity overrides.
+pub fn report_to_with_config<W: Write>(
+    issues: &[Issue],
+    config: &crate::config::Config,
+    writer: &mut W,
+) {
+    report_to_with_severity(issues, writer, |issue| {
+        config.severity_for_rule(issue.report_rule(), issue.report_severity())
+    });
+}
+
+fn report_to_with_severity<W, F>(issues: &[Issue], writer: &mut W, severity_for: F)
+where
+    W: Write,
+    F: Fn(&Issue) -> Severity,
+{
     if issues.is_empty() {
         return;
     }
@@ -58,10 +82,10 @@ pub fn report_to<W: Write>(issues: &[Issue], writer: &mut W) {
     let max_line_width = calculate_max_line_width(&sorted);
 
     for issue in &sorted {
-        print_issue(issue, writer, max_line_width);
+        print_issue(issue, writer, max_line_width, severity_for(issue));
     }
 
-    print_summary(&sorted, writer);
+    print_summary(&sorted, writer, &severity_for);
 }
 
 /// Print a success message when no issues are found.
@@ -145,12 +169,11 @@ pub fn print_execution_time_to<W: Write>(duration: Duration, writer: &mut W) {
 // Internal Functions
 // ============================================================
 
-fn print_issue<W: Write>(issue: &Issue, writer: &mut W, max_line_width: usize) {
+fn print_issue<W: Write>(issue: &Issue, writer: &mut W, max_line_width: usize, severity: Severity) {
     let loc = issue.location();
     let (file_path, line, col, source_line) = extract_location_info(&loc);
 
     // Print severity and message (cargo-style)
-    let severity = issue.report_severity();
     let severity_str = match severity {
         Severity::Error => "error".bold().red(),
         Severity::Warning => "warning".bold().yellow(),
@@ -286,14 +309,18 @@ fn print_usages<W: Write>(usages: &[ResolvedKeyUsage], writer: &mut W, max_line_
     }
 }
 
-fn print_summary<W: Write>(issues: &[Issue], writer: &mut W) {
+fn print_summary<W, F>(issues: &[Issue], writer: &mut W, severity_for: &F)
+where
+    W: Write,
+    F: Fn(&Issue) -> Severity,
+{
     let total_errors = issues
         .iter()
-        .filter(|i| i.report_severity() == Severity::Error)
+        .filter(|i| severity_for(i) == Severity::Error)
         .count();
     let total_warnings = issues
         .iter()
-        .filter(|i| i.report_severity() == Severity::Warning)
+        .filter(|i| severity_for(i) == Severity::Warning)
         .count();
     let total_problems = total_errors + total_warnings;
 
@@ -375,7 +402,7 @@ mod tests {
     };
     use crate::issues::{
         HardcodedTextIssue, IssueUnresolvedKeyReason, MissingKeyIssue, OrphanKeyIssue,
-        ParseErrorFileType, ParseErrorIssue, ReplicaLagIssue, TypeMismatchIssue,
+        ParseErrorFileType, ParseErrorIssue, ReplicaLagIssue, Rule, Severity, TypeMismatchIssue,
         UnresolvedKeyIssue, UntranslatedIssue, UnusedKeyIssue,
     };
 
@@ -609,11 +636,39 @@ mod tests {
         let output_str = String::from_utf8(output).unwrap();
         let stripped = strip_ansi(&output_str);
 
-        assert!(stripped.contains("warning:"));
+        assert!(stripped.contains("error:"));
         assert!(stripped.contains("\"Common.ok\""));
         assert!(stripped.contains("untranslated"));
         assert!(stripped.contains("identical in: zh, ja"));
         assert!(stripped.contains("(no usages found)"));
+    }
+
+    #[test]
+    fn test_report_with_config_severity_override() {
+        let msg_loc = MessageLocation::new("./messages/en.json", 5, 3);
+        let msg_ctx = MessageContext::new(msg_loc, "Common.ok", "OK");
+
+        let issue = Issue::Untranslated(UntranslatedIssue {
+            context: msg_ctx,
+            primary_locale: "en".to_string(),
+            identical_in: vec!["zh".to_string()],
+            empty_in: vec![],
+            usages: vec![],
+        });
+        let config = crate::config::Config {
+            severities: [(Rule::Untranslated, Severity::Warning)]
+                .into_iter()
+                .collect(),
+            ..crate::config::Config::default()
+        };
+
+        let mut output = Vec::new();
+        report_to_with_config(&[issue], &config, &mut output);
+        let output_str = String::from_utf8(output).unwrap();
+        let stripped = strip_ansi(&output_str);
+
+        assert!(stripped.contains("warning:"));
+        assert!(stripped.contains("1 problems (0 errors, 1 warning)"));
     }
 
     #[test]

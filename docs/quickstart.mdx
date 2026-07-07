@@ -277,7 +277,7 @@ For convenience, add glot commands to your `package.json`:
 
 ## Using with CI
 
-Glot returns exit code 1 when errors are found (exit 0 for warnings only), making it ideal for CI pipelines. Add a step to your workflow:
+Glot returns exit code 1 when errors are found. Warnings return exit 0 by default, or exit 1 when you pass `--error-on-warnings`, making glot ideal for CI pipelines. Add a step to your workflow:
 
 ```bash
 npx glot check

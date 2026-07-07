@@ -4,8 +4,8 @@
 //! allowing you to establish a baseline and fix issues incrementally.
 //!
 //! Supported rules:
-//! - `hardcoded`: Suppress hardcoded text warnings
-//! - `untranslated`: Suppress untranslated value warnings
+//! - `hardcoded`: Suppress hardcoded text issues
+//! - `untranslated`: Suppress untranslated value issues
 //!
 //! Use `--apply` to actually insert comments (default is dry-run mode).
 

@@ -6,6 +6,7 @@ info:
     - check
     - "--help"
   env:
+    GLOT_DISABLE_TIMING: "1"
     NO_COLOR: "1"
 ---
 success: true
@@ -23,6 +24,7 @@ Options:
       --source-root <SOURCE_ROOT>        Source code root directory (overrides config file)
       --messages-root <MESSAGES_ROOT>    Messages directory path (overrides config file)
   -v, --verbose                          Enable verbose output
+      --error-on-warnings                Exit with code 1 when any warning is found
   -h, --help                             Print help
 
 ----- stderr -----

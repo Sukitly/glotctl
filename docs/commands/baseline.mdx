@@ -3,7 +3,7 @@ title: glot baseline
 description: Establish a baseline for existing projects
 ---
 
-The `baseline` command inserts `glot-disable-next-line` comments to suppress existing hardcoded text warnings. This is useful when adopting glot in an existing project.
+The `baseline` command inserts `glot-disable-next-line` comments to suppress existing hardcoded text and untranslated value issues. This is useful when adopting glot in an existing project.
 
 ## Usage
 
@@ -37,8 +37,8 @@ bunx glot baseline [OPTIONS]
   Rules to add disable comments for. Can be specified multiple times. If not specified, all rules are applied.
   
   Possible values:
-  - `hardcoded` - Suppress hardcoded text warnings
-  - `untranslated` - Suppress untranslated value warnings
+  - `hardcoded` - Suppress hardcoded text issues
+  - `untranslated` - Suppress untranslated value issues
 </ParamField>
 
 <ParamField path="--source-root" type="string">
@@ -61,7 +61,7 @@ bunx glot baseline [OPTIONS]
 
 When adding glot to an existing project, you might have hundreds of hardcoded strings. Fixing them all at once isn't practical. The baseline command lets you:
 
-1. Suppress all existing warnings
+1. Suppress all existing issues
 2. Start with a clean slate
 3. Prevent new hardcoded text from being added
 4. Gradually fix existing issues over time

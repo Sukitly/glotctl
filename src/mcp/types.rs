@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -136,6 +138,7 @@ pub struct ConfigValues {
     pub ignore_test_files: bool,
     pub extra_translation_callees: Vec<String>,
     pub extra_translation_member_calls: Vec<crate::config::TranslationMemberCallPattern>,
+    pub severities: BTreeMap<String, crate::issues::Severity>,
 }
 
 impl From<crate::config::Config> for ConfigValues {
@@ -152,6 +155,11 @@ impl From<crate::config::Config> for ConfigValues {
             ignore_test_files: c.ignore_test_files,
             extra_translation_callees: c.extra_translation_callees,
             extra_translation_member_calls: c.extra_translation_member_calls,
+            severities: c
+                .severities
+                .into_iter()
+                .map(|(rule, severity)| (rule.to_string(), severity))
+                .collect(),
         }
     }
 }
@@ -645,6 +653,12 @@ mod tests {
                 import_from: Some("./intl".to_string()),
                 import_name: Some("default".to_string()),
             }],
+            severities: [(
+                crate::issues::Rule::Untranslated,
+                crate::issues::Severity::Warning,
+            )]
+            .into_iter()
+            .collect(),
             ..crate::config::Config::default()
         });
 
@@ -661,6 +675,7 @@ mod tests {
                 }
             ])
         );
+        assert_eq!(json["severities"], json!({ "untranslated": "warning" }));
     }
 
     #[test]
@@ -770,6 +785,7 @@ mod tests {
 
         assert!(schema_json["properties"]["extraTranslationCallees"].is_object());
         assert!(schema_json["properties"]["extraTranslationMemberCalls"].is_object());
+        assert!(schema_json["properties"]["severities"].is_object());
     }
 
     #[test]

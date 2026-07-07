@@ -6,17 +6,18 @@ info:
     - check
     - untranslated
   env:
+    GLOT_DISABLE_TIMING: "1"
     NO_COLOR: "1"
 ---
-success: true
-exit_code: 0
+success: false
+exit_code: 1
 ----- stdout -----
-warning: "Common.submit"  [untranslated]
+error: "Common.submit"  [untranslated]
   --> ./messages/en.json:1:1
   = note: ("Submit") identical in: zh
   = used: ./src/other.tsx:7:21
 
 
-✘ 1 problems (0 errors, 1 warning)
+✘ 1 problems (1 error, 0 warnings)
 
 ----- stderr -----

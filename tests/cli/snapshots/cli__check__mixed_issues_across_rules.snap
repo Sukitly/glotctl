@@ -5,12 +5,13 @@ info:
   args:
     - check
   env:
+    GLOT_DISABLE_TIMING: "1"
     NO_COLOR: "1"
 ---
 success: false
 exit_code: 1
 ----- stdout -----
-warning: "Common.key1"  [untranslated]
+error: "Common.key1"  [untranslated]
   --> ./messages/en.json:1:1
   = note: ("Value 1") identical in: zh
   = used: ./src/app.tsx:7:22
@@ -41,6 +42,6 @@ error: "Common.missing"  [missing-key]
   |                      ^
 
 
-✘ 6 problems (3 errors, 3 warnings)
+✘ 6 problems (4 errors, 2 warnings)
 
 ----- stderr -----

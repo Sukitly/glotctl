@@ -129,10 +129,10 @@ Values in non-primary locales that are identical to the primary locale, possibly
 ```
 
 ```
-warning: "common.submit"  [untranslated]
-  --> ./messages/zh.json:3:0
-  = note: "Submit"
-  = hint: Value is identical to primary locale (en), possibly not translated
+error: "common.submit"  [untranslated]
+  --> ./messages/en.json:3:1
+  = note: ("Submit") identical in: zh
+  = used: (no usages found)
 ```
 
 Clean up orphan keys:
@@ -144,7 +144,7 @@ npx glot clean --apply # Apply
 
 ## Existing Projects
 
-For projects with many existing hardcoded strings, use `baseline` to suppress current warnings and prevent new ones:
+For projects with many existing hardcoded strings, use `baseline` to suppress current issues and prevent new ones:
 
 ```bash
 npx glot baseline         # Preview

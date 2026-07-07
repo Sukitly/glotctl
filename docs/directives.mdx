@@ -1,9 +1,9 @@
 ---
 title: Directives
-description: Inline comments to suppress glot warnings
+description: Inline comments to suppress glot issues
 ---
 
-Glot supports inline comment directives to suppress specific warnings and declare dynamic key usage. Use these when you intentionally want to keep hardcoded text or need to handle dynamic translation keys.
+Glot supports inline comment directives to suppress specific issues and declare dynamic key usage. Use these when you intentionally want to keep hardcoded text, keep an identical translation value, or handle dynamic translation keys.
 
 ## Available Directives
 
@@ -16,7 +16,7 @@ Glot supports inline comment directives to suppress specific warnings and declar
 
 ## Line Suppression
 
-Use `glot-disable-next-line` to suppress warnings for the next line:
+Use `glot-disable-next-line` to suppress issues for the next line:
 
 ```tsx
 // glot-disable-next-line
@@ -265,7 +265,7 @@ Keys declared via `glot-message-keys` are marked as "used" in glot's analysis:
 - The `clean` command can run safely because it knows which keys are in use
 - Declared keys will not be accidentally deleted as "unused"
 
-This is **more precise** than using `glot-disable-next-line`, which only suppresses the warning without telling glot which keys are actually used.
+This is **more precise** than using `glot-disable-next-line`, which only suppresses the issue without telling glot which keys are actually used.
 
 ## Use Cases
 

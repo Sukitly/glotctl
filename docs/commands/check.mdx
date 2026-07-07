@@ -49,21 +49,21 @@ You can run specific checks or all checks at once:
 
 ### Severity
 
-Each check type has a fixed severity level. **Errors** cause a non-zero exit code (exit 1); **warnings** do not.
+Each check type has a default severity level. **Errors** cause a non-zero exit code (exit 1). **Warnings** normally do not, unless you pass `--error-on-warnings`.
 
-| Type            | Severity  | Exit Code |
-| --------------- | --------- | --------- |
-| `hardcoded`     | Error     | 1         |
-| `missing`       | Error     | 1         |
-| `type-mismatch` | Error     | 1         |
-| `orphan`        | Warning   | 0         |
-| `untranslated`  | Warning   | 0         |
-| `unused`        | Warning   | 0         |
-| `replica-lag`   | Warning   | 0         |
-| `unresolved`    | Warning   | 0         |
+| Type            | Default Severity | Default Exit Code |
+| --------------- | ---------------- | ----------------- |
+| `hardcoded`     | Error            | 1                 |
+| `missing`       | Error            | 1                 |
+| `replica-lag`   | Error            | 1                 |
+| `untranslated`  | Error            | 1                 |
+| `type-mismatch` | Error            | 1                 |
+| `orphan`        | Warning          | 0                 |
+| `unused`        | Warning          | 0                 |
+| `unresolved`    | Warning          | 0                 |
 
 <Tip>
-In CI pipelines, only errors will fail the build. Warnings are informational and won't block your workflow.
+Use `--error-on-warnings` in CI if your project wants any remaining warning to fail the build. Use `severities` in `.glotrc.json` when you want to change a rule's effective severity for the whole project.
 </Tip>
 
 <CodeGroup>
@@ -158,6 +158,10 @@ bunx glot check hardcoded missing
 
 <ParamField path="-v, --verbose" type="boolean" default="false">
   Enable verbose output for debugging.
+</ParamField>
+
+<ParamField path="--error-on-warnings" type="boolean" default="false">
+  Return exit code 1 when any warning is found. This does not rename warnings to errors in the output.
 </ParamField>
 
 ## Examples
@@ -299,8 +303,8 @@ warning: common.oldKey  orphan-key
 
 | Severity | Exit Code | Description                                                       |
 | -------- | --------- | ----------------------------------------------------------------- |
-| Error    | 1         | Hardcoded text, missing keys, type mismatches                     |
-| Warning  | 0         | Orphan keys, untranslated values, unused keys, replica-lag, unresolved keys |
+| Error    | 1         | Hardcoded text, missing keys, replica lag, untranslated values, type mismatches |
+| Warning  | 0 by default, 1 with `--error-on-warnings` | Orphan keys, unused keys, unresolved keys, or rules downgraded via config |
 
 ## Understanding Issues
 
@@ -312,9 +316,9 @@ Each issue type is documented in detail on its own page. Here's a quick summary:
 | `missing-key` | Error | Key used in code but not defined in locale files | [Missing Keys](/detection/missing-keys) |
 | `type-mismatch` | Error | Value type differs between locales (causes runtime crashes) | [Type Mismatch](/detection/type-mismatch) |
 | `orphan-key` | Warning | Key in non-primary locale but not in primary | [Orphan Keys](/detection/orphan-keys) |
-| `untranslated` | Warning | Value identical to primary locale | [Untranslated](/detection/untranslated) |
+| `untranslated` | Error | Value identical to primary locale | [Untranslated](/detection/untranslated) |
 | `unused-key` | Warning | Key in primary locale but never used in code | [Unused Keys](/detection/unused-keys) |
-| `replica-lag` | Warning | Key in primary locale missing from other locales | [Replica Lag](/detection/replica-lag) |
+| `replica-lag` | Error | Key in primary locale missing from other locales | [Replica Lag](/detection/replica-lag) |
 | `unresolved-key` | Warning | Dynamic key that can't be statically analyzed | [Unresolved Keys](/detection/unresolved-keys) |
 
 ### Quick Fix Guide
@@ -331,6 +335,8 @@ Each issue type is documented in detail on its own page. Here's a quick summary:
 
 **Replica lag** → Add missing translations to non-primary locales. See [Replica Lag](/detection/replica-lag).
 
+**Untranslated values** → Translate the non-primary locale value, or suppress intentional same-language values with `glot-disable-next-line untranslated`. See [Untranslated](/detection/untranslated).
+
 **Unresolved keys** → Add `glot-message-keys` annotations or run `glot fix --apply`. See [Unresolved Keys](/detection/unresolved-keys).
 
 ## Exit Codes
@@ -338,9 +344,10 @@ Each issue type is documented in detail on its own page. Here's a quick summary:
 | Code | Meaning                              |
 | ---- | ------------------------------------ |
 | 0    | No errors found (warnings may exist) |
-| 1    | Errors found                         |
+| 1    | Errors found, or warnings found with `--error-on-warnings` |
+| 2    | Parse/config/runtime error           |
 
-This makes glot suitable for CI/CD pipelines where you want to fail builds on errors.
+This makes glot suitable for CI/CD pipelines where you want to fail builds on errors or enforce stricter warning policies.
 
 ## Verbose Output
 
