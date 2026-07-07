@@ -6,6 +6,9 @@
 //! - Action: to fix the issue (insert comments, delete keys, etc.)
 
 use enum_dispatch::enum_dispatch;
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
+use std::str::FromStr;
 
 use crate::core::ResolvedKeyUsage;
 use crate::core::{LocaleTypeMismatch, MessageContext, SourceContext, ValueType};
@@ -15,7 +18,8 @@ use crate::core::{LocaleTypeMismatch, MessageContext, SourceContext, ValueType};
 // ============================================================
 
 /// Severity level of an issue.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
 pub enum Severity {
     Error,
     Warning,
@@ -31,7 +35,7 @@ impl std::fmt::Display for Severity {
 }
 
 /// Rule identifier for each issue type.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Rule {
     HardcodedText,
     MissingKey,
@@ -58,6 +62,59 @@ impl std::fmt::Display for Rule {
             Rule::TypeMismatch => write!(f, "type-mismatch"),
             Rule::ParseError => write!(f, "parse-error"),
         }
+    }
+}
+
+impl Rule {
+    /// Parse a rule name from user-facing configuration.
+    ///
+    /// Both check names (`missing`, `unused`) and issue names (`missing-key`,
+    /// `unused-key`) are accepted for convenience.
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.trim().to_lowercase().as_str() {
+            "hardcoded" | "hardcoded-text" => Some(Self::HardcodedText),
+            "missing" | "missing-key" => Some(Self::MissingKey),
+            "unresolved" | "unresolved-key" => Some(Self::UnresolvedKey),
+            "replica-lag" => Some(Self::ReplicaLag),
+            "unused" | "unused-key" => Some(Self::UnusedKey),
+            "orphan" | "orphan-key" => Some(Self::OrphanKey),
+            "untranslated" => Some(Self::Untranslated),
+            "type-mismatch" => Some(Self::TypeMismatch),
+            "parse-error" => Some(Self::ParseError),
+            _ => None,
+        }
+    }
+}
+
+impl FromStr for Rule {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::parse(s).ok_or_else(|| format!("unknown rule '{}'", s))
+    }
+}
+
+impl Serialize for Rule {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&self.to_string())
+    }
+}
+
+impl<'de> Deserialize<'de> for Rule {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        Self::parse(&value).ok_or_else(|| {
+            serde::de::Error::custom(format!(
+                "unknown rule '{}' in severity configuration",
+                value
+            ))
+        })
     }
 }
 
@@ -243,7 +300,16 @@ pub struct UntranslatedIssue {
 
 impl UntranslatedIssue {
     pub fn severity() -> Severity {
-        Severity::Warning
+        Severity::Error
+    }
+
+    /// Default severity depends on whether the untranslated value is known to be used in UI.
+    pub fn default_severity(&self) -> Severity {
+        if self.usages.is_empty() {
+            Severity::Warning
+        } else {
+            Severity::Error
+        }
     }
 
     pub fn rule() -> Rule {
@@ -334,7 +400,7 @@ impl Issue {
             Issue::UnusedKey(_) => UnusedKeyIssue::severity(),
             Issue::OrphanKey(_) => OrphanKeyIssue::severity(),
             Issue::ReplicaLag(_) => ReplicaLagIssue::severity(),
-            Issue::Untranslated(_) => UntranslatedIssue::severity(),
+            Issue::Untranslated(issue) => issue.default_severity(),
             Issue::TypeMismatch(_) => TypeMismatchIssue::severity(),
             Issue::ParseError(_) => ParseErrorIssue::severity(),
         }
@@ -556,7 +622,7 @@ impl Report for UntranslatedIssue {
     }
 
     fn report_severity(&self) -> Severity {
-        Self::severity()
+        self.default_severity()
     }
 
     fn report_rule(&self) -> Rule {
@@ -852,7 +918,8 @@ mod tests {
             usages: vec![],
         };
 
-        assert_eq!(UntranslatedIssue::severity(), Severity::Warning);
+        assert_eq!(UntranslatedIssue::severity(), Severity::Error);
+        assert_eq!(issue.default_severity(), Severity::Warning);
         assert_eq!(issue.identical_in, vec!["zh"]);
     }
 
@@ -915,6 +982,33 @@ mod tests {
     }
 
     #[test]
+    fn test_untranslated_issue_with_usage_is_error() {
+        use crate::core::FullKey;
+        use std::collections::HashSet;
+
+        let loc = MessageLocation::new("./messages/en.json", 5, 3);
+        let ctx = MessageContext::new(loc, "Common.submit", "Submit");
+        let usage_loc = SourceLocation::new("./src/app.tsx", 10, 5);
+        let usage_ctx = SourceContext::new(usage_loc, "t('submit')", CommentStyle::Jsx);
+        let usage = ResolvedKeyUsage {
+            key: FullKey::new("Common.submit"),
+            context: usage_ctx,
+            suppressed_rules: HashSet::new(),
+            from_schema: None,
+        };
+        let issue = Issue::Untranslated(UntranslatedIssue {
+            context: ctx,
+            primary_locale: "en".to_string(),
+            identical_in: vec!["zh".to_string()],
+            empty_in: vec![],
+            usages: vec![usage],
+        });
+
+        assert_eq!(issue.severity(), Severity::Error);
+        assert_eq!(issue.rule(), Rule::Untranslated);
+    }
+
+    #[test]
     fn test_severity_display() {
         assert_eq!(Severity::Error.to_string(), "error");
         assert_eq!(Severity::Warning.to_string(), "warning");
@@ -931,5 +1025,21 @@ mod tests {
         assert_eq!(Rule::Untranslated.to_string(), "untranslated");
         assert_eq!(Rule::TypeMismatch.to_string(), "type-mismatch");
         assert_eq!(Rule::ParseError.to_string(), "parse-error");
+    }
+
+    #[test]
+    fn test_rule_parse_accepts_check_and_issue_names() {
+        assert_eq!(Rule::parse("hardcoded-text"), Some(Rule::HardcodedText));
+        assert_eq!(Rule::parse("missing"), Some(Rule::MissingKey));
+        assert_eq!(Rule::parse("missing-key"), Some(Rule::MissingKey));
+        assert_eq!(Rule::parse("unused"), Some(Rule::UnusedKey));
+        assert_eq!(Rule::parse("unused-key"), Some(Rule::UnusedKey));
+        assert_eq!(Rule::parse("orphan"), Some(Rule::OrphanKey));
+        assert_eq!(Rule::parse("orphan-key"), Some(Rule::OrphanKey));
+        assert_eq!(Rule::parse("unresolved"), Some(Rule::UnresolvedKey));
+        assert_eq!(Rule::parse("unresolved-key"), Some(Rule::UnresolvedKey));
+        assert_eq!(Rule::parse("untranslated"), Some(Rule::Untranslated));
+        assert_eq!(Rule::parse("type-mismatch"), Some(Rule::TypeMismatch));
+        assert_eq!(Rule::parse("unknown"), None);
     }
 }

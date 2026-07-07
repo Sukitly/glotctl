@@ -10,6 +10,7 @@
 //! 3. Built-in defaults (lowest priority)
 
 use std::{
+    collections::BTreeMap,
     fs,
     path::{Path, PathBuf},
 };
@@ -17,6 +18,8 @@ use std::{
 use anyhow::{Context, Result};
 use glob::Pattern;
 use serde::{Deserialize, Serialize};
+
+use crate::issues::{Rule, Severity};
 
 pub const CONFIG_FILE_NAME: &str = ".glotrc.json";
 
@@ -142,6 +145,8 @@ struct RawConfig {
     extra_translation_callees: Vec<String>,
     #[serde(default)]
     extra_translation_member_calls: Vec<TranslationMemberCallPattern>,
+    #[serde(default)]
+    severities: BTreeMap<Rule, Severity>,
 }
 
 impl RawConfig {
@@ -162,6 +167,7 @@ impl RawConfig {
             ignore_test_files: self.ignore_test_files,
             extra_translation_callees: self.extra_translation_callees,
             extra_translation_member_calls: self.extra_translation_member_calls,
+            severities: self.severities,
         }
     }
 }
@@ -191,6 +197,9 @@ pub struct Config {
     pub extra_translation_callees: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub extra_translation_member_calls: Vec<TranslationMemberCallPattern>,
+    /// Per-rule severity overrides. Defaults are defined by each rule.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub severities: BTreeMap<Rule, Severity>,
 }
 
 fn default_includes() -> Vec<String> {
@@ -279,6 +288,7 @@ impl Config {
             ignore_test_files: default_ignore_test_files(),
             extra_translation_callees: Vec::new(),
             extra_translation_member_calls: Vec::new(),
+            severities: BTreeMap::new(),
         }
     }
 
@@ -315,7 +325,18 @@ impl Config {
             pattern.validate()?;
         }
 
+        if self.severities.contains_key(&Rule::ParseError) {
+            return Err(anyhow::anyhow!(
+                "Invalid rule in 'severities': 'parse-error' cannot be configured"
+            ));
+        }
+
         Ok(())
+    }
+
+    /// Return the effective severity for a rule after applying config overrides.
+    pub fn severity_for_rule(&self, rule: Rule, default: Severity) -> Severity {
+        self.severities.get(&rule).copied().unwrap_or(default)
     }
 }
 
@@ -371,6 +392,7 @@ pub fn load_config(start_dir: &Path) -> Result<ConfigLoadResult> {
 #[cfg(test)]
 mod tests {
     use crate::config::*;
+    use crate::issues::{Rule, Severity};
     use std::fs::File;
     use tempfile::tempdir;
 
@@ -525,6 +547,49 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_severity_overrides() {
+        let json = r#"{
+            "severities": {
+                "untranslated": "warning",
+                "unused": "error",
+                "missing-key": "warning"
+            }
+        }"#;
+        let config: Config = serde_json::from_str(json).unwrap();
+
+        assert_eq!(
+            config.severities.get(&Rule::Untranslated),
+            Some(&Severity::Warning)
+        );
+        assert_eq!(
+            config.severities.get(&Rule::UnusedKey),
+            Some(&Severity::Error)
+        );
+        assert_eq!(
+            config.severities.get(&Rule::MissingKey),
+            Some(&Severity::Warning)
+        );
+    }
+
+    #[test]
+    fn test_load_config_rejects_parse_error_severity_override() {
+        let dir = tempdir().unwrap();
+        let config_path = dir.path().join(".glotrc.json");
+
+        fs::write(
+            &config_path,
+            r#"{ "severities": { "parse-error": "warning" } }"#,
+        )
+        .unwrap();
+
+        let err = match load_config(dir.path()) {
+            Ok(_) => panic!("parse-error override should fail"),
+            Err(err) => err,
+        };
+        assert!(err.to_string().contains("parse-error"));
+    }
+
+    #[test]
     fn test_parse_extra_translation_patterns() {
         let json = r#"{
             "extraTranslationCallees": ["tt"],
@@ -590,6 +655,7 @@ mod tests {
         assert!(!json.contains("messagesDir"));
         assert!(!json.contains("extraTranslationCallees"));
         assert!(!json.contains("extraTranslationMemberCalls"));
+        assert!(!json.contains("severities"));
     }
 
     // ============================================================

@@ -4527,6 +4527,113 @@ export function Button() {
     Ok(())
 }
 
+#[test]
+fn test_error_on_warnings_exits_failure() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    test.write_file("messages/en.json", r#"{"Common": {"unused": "Unused"}}"#)?;
+    test.write_file("src/app.tsx", r#"const x = 1;"#)?;
+
+    assert_cmd_snapshot!(
+        test.check_command()
+            .arg("--error-on-warnings")
+            .arg("unused")
+    );
+
+    Ok(())
+}
+
+#[test]
+fn test_config_severity_override_untranslated_warning() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en",
+            "severities": {
+                "untranslated": "warning"
+            }
+        }"#,
+    )?;
+
+    test.write_file("messages/en.json", r#"{"Common": {"submit": "Submit"}}"#)?;
+    test.write_file("messages/zh.json", r#"{"Common": {"submit": "Submit"}}"#)?;
+    test.write_file(
+        "src/app.tsx",
+        r#"
+const t = useTranslations("Common");
+export function Button() {
+    return <button>{t("submit")}</button>;
+}
+"#,
+    )?;
+
+    assert_cmd_snapshot!(test.check_command().arg("untranslated"));
+
+    Ok(())
+}
+
+#[test]
+fn test_config_severity_override_untranslated_error_without_usage() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en",
+            "severities": {
+                "untranslated": "error"
+            }
+        }"#,
+    )?;
+
+    test.write_file("messages/en.json", r#"{"Common": {"submit": "Submit"}}"#)?;
+    test.write_file("messages/zh.json", r#"{"Common": {"submit": "Submit"}}"#)?;
+    test.write_file("src/app.tsx", r#"const x = 1;"#)?;
+
+    assert_cmd_snapshot!(test.check_command().arg("untranslated"));
+
+    Ok(())
+}
+
+#[test]
+fn test_config_severity_override_unused_error() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en",
+            "severities": {
+                "unused": "error"
+            }
+        }"#,
+    )?;
+
+    test.write_file("messages/en.json", r#"{"Common": {"unused": "Unused"}}"#)?;
+    test.write_file("src/app.tsx", r#"const x = 1;"#)?;
+
+    assert_cmd_snapshot!(test.check_command().arg("unused"));
+
+    Ok(())
+}
+
 // ============================================================
 // Group G: Integration Scenarios Tests
 // ============================================================

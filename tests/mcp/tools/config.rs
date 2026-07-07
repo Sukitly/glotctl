@@ -35,6 +35,7 @@ async fn test_get_config_defaults() {
         json_result["config"]["extraTranslationMemberCalls"],
         json!([])
     );
+    assert_eq!(json_result["config"]["severities"], json!({}));
     assert_eq!(json_result["fromFile"], false);
 }
 
@@ -55,7 +56,10 @@ async fn test_get_config_from_glotrc() {
                     "importFrom": "./intl",
                     "importName": "default"
                 }
-            ]
+            ],
+            "severities": {
+                "untranslated": "warning"
+            }
         }))
         .unwrap();
 
@@ -85,6 +89,10 @@ async fn test_get_config_from_glotrc() {
                 "importName": "default"
             }
         ])
+    );
+    assert_eq!(
+        json_result["config"]["severities"],
+        json!({ "untranslated": "warning" })
     );
 }
 

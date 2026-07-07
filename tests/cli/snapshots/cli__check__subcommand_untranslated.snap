@@ -6,6 +6,7 @@ info:
     - check
     - untranslated
   env:
+    GLOT_DISABLE_TIMING: "1"
     NO_COLOR: "1"
 ---
 success: true

@@ -169,6 +169,38 @@ export function App({ keyName }: { keyName: string }) {
 }
 
 #[test]
+fn test_clean_respects_unresolved_severity_override() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en",
+            "severities": {
+                "unresolved": "error"
+            }
+        }"#,
+    )?;
+
+    test.write_file(
+        "src/app.tsx",
+        r#"
+const t = useTranslations("Common");
+export function App({ keyName }: { keyName: string }) {
+    return <div>{t(keyName)}</div>;
+}
+"#,
+    )?;
+
+    test.write_file("messages/en.json", r#"{"Common": {"submit": "Submit"}}"#)?;
+
+    assert_cmd_snapshot!(test.clean_command());
+    Ok(())
+}
+
+#[test]
 fn test_clean_apply_removes_keys() -> Result<()> {
     let test = CliTest::new()?;
     setup_config(&test)?;

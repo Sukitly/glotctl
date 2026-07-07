@@ -30,6 +30,7 @@ Or create `.glotrc.json` manually.
 | [ignoreTestFiles](#ignoretestfiles)     | `boolean`  | `true`                          | Skip test files automatically            |
 | [ignoreTexts](#ignoretexts)             | `string[]` | `[]`                            | Text patterns to ignore                  |
 | [checkedAttributes](#checkedattributes) | `string[]` | [See below](#checkedattributes) | JSX attributes to check                  |
+| [severities](#severities)               | `object`   | `{}`                            | Per-rule severity overrides              |
 | [extraTranslationCallees](#extratranslationcallees) | `string[]` | `[]`              | Additional bare call names to treat as translation usage |
 | [extraTranslationMemberCalls](#extratranslationmembercalls) | `object[]` | `[]`       | Additional constrained member-call patterns to treat as translation usage |
 
@@ -294,6 +295,52 @@ Default value:
 
 </Accordion>
 
+<Accordion title="severities">
+
+### severities
+
+Override the effective severity for specific rules.
+
+| Type     | Default |
+| -------- | ------- |
+| `object` | `{}`    |
+
+```json
+{
+  "severities": {
+    "untranslated": "warning",
+    "unused": "error"
+  }
+}
+```
+
+Supported severity values are `"error"` and `"warning"`.
+
+Supported rule keys:
+
+- `hardcoded`
+- `missing` or `missing-key`
+- `replica-lag`
+- `untranslated`
+- `type-mismatch`
+- `unused` or `unused-key`
+- `orphan` or `orphan-key`
+- `unresolved` or `unresolved-key`
+
+<Note>
+  `untranslated` is an error by default when the key is used in source, and a
+  warning when no source usage is found. If your project intentionally keeps
+  some used values identical across locales, prefer targeted
+  `glot-disable-next-line untranslated` comments. Use `severities` when you want
+  a project-wide policy change.
+</Note>
+
+<Warning>
+  `parse-error` cannot be configured. Parse errors always return exit code 2.
+</Warning>
+
+</Accordion>
+
 <Accordion title="extraTranslationCallees">
 
 ### extraTranslationCallees
@@ -365,6 +412,9 @@ A complete configuration file:
   "ignoreTestFiles": true,
   "ignoreTexts": ["TODO", "FIXME", "N/A"],
   "checkedAttributes": ["placeholder", "title", "alt", "aria-label"],
+  "severities": {
+    "unused": "error"
+  },
   "extraTranslationCallees": ["tt"],
   "extraTranslationMemberCalls": [
     {

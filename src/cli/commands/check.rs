@@ -112,20 +112,25 @@ pub fn check(cmd: CheckCommand, verbose: bool) -> Result<ExitStatus> {
     all_issues.sort();
 
     let parse_error_count = parse_errors.len();
-    let has_errors = all_issues.iter().any(|i| i.severity() == Severity::Error);
+    let has_errors = all_issues.iter().any(|issue| {
+        ctx.config.severity_for_rule(issue.rule(), issue.severity()) == Severity::Error
+    });
+    let has_warnings = all_issues.iter().any(|issue| {
+        ctx.config.severity_for_rule(issue.rule(), issue.severity()) == Severity::Warning
+    });
 
     // Print output
     if all_issues.is_empty() {
         report::print_no_issue(ctx.files.len(), ctx.messages().all_messages.len());
     } else {
-        report::report(&all_issues);
+        report::report_with_config(&all_issues, &ctx.config);
     }
     report::print_parse_error(parse_error_count, verbose);
 
     // Determine exit status
     if parse_error_count > 0 {
         Ok(ExitStatus::Error)
-    } else if has_errors {
+    } else if has_errors || (args.error_on_warnings && has_warnings) {
         Ok(ExitStatus::Failure)
     } else {
         Ok(ExitStatus::Success)

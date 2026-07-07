@@ -65,7 +65,7 @@ pub fn clean(cmd: CleanCommand, verbose: bool) -> Result<ExitStatus> {
     let unresolved_issues: Vec<UnresolvedKeyIssue> = check_unresolved_keys_issues(&ctx);
     if !unresolved_issues.is_empty() {
         eprintln!(
-            "Error: {} Cannot clean, {} unresolved key warning(s) found.",
+            "Error: {} Cannot clean, {} unresolved key issue(s) found.",
             FAILURE_MARK.red(),
             unresolved_issues.len()
         );
@@ -76,7 +76,7 @@ pub fn clean(cmd: CleanCommand, verbose: bool) -> Result<ExitStatus> {
             .into_iter()
             .map(Issue::UnresolvedKey)
             .collect();
-        report::report_to_stderr(&issues);
+        report::report_to_stderr_with_config(&issues, &ctx.config);
 
         return Ok(ExitStatus::Error);
     }

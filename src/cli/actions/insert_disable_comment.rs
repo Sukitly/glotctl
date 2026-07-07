@@ -1,6 +1,6 @@
 //! InsertDisableComment action.
 //!
-//! Inserts `glot-disable-next-line` comments to suppress warnings.
+//! Inserts `glot-disable-next-line` comments to suppress issues.
 //! Used by the `glot baseline` command.
 
 use crate::core::CommentStyle;

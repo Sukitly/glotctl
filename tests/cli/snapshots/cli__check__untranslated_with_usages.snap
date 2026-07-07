@@ -6,22 +6,23 @@ info:
     - check
     - untranslated
   env:
+    GLOT_DISABLE_TIMING: "1"
     NO_COLOR: "1"
 ---
-success: true
-exit_code: 0
+success: false
+exit_code: 1
 ----- stdout -----
 warning: "Common.cancel"  [untranslated]
   --> ./messages/en.json:1:1
   = note: ("Cancel") identical in: zh
   = used: (no usages found)
 
-warning: "Common.submit"  [untranslated]
+error: "Common.submit"  [untranslated]
   --> ./messages/en.json:1:1
   = note: ("Submit") identical in: zh
   = used: ./src/app.tsx:6:21
 
 
-✘ 2 problems (0 errors, 2 warnings)
+✘ 2 problems (1 error, 1 warning)
 
 ----- stderr -----
