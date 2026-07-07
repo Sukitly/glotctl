@@ -132,10 +132,20 @@ For large projects, consider:
 
 ### Option 3: Accept Temporarily
 
-During active development:
-- Replica lag warnings are informational
-- They don't fail builds
-- You can track translation debt and address it before release
+During active development, choose an explicit temporary policy:
+
+- Run only the rules you want to enforce, for example `glot check hardcoded missing type-mismatch`
+- Or downgrade replica lag in `.glotrc.json` while translation work is in progress:
+
+```json
+{
+  "severities": {
+    "replica-lag": "warning"
+  }
+}
+```
+
+Remove the downgrade before release if complete locale coverage is required.
 
 ### Option 4: Sync Script
 

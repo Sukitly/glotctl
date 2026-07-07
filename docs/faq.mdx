@@ -242,9 +242,9 @@ See [Configuration Resolution](/configuration#configuration-resolution) for the 
 | 1 | Errors found, or warnings found with `--error-on-warnings` |
 | 2 | Parse/config/runtime error |
 
-**Default errors** (exit code 1): hardcoded text, missing keys, replica-lag, untranslated values, type mismatches.
+**Default errors** (exit code 1): hardcoded text, missing keys, replica-lag, used untranslated values, type mismatches.
 
-**Default warnings** (exit code 0): orphan keys, unused keys, unresolved keys.
+**Default warnings** (exit code 0): orphan keys, unused keys, unresolved keys, untranslated values with no source usage.
 
 Use `glot check --error-on-warnings` in CI if any warning should fail the build. You can also change rule severities with the `severities` configuration option.
 

@@ -303,6 +303,15 @@ impl UntranslatedIssue {
         Severity::Error
     }
 
+    /// Default severity depends on whether the untranslated value is known to be used in UI.
+    pub fn default_severity(&self) -> Severity {
+        if self.usages.is_empty() {
+            Severity::Warning
+        } else {
+            Severity::Error
+        }
+    }
+
     pub fn rule() -> Rule {
         Rule::Untranslated
     }
@@ -391,7 +400,7 @@ impl Issue {
             Issue::UnusedKey(_) => UnusedKeyIssue::severity(),
             Issue::OrphanKey(_) => OrphanKeyIssue::severity(),
             Issue::ReplicaLag(_) => ReplicaLagIssue::severity(),
-            Issue::Untranslated(_) => UntranslatedIssue::severity(),
+            Issue::Untranslated(issue) => issue.default_severity(),
             Issue::TypeMismatch(_) => TypeMismatchIssue::severity(),
             Issue::ParseError(_) => ParseErrorIssue::severity(),
         }
@@ -613,7 +622,7 @@ impl Report for UntranslatedIssue {
     }
 
     fn report_severity(&self) -> Severity {
-        Self::severity()
+        self.default_severity()
     }
 
     fn report_rule(&self) -> Rule {
@@ -910,6 +919,7 @@ mod tests {
         };
 
         assert_eq!(UntranslatedIssue::severity(), Severity::Error);
+        assert_eq!(issue.default_severity(), Severity::Warning);
         assert_eq!(issue.identical_in, vec!["zh"]);
     }
 
@@ -969,6 +979,33 @@ mod tests {
 
         assert_eq!(issue.severity(), Severity::Warning);
         assert_eq!(issue.rule(), Rule::UnusedKey);
+    }
+
+    #[test]
+    fn test_untranslated_issue_with_usage_is_error() {
+        use crate::core::FullKey;
+        use std::collections::HashSet;
+
+        let loc = MessageLocation::new("./messages/en.json", 5, 3);
+        let ctx = MessageContext::new(loc, "Common.submit", "Submit");
+        let usage_loc = SourceLocation::new("./src/app.tsx", 10, 5);
+        let usage_ctx = SourceContext::new(usage_loc, "t('submit')", CommentStyle::Jsx);
+        let usage = ResolvedKeyUsage {
+            key: FullKey::new("Common.submit"),
+            context: usage_ctx,
+            suppressed_rules: HashSet::new(),
+            from_schema: None,
+        };
+        let issue = Issue::Untranslated(UntranslatedIssue {
+            context: ctx,
+            primary_locale: "en".to_string(),
+            identical_in: vec!["zh".to_string()],
+            empty_in: vec![],
+            usages: vec![usage],
+        });
+
+        assert_eq!(issue.severity(), Severity::Error);
+        assert_eq!(issue.rule(), Rule::Untranslated);
     }
 
     #[test]

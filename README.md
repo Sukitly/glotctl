@@ -132,7 +132,7 @@ Values in non-primary locales that are identical to the primary locale, possibly
 error: "common.submit"  [untranslated]
   --> ./messages/en.json:3:1
   = note: ("Submit") identical in: zh
-  = used: (no usages found)
+  = used: ./src/components/Form.tsx:12:18
 ```
 
 Clean up orphan keys:

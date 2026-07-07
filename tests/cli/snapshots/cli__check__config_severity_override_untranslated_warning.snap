@@ -15,7 +15,7 @@ exit_code: 0
 warning: "Common.submit"  [untranslated]
   --> ./messages/en.json:1:1
   = note: ("Submit") identical in: zh
-  = used: (no usages found)
+  = used: ./src/app.tsx:4:21
 
 
 ✘ 1 problems (0 errors, 1 warning)

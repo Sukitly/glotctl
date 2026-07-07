@@ -9,20 +9,20 @@ info:
     GLOT_DISABLE_TIMING: "1"
     NO_COLOR: "1"
 ---
-success: false
-exit_code: 1
+success: true
+exit_code: 0
 ----- stdout -----
-error: "Common.submit"  [untranslated]
+warning: "Common.submit"  [untranslated]
   --> ./messages/en.json:3:1
   = note: ("Submit") identical in: zh
   = used: (no usages found)
 
-error: "Common.cancel"  [untranslated]
+warning: "Common.cancel"  [untranslated]
   --> ./messages/en.json:4:1
   = note: ("Cancel") identical in: zh
   = used: (no usages found)
 
 
-✘ 2 problems (2 errors, 0 warnings)
+✘ 2 problems (0 errors, 2 warnings)
 
 ----- stderr -----

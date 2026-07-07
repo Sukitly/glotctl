@@ -9,15 +9,15 @@ info:
     GLOT_DISABLE_TIMING: "1"
     NO_COLOR: "1"
 ---
-success: false
-exit_code: 1
+success: true
+exit_code: 0
 ----- stdout -----
-error: "Common.greeting"  [untranslated]
+warning: "Common.greeting"  [untranslated]
   --> ./messages/en.json:3:1
   = note: ("Hello, welcome to our platform") identical in: th
   = used: (no usages found)
 
 
-✘ 1 problems (1 error, 0 warnings)
+✘ 1 problems (0 errors, 1 warning)
 
 ----- stderr -----

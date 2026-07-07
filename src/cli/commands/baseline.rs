@@ -18,7 +18,7 @@ use super::super::{
     actions::{Action, ActionStats, InsertDisableComment, execute_operations},
     args::BaselineCommand,
     exit_status::ExitStatus,
-    report,
+    report::{self, FAILURE_MARK},
 };
 use crate::{
     core::{CheckContext, collect::SuppressibleRule},
@@ -53,10 +53,25 @@ pub fn baseline(cmd: BaselineCommand, verbose: bool) -> Result<ExitStatus> {
         }
     }
 
+    let suppressible_untranslated_issues: Vec<UntranslatedIssue> = untranslated_issues
+        .iter()
+        .filter(|issue| !issue.usages.is_empty())
+        .cloned()
+        .collect();
+    let unsuppressible_untranslated_issues: Vec<&UntranslatedIssue> = untranslated_issues
+        .iter()
+        .filter(|issue| issue.usages.is_empty())
+        .collect();
+
     let hardcoded_count = hardcoded_issues.len();
-    let untranslated_usage_count: usize = untranslated_issues.iter().map(|u| u.usages.len()).sum();
-    let untranslated_key_count = untranslated_issues.len();
-    let total = hardcoded_count + untranslated_usage_count;
+    let untranslated_usage_count: usize = suppressible_untranslated_issues
+        .iter()
+        .map(|u| u.usages.len())
+        .sum();
+    let untranslated_key_count = suppressible_untranslated_issues.len();
+    let unsuppressible_untranslated_count = unsuppressible_untranslated_issues.len();
+    let comment_total = hardcoded_count + untranslated_usage_count;
+    let has_issues = comment_total > 0 || unsuppressible_untranslated_count > 0;
 
     let (file_count, applied_hardcoded_count, applied_untranslated_count, applied_total_count) =
         if apply {
@@ -64,8 +79,10 @@ pub fn baseline(cmd: BaselineCommand, verbose: bool) -> Result<ExitStatus> {
             if !hardcoded_issues.is_empty() {
                 ops.extend(InsertDisableComment::to_operations(&hardcoded_issues));
             }
-            if !untranslated_issues.is_empty() {
-                ops.extend(InsertDisableComment::to_operations(&untranslated_issues));
+            if !suppressible_untranslated_issues.is_empty() {
+                ops.extend(InsertDisableComment::to_operations(
+                    &suppressible_untranslated_issues,
+                ));
             }
 
             let stats = if ops.is_empty() {
@@ -75,7 +92,8 @@ pub fn baseline(cmd: BaselineCommand, verbose: bool) -> Result<ExitStatus> {
             };
 
             let applied_hardcoded_count = unique_hardcoded_lines(&hardcoded_issues);
-            let applied_untranslated_count = unique_untranslated_lines(&untranslated_issues);
+            let applied_untranslated_count =
+                unique_untranslated_lines(&suppressible_untranslated_issues);
 
             (
                 stats.files_modified,
@@ -88,7 +106,7 @@ pub fn baseline(cmd: BaselineCommand, verbose: bool) -> Result<ExitStatus> {
             for issue in &hardcoded_issues {
                 files.insert(issue.context.file_path());
             }
-            for issue in &untranslated_issues {
+            for issue in &suppressible_untranslated_issues {
                 for usage in &issue.usages {
                     files.insert(usage.context.file_path());
                 }
@@ -97,7 +115,7 @@ pub fn baseline(cmd: BaselineCommand, verbose: bool) -> Result<ExitStatus> {
         };
 
     // Print output
-    if total == 0 {
+    if !has_issues {
         report::print_no_issue(ctx.files.len(), ctx.messages().all_messages.len());
     } else {
         // Show preview in dry-run mode
@@ -105,36 +123,40 @@ pub fn baseline(cmd: BaselineCommand, verbose: bool) -> Result<ExitStatus> {
             if !hardcoded_issues.is_empty() {
                 InsertDisableComment::preview(&hardcoded_issues);
             }
-            if !untranslated_issues.is_empty() {
-                InsertDisableComment::preview(&untranslated_issues);
+            if !suppressible_untranslated_issues.is_empty() {
+                InsertDisableComment::preview(&suppressible_untranslated_issues);
             }
         }
 
         if apply {
-            println!(
-                "{} {} comment(s) in {} file(s) (processed {} issue(s)):",
-                "Inserted".green().bold(),
-                applied_total_count,
-                file_count,
-                total
-            );
-            if hardcoded_count > 0 {
+            if comment_total > 0 {
                 println!(
-                    "  - hardcoded: {} comment(s) (from {} issue(s))",
-                    applied_hardcoded_count, hardcoded_count
+                    "{} {} comment(s) in {} file(s) (processed {} issue(s)):",
+                    "Inserted".green().bold(),
+                    applied_total_count,
+                    file_count,
+                    comment_total
                 );
+                if hardcoded_count > 0 {
+                    println!(
+                        "  - hardcoded: {} comment(s) (from {} issue(s))",
+                        applied_hardcoded_count, hardcoded_count
+                    );
+                }
+                if untranslated_usage_count > 0 {
+                    println!(
+                        "  - untranslated: {} comment(s), {} key(s) (from {} usage(s))",
+                        applied_untranslated_count,
+                        untranslated_key_count,
+                        untranslated_usage_count
+                    );
+                }
             }
-            if untranslated_usage_count > 0 {
-                println!(
-                    "  - untranslated: {} comment(s), {} key(s) (from {} usage(s))",
-                    applied_untranslated_count, untranslated_key_count, untranslated_usage_count
-                );
-            }
-        } else {
+        } else if comment_total > 0 {
             println!(
                 "{} {} comment(s) in {} file(s):",
                 "Would insert".yellow().bold(),
-                total,
+                comment_total,
                 file_count
             );
             if hardcoded_count > 0 {
@@ -148,6 +170,10 @@ pub fn baseline(cmd: BaselineCommand, verbose: bool) -> Result<ExitStatus> {
             }
             println!("Run with {} to insert these comments.", "--apply".cyan());
         }
+
+        if unsuppressible_untranslated_count > 0 {
+            print_untranslated_without_usages(&unsuppressible_untranslated_issues);
+        }
     }
 
     let parse_error_count = ctx.parsed_files_errors().len();
@@ -158,11 +184,30 @@ pub fn baseline(cmd: BaselineCommand, verbose: bool) -> Result<ExitStatus> {
     // to signal that there's work to be done
     if parse_error_count > 0 {
         Ok(ExitStatus::Error)
-    } else if total > 0 && !apply {
+    } else if (comment_total > 0 && !apply) || unsuppressible_untranslated_count > 0 {
         Ok(ExitStatus::Failure)
     } else {
         Ok(ExitStatus::Success)
     }
+}
+
+fn print_untranslated_without_usages(issues: &[&UntranslatedIssue]) {
+    eprintln!(
+        "Error: {} {} untranslated key issue(s) cannot be suppressed with source comments because no usages were found.",
+        FAILURE_MARK.red(),
+        issues.len()
+    );
+    for issue in issues {
+        eprintln!(
+            "  - {} at {}:{}",
+            issue.context.key,
+            issue.context.file_path(),
+            issue.context.line()
+        );
+    }
+    eprintln!(
+        "Translate these values, remove unused keys, or configure `severities.untranslated` for a project-wide policy."
+    );
 }
 
 fn unique_hardcoded_lines(issues: &[HardcodedTextIssue]) -> usize {

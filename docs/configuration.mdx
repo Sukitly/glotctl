@@ -328,8 +328,9 @@ Supported rule keys:
 - `unresolved` or `unresolved-key`
 
 <Note>
-  `untranslated` is an error by default. If your project intentionally keeps
-  some values identical across locales, prefer targeted
+  `untranslated` is an error by default when the key is used in source, and a
+  warning when no source usage is found. If your project intentionally keeps
+  some used values identical across locales, prefer targeted
   `glot-disable-next-line untranslated` comments. Use `severities` when you want
   a project-wide policy change.
 </Note>

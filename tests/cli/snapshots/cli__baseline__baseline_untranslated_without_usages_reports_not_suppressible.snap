@@ -1,0 +1,20 @@
+---
+source: tests/cli/baseline.rs
+info:
+  program: glot
+  args:
+    - baseline
+    - "--rules"
+    - untranslated
+  env:
+    GLOT_DISABLE_TIMING: "1"
+    NO_COLOR: "1"
+---
+success: false
+exit_code: 1
+----- stdout -----
+
+----- stderr -----
+Error: ✘ 1 untranslated key issue(s) cannot be suppressed with source comments because no usages were found.
+  - Common.brand at ./messages/en.json:1
+Translate these values, remove unused keys, or configure `severities.untranslated` for a project-wide policy.

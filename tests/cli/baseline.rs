@@ -1518,6 +1518,22 @@ export function App() {
 }
 
 #[test]
+fn test_baseline_untranslated_without_usages_reports_not_suppressible() -> Result<()> {
+    let test = CliTest::new()?;
+    setup_config(&test)?;
+
+    test.write_file("src/app.tsx", "const x = 1;")?;
+    test.write_file("messages/en.json", r#"{"Common": {"brand": "MyBrand"}}"#)?;
+    test.write_file("messages/zh.json", r#"{"Common": {"brand": "MyBrand"}}"#)?;
+
+    let mut cmd = test.baseline_command();
+    cmd.args(["--rules", "untranslated"]);
+    assert_cmd_snapshot!(cmd);
+
+    Ok(())
+}
+
+#[test]
 fn test_baseline_stats_output() -> Result<()> {
     let test = CliTest::new()?;
     setup_config(&test)?;

@@ -48,6 +48,11 @@ pub fn report_to_stderr(issues: &[Issue]) {
     report_to(issues, &mut io::stderr().lock());
 }
 
+/// Print issues to stderr using per-rule severity overrides from configuration.
+pub fn report_to_stderr_with_config(issues: &[Issue], config: &crate::config::Config) {
+    report_to_with_config(issues, config, &mut io::stderr().lock());
+}
+
 /// Print issues to a custom writer.
 ///
 /// Useful for testing or redirecting output.
@@ -636,7 +641,7 @@ mod tests {
         let output_str = String::from_utf8(output).unwrap();
         let stripped = strip_ansi(&output_str);
 
-        assert!(stripped.contains("error:"));
+        assert!(stripped.contains("warning:"));
         assert!(stripped.contains("\"Common.ok\""));
         assert!(stripped.contains("untranslated"));
         assert!(stripped.contains("identical in: zh, ja"));

@@ -56,7 +56,7 @@ Each check type has a default severity level. **Errors** cause a non-zero exit c
 | `hardcoded`     | Error            | 1                 |
 | `missing`       | Error            | 1                 |
 | `replica-lag`   | Error            | 1                 |
-| `untranslated`  | Error            | 1                 |
+| `untranslated`  | Error when used; Warning when no usage is found | 1 for used issues; 0 for no-usage warnings |
 | `type-mismatch` | Error            | 1                 |
 | `orphan`        | Warning          | 0                 |
 | `unused`        | Warning          | 0                 |
@@ -303,8 +303,8 @@ warning: common.oldKey  orphan-key
 
 | Severity | Exit Code | Description                                                       |
 | -------- | --------- | ----------------------------------------------------------------- |
-| Error    | 1         | Hardcoded text, missing keys, replica lag, untranslated values, type mismatches |
-| Warning  | 0 by default, 1 with `--error-on-warnings` | Orphan keys, unused keys, unresolved keys, or rules downgraded via config |
+| Error    | 1         | Hardcoded text, missing keys, replica lag, used untranslated values, type mismatches |
+| Warning  | 0 by default, 1 with `--error-on-warnings` | Orphan keys, unused keys, unresolved keys, no-usage untranslated values, or rules downgraded via config |
 
 ## Understanding Issues
 
@@ -316,7 +316,7 @@ Each issue type is documented in detail on its own page. Here's a quick summary:
 | `missing-key` | Error | Key used in code but not defined in locale files | [Missing Keys](/detection/missing-keys) |
 | `type-mismatch` | Error | Value type differs between locales (causes runtime crashes) | [Type Mismatch](/detection/type-mismatch) |
 | `orphan-key` | Warning | Key in non-primary locale but not in primary | [Orphan Keys](/detection/orphan-keys) |
-| `untranslated` | Error | Value identical to primary locale | [Untranslated](/detection/untranslated) |
+| `untranslated` | Error when used; Warning when no usage is found | Value identical to primary locale | [Untranslated](/detection/untranslated) |
 | `unused-key` | Warning | Key in primary locale but never used in code | [Unused Keys](/detection/unused-keys) |
 | `replica-lag` | Error | Key in primary locale missing from other locales | [Replica Lag](/detection/replica-lag) |
 | `unresolved-key` | Warning | Dynamic key that can't be statically analyzed | [Unresolved Keys](/detection/unresolved-keys) |
@@ -335,7 +335,7 @@ Each issue type is documented in detail on its own page. Here's a quick summary:
 
 **Replica lag** → Add missing translations to non-primary locales. See [Replica Lag](/detection/replica-lag).
 
-**Untranslated values** → Translate the non-primary locale value, or suppress intentional same-language values with `glot-disable-next-line untranslated`. See [Untranslated](/detection/untranslated).
+**Untranslated values** → Translate the non-primary locale value. If the value is intentionally identical and used in source, suppress it with `glot-disable-next-line untranslated`. See [Untranslated](/detection/untranslated).
 
 **Unresolved keys** → Add `glot-message-keys` annotations or run `glot fix --apply`. See [Unresolved Keys](/detection/unresolved-keys).
 
