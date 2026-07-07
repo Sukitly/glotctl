@@ -175,6 +175,12 @@ This is especially useful when you have many dynamic keys. See [glot fix](/comma
 }
 ```
 
+**Astro template comments:**
+
+```astro
+<!-- glot-message-keys "key1", "key2", "pattern.*" -->
+```
+
 The directive applies to the next line of code.
 
 ### Pattern Types
@@ -237,6 +243,11 @@ Use `*` as a wildcard to match multiple keys:
     <option key={opt}>{t(`CharacterForm.genderOptions.${opt}`)}</option>
   ))}
 </select>;
+```
+
+```astro
+<!-- glot-message-keys "features.items.*.title" -->
+{t(`features.items.${key}.title`)}
 ```
 
 #### Object Property Access

@@ -185,7 +185,7 @@ pub fn scan_files(
 fn is_scannable_file(path: &Path) -> bool {
     matches!(
         path.extension().and_then(|e| e.to_str()),
-        Some("tsx" | "ts" | "jsx" | "js")
+        Some("tsx" | "ts" | "jsx" | "js" | "astro")
     )
 }
 
@@ -270,6 +270,7 @@ mod tests {
         assert!(is_scannable_file(Path::new("app.ts")));
         assert!(is_scannable_file(Path::new("app.jsx")));
         assert!(is_scannable_file(Path::new("app.js")));
+        assert!(is_scannable_file(Path::new("app.astro")));
         assert!(!is_scannable_file(Path::new("style.css")));
         assert!(!is_scannable_file(Path::new("data.json")));
         assert!(!is_scannable_file(Path::new("README.md")));

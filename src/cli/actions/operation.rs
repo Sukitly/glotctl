@@ -447,6 +447,10 @@ fn strip_comment_markers(comment: &str) -> Option<&str> {
         let inner = &trimmed[3..trimmed.len().saturating_sub(3)];
         return Some(inner.trim());
     }
+    if trimmed.starts_with("<!--") && trimmed.ends_with("-->") {
+        let inner = &trimmed[4..trimmed.len().saturating_sub(3)];
+        return Some(inner.trim());
+    }
     None
 }
 
@@ -457,6 +461,9 @@ fn detect_comment_style(line: &str) -> Option<CommentStyle> {
     }
     if trimmed.starts_with("{/*") {
         return Some(CommentStyle::Jsx);
+    }
+    if trimmed.starts_with("<!--") {
+        return Some(CommentStyle::Html);
     }
     None
 }
@@ -549,25 +556,35 @@ fn build_merged_comment(group: &InsertGroup, existing_line: Option<&str>) -> Opt
 }
 
 fn select_disable_comment_style(group: &InsertGroup, existing_line: Option<&str>) -> CommentStyle {
+    let mut has_html = false;
     let mut has_jsx = false;
 
     if let Some(line) = existing_line
         && let Some(detected) = detect_comment_style(line)
-        && detected == CommentStyle::Jsx
     {
-        has_jsx = true;
-    }
-
-    for comment in &group.comments {
-        if let Some(detected) = detect_comment_style(comment)
-            && detected == CommentStyle::Jsx
-        {
-            has_jsx = true;
-            break;
+        match detected {
+            CommentStyle::Html => has_html = true,
+            CommentStyle::Jsx => has_jsx = true,
+            CommentStyle::Js => {}
         }
     }
 
-    if has_jsx {
+    for comment in &group.comments {
+        if let Some(detected) = detect_comment_style(comment) {
+            match detected {
+                CommentStyle::Html => {
+                    has_html = true;
+                    break;
+                }
+                CommentStyle::Jsx => has_jsx = true,
+                CommentStyle::Js => {}
+            }
+        }
+    }
+
+    if has_html {
+        CommentStyle::Html
+    } else if has_jsx {
         CommentStyle::Jsx
     } else {
         CommentStyle::Js
@@ -665,6 +682,7 @@ fn format_disable_next_line(
     match style {
         CommentStyle::Js => format!("// {}", directive),
         CommentStyle::Jsx => format!("{{/* {} */}}", directive),
+        CommentStyle::Html => format!("<!-- {} -->", directive),
     }
 }
 
@@ -674,6 +692,7 @@ fn format_message_keys(patterns: &[String], style: CommentStyle) -> String {
     match style {
         CommentStyle::Js => format!("// {}", directive),
         CommentStyle::Jsx => format!("{{/* {} */}}", directive),
+        CommentStyle::Html => format!("<!-- {} -->", directive),
     }
 }
 
@@ -819,6 +838,28 @@ mod tests {
 
         let updated = fs::read_to_string(&file_path).unwrap();
         let expected = "{/* glot-message-keys \"a\", \"b\" */}\nconst x = t(key);\n";
+        assert_eq!(updated, expected);
+    }
+
+    #[test]
+    fn test_insert_comment_merges_message_keys_html() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("component.astro");
+        let content = "<!-- glot-message-keys \"a\" -->\n{t(key)}\n";
+        fs::write(&file_path, content).unwrap();
+
+        let loc = SourceLocation::new(file_path.to_string_lossy(), 2, 1);
+        let ctx = SourceContext::new(loc, "{t(key)}", CommentStyle::Html);
+        let op = Operation::InsertComment {
+            context: ctx,
+            comment: "<!-- glot-message-keys \"b\" -->".to_string(),
+            rule: Rule::UnresolvedKey,
+        };
+
+        let _ = op.execute().unwrap();
+
+        let updated = fs::read_to_string(&file_path).unwrap();
+        let expected = "<!-- glot-message-keys \"a\", \"b\" -->\n{t(key)}\n";
         assert_eq!(updated, expected);
     }
 }

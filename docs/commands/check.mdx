@@ -5,6 +5,12 @@ description: Run i18n checks on your codebase
 
 The `check` command is the core of glot. It scans your codebase for internationalization issues.
 
+<Note>
+  Astro support currently covers translation key usage in supported `.astro`
+  files (static keys, unresolved dynamic keys, and `glot-message-keys`
+  declarations). The `hardcoded` rule does not run on `.astro` files yet.
+</Note>
+
 ## Usage
 
 <CodeGroup>
@@ -32,7 +38,7 @@ You can run specific checks or all checks at once:
 
 | Type            | Description                                                                  |
 | --------------- | ---------------------------------------------------------------------------- |
-| `hardcoded`     | Find untranslated text in JSX/TSX files                                      |
+| `hardcoded`     | Find untranslated text in JSX/TSX files (Astro not supported yet)            |
 | `missing`       | Identify translation keys used in code but missing from locale files         |
 | `orphan`        | Find keys in non-primary locales not present in primary locale               |
 | `untranslated`  | Find values identical to primary locale that may need translation            |
@@ -342,7 +348,7 @@ With `-v` flag, glot shows additional information:
 
 ```
 Scanning directory: ./src
-Found 42 TSX/JSX files
+Found 42 source files
 Checking file: ./src/components/Button.tsx
 Checking file: ./src/components/Form.tsx
 ...

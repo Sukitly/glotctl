@@ -12,10 +12,15 @@ Glot detects translation keys defined in the primary locale that are never refer
 A key is flagged as unused if it:
 
 1. Exists in the **primary locale** file (e.g., `messages/en.json`)
-2. Is **not referenced** in any TSX/JSX file in your codebase
+2. Is **not referenced** in any analyzed source file in your codebase
 3. Is **not matched** by any `glot-message-keys` annotation
 
 This check helps identify dead translation keys that can be safely removed.
+
+<Note>
+  Supported `.astro` key usages and `glot-message-keys` declarations also count
+  as references for unused-key detection.
+</Note>
 
 ## What Gets Detected
 

@@ -60,7 +60,7 @@ The solution is to add `glot-message-keys` comments that declare which keys are 
 
 1. Analyzing your template literal keys
 2. Inferring appropriate glob patterns
-3. Inserting the correct comment syntax (JSX or JS)
+3. Inserting the correct comment syntax (JSX, HTML, or JS depending on context)
 
 ## What Gets Fixed
 
@@ -217,6 +217,15 @@ function getLabel(type: string) {
   // glot-message-keys "Common.*.label"
   return t(`${type}.label`);
 }
+```
+
+**Astro template context**:
+
+```astro
+<div>
+  <!-- glot-message-keys "Common.*.label" -->
+  {t(`${type}.label`)}
+</div>
 ```
 
 ## Pattern Inference

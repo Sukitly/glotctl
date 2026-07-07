@@ -19,6 +19,11 @@ A translation key is flagged as unresolved if it:
 
 Unresolved keys can't be checked for existence, potentially causing missing-key errors at runtime.
 
+<Note>
+  In Astro frontmatter, use `// glot-message-keys "..."` for declarations.
+  In Astro templates, use `<!-- glot-message-keys "..." -->`.
+</Note>
+
 ## What Gets Detected
 
 ### Variable Keys
@@ -226,7 +231,13 @@ Use `glot-message-keys` comments to declare which keys a dynamic expression uses
 <h2>{t(`errors.${code}.title`)}</h2>
 ```
 
-Place annotations **before** the dynamic key usage. For full syntax reference (relative patterns, glob matching, JSX comments, multiple annotations), see [Directives — Dynamic Key Declaration](/directives#dynamic-key-declaration).
+```astro
+<!-- Astro template -->
+<!-- glot-message-keys "features.items.*.title" -->
+{t(`features.items.${key}.title`)}
+```
+
+Place annotations **before** the dynamic key usage. For full syntax reference (relative patterns, glob matching, JS/JSX/HTML comments, multiple annotations), see [Directives — Dynamic Key Declaration](/directives#dynamic-key-declaration).
 
 ## Common Patterns
 

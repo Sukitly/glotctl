@@ -205,6 +205,15 @@ pub struct FileAnalyzer<'a> {
     /// Hardcoded text values to ignore (from config `ignoreTexts`).
     ignore_texts: &'a HashSet<String>,
 
+    /// Whether hardcoded text detection should run for this file.
+    enable_hardcoded_checks: bool,
+
+    /// First template line for Astro files.
+    ///
+    /// Lines at or after this value are rendered template lines rather than
+    /// frontmatter, which affects the preferred comment syntax for fixes.
+    astro_template_start_line: Option<usize>,
+
     // ============================================================
     // Translation call collection fields
     // ============================================================
@@ -240,6 +249,8 @@ impl<'a> FileAnalyzer<'a> {
         file_comments: &'a FileComments,
         checked_attributes: &'a [String],
         ignore_texts: &'a HashSet<String>,
+        enable_hardcoded_checks: bool,
+        astro_template_start_line: Option<usize>,
         registries: &'a Registries,
         file_imports: &'a FileImports,
     ) -> Self {
@@ -251,6 +262,8 @@ impl<'a> FileAnalyzer<'a> {
             stmt_context: Vec::new(),
             checked_attributes,
             ignore_texts,
+            enable_hardcoded_checks,
+            astro_template_start_line,
             binding_context: BindingContext::new(),
             value_analyzer: ValueAnalyzer::new(
                 file_path,
@@ -287,6 +300,10 @@ impl<'a> FileAnalyzer<'a> {
     /// - Text is in the ignore list (config `ignoreTexts`)
     /// - Text contains no alphabetic characters (pure numbers/symbols)
     fn should_report_hardcoded(&self, line: usize, text: &str) -> bool {
+        if !self.enable_hardcoded_checks {
+            return false;
+        }
+
         if self
             .file_comments
             .suppressions
@@ -301,9 +318,10 @@ impl<'a> FileAnalyzer<'a> {
         contains_alphabetic(text)
     }
 
-    /// Determine the correct comment style (JSX vs JS) for a source line.
+    /// Determine the correct comment style for a source line.
     ///
     /// This affects the suppress comment format shown to users:
+    /// - `CommentStyle::Html` → `<!-- glot-message-keys ... -->`
     /// - `CommentStyle::Jsx` → `{/* glot-disable-next-line */}`
     /// - `CommentStyle::Js` → `// glot-disable-next-line`
     ///
@@ -316,8 +334,9 @@ impl<'a> FileAnalyzer<'a> {
     /// 5. Default to JS style for non-JSX contexts
     fn decide_comment_style(&self, source_line: &str, line: usize) -> CommentStyle {
         let trimmed_line = source_line.trim_start();
+        let in_astro_template = self.is_astro_template_line(line);
 
-        // A) JSX attributes -> JS comment
+        // A) JSX/Astro attributes -> JS comment
         if self.jsx_state.in_attr {
             return CommentStyle::Js;
         }
@@ -341,12 +360,21 @@ impl<'a> FileAnalyzer<'a> {
             return CommentStyle::Js;
         }
 
-        // D) JSX children -> JSX comment
+        // D) JSX/Astro children -> markup comment
         if self.jsx_state.in_context {
-            return CommentStyle::Jsx;
+            return if in_astro_template {
+                CommentStyle::Html
+            } else {
+                CommentStyle::Jsx
+            };
         }
 
         CommentStyle::Js
+    }
+
+    fn is_astro_template_line(&self, line: usize) -> bool {
+        self.astro_template_start_line
+            .is_some_and(|start_line| line >= start_line)
     }
 
     /// Record a hardcoded text issue with source context.

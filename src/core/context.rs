@@ -21,6 +21,7 @@ use crate::{
         extract::FileAnalyzer,
         file_scanner::scan_files,
         parsers::{
+            astro::parse_astro_source,
             json::scan_message_files,
             jsx::{ParsedJSX, parse_jsx_source},
         },
@@ -121,7 +122,7 @@ pub struct CheckContext {
     /// Project root directory (for resolving relative paths).
     pub root_dir: PathBuf,
 
-    /// All source files to analyze (TSX/JSX/TS/JS).
+    /// All source files to analyze (TSX/JSX/TS/JS/Astro).
     pub files: HashSet<String>,
 
     /// Hardcoded texts to ignore (from config `ignoreTexts`).
@@ -311,7 +312,7 @@ impl CheckContext {
 
     /// Get parsed AST for all source files (lazy initialization).
     ///
-    /// Parses all TSX/JSX/TS/JS files using swc. Parse errors are collected
+    /// Parses all TSX/JSX/TS/JS/Astro files. Parse errors are collected
     /// separately and can be retrieved via `parsed_files_errors()`.
     ///
     /// ## Performance Note
@@ -341,7 +342,11 @@ impl CheckContext {
                         Ok(code) => {
                             // Each thread creates its own SourceMap
                             let source_map = Arc::new(swc_common::SourceMap::default());
-                            parse_jsx_source(code, file_path, source_map)
+                            if file_path.ends_with(".astro") {
+                                parse_astro_source(code, file_path, source_map)
+                            } else {
+                                parse_jsx_source(code, file_path, source_map)
+                            }
                         }
                         Err(e) => Err(e),
                     };
@@ -379,7 +384,7 @@ impl CheckContext {
 
     /// Get parse errors from source files.
     ///
-    /// Returns errors encountered while parsing TSX/JSX/TS/JS files.
+    /// Returns errors encountered while parsing TSX/JSX/TS/JS/Astro files.
     /// Populated when `parsed_files()` is first called.
     pub fn parsed_files_errors(&self) -> &Vec<ParseErrorIssue> {
         self.parsed_files_errors.get_or_init(Vec::new)
@@ -784,6 +789,8 @@ fn extract_from_files(
                 comments,
                 checked_attributes,
                 ignore_texts,
+                !file_path.ends_with(".astro"),
+                parsed.astro_template_start_line,
                 registries,
                 &imports,
             );
