@@ -8,7 +8,7 @@ use std::path::Path;
 
 use swc_ecma_ast::{
     CallExpr, Callee, DefaultDecl, Expr, ImportSpecifier, JSXAttr, JSXAttrName, JSXAttrOrSpread,
-    JSXAttrValue, JSXElement, JSXElementName, JSXExpr, ModuleExportName, VarDecl,
+    JSXAttrValue, JSXElement, JSXElementName, JSXExpr, ModuleExportName, Pat, VarDecl,
 };
 
 use crate::core::utils::{
@@ -22,8 +22,43 @@ use crate::core::collect::registry::helpers::{
 };
 use crate::core::collect::types::{
     FileImports, ImportInfo, KeyArray, KeyObject, StringArray, TranslationBindingValue,
-    TranslationFnCall, TranslationProp, resolve_import_path,
+    TranslationFnCall, TranslationFnForward, TranslationProp, extract_binding_names,
+    resolve_import_path,
 };
+
+/// Named function context used for translation-function forwarding analysis.
+#[derive(Debug, Clone)]
+pub struct FunctionContext {
+    pub file_path: String,
+    pub registry_names: Vec<String>,
+    param_indices: HashMap<String, usize>,
+}
+
+impl FunctionContext {
+    pub fn new(file_path: &str, registry_names: Vec<String>, params: &[Pat]) -> Self {
+        let param_indices = params
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, param)| {
+                if let Pat::Ident(ident) = param {
+                    Some((ident.id.sym.to_string(), idx))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        Self {
+            file_path: file_path.to_string(),
+            registry_names,
+            param_indices,
+        }
+    }
+
+    pub fn param_index(&self, name: &str) -> Option<usize> {
+        self.param_indices.get(name).copied()
+    }
+}
 
 /// Internal state for key data collection.
 ///
@@ -55,11 +90,22 @@ impl KeyDataInternalState {
         self.bindings_stack.pop();
     }
 
-    /// Shadow bindings with the given names in the current scope.
-    pub fn shadow_bindings(&mut self, names: impl Iterator<Item = String>) {
+    /// Shadow parameter bindings in the current scope.
+    pub fn shadow_param_bindings(&mut self, names: impl Iterator<Item = String>) {
         if let Some(scope) = self.bindings_stack.last_mut() {
             for name in names {
-                scope.insert(name, TranslationBindingValue::Shadowed);
+                scope.insert(name, TranslationBindingValue::ShadowedParam);
+            }
+        }
+    }
+
+    /// Shadow non-translation local bindings in the current scope.
+    pub fn shadow_local_bindings(&mut self, names: impl Iterator<Item = String>) {
+        if let Some(scope) = self.bindings_stack.last_mut() {
+            for name in names {
+                scope
+                    .entry(name)
+                    .or_insert(TranslationBindingValue::ShadowedLocal);
             }
         }
     }
@@ -73,8 +119,19 @@ impl KeyDataInternalState {
             if let Some(value) = scope.get(name) {
                 return match value {
                     TranslationBindingValue::Translation(namespace) => Some(namespace.clone()),
-                    TranslationBindingValue::Shadowed => None,
+                    TranslationBindingValue::ShadowedParam
+                    | TranslationBindingValue::ShadowedLocal => None,
                 };
+            }
+        }
+        None
+    }
+
+    /// Get the top-most binding for a variable name without interpreting its meaning.
+    fn get_binding_value(&self, name: &str) -> Option<&TranslationBindingValue> {
+        for scope in self.bindings_stack.iter().rev() {
+            if let Some(value) = scope.get(name) {
+                return Some(value);
             }
         }
         None
@@ -98,6 +155,8 @@ impl KeyDataInternalState {
     ) {
         for decl in &node.decls {
             let Some(init) = &decl.init else { continue };
+
+            self.shadow_local_bindings(extract_binding_names(&decl.name).into_iter());
 
             // Track translation function bindings (supports both Pat::Ident and Pat::Object)
             self.check_translation_binding(&decl.name, init);
@@ -275,8 +334,15 @@ impl KeyDataInternalState {
             Expr::Ident(ident) => {
                 *default_export_name = Some(ident.sym.to_string());
             }
-            Expr::Arrow(_) | Expr::Fn(_) => {
+            Expr::Arrow(_) => {
                 *default_export_name = Some("default".to_string());
+            }
+            Expr::Fn(fn_expr) => {
+                *default_export_name = fn_expr
+                    .ident
+                    .as_ref()
+                    .map(|ident| ident.sym.to_string())
+                    .or_else(|| Some("default".to_string()));
             }
             _ => {}
         }
@@ -292,7 +358,9 @@ impl KeyDataInternalState {
         node: &CallExpr,
         file_path: &str,
         imports: &FileImports,
+        current_function: Option<&FunctionContext>,
         translation_fn_calls: &mut Vec<TranslationFnCall>,
+        translation_fn_forwards: &mut Vec<TranslationFnForward>,
     ) {
         if let Callee::Expr(callee_expr) = &node.callee
             && let Expr::Ident(fn_ident) = &**callee_expr
@@ -315,6 +383,25 @@ impl KeyDataInternalState {
                                 namespace,
                                 translation_fn_calls,
                             );
+                        }
+
+                        if let Some(function_context) = current_function
+                            && let Some(param_index) = function_context.param_index(&var_name)
+                            && matches!(
+                                self.get_binding_value(&var_name),
+                                Some(TranslationBindingValue::ShadowedParam)
+                            )
+                        {
+                            for registry_name in &function_context.registry_names {
+                                translation_fn_forwards.push(TranslationFnForward {
+                                    from_fn_file_path: function_context.file_path.clone(),
+                                    from_fn_name: registry_name.clone(),
+                                    from_param_index: param_index,
+                                    to_fn_file_path: fn_file_path.clone(),
+                                    to_fn_name: fn_name.clone(),
+                                    to_arg_index: idx,
+                                });
+                            }
                         }
                     }
                 }

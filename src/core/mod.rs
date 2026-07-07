@@ -34,6 +34,7 @@ mod data;
 pub mod extract;
 mod file_scanner;
 pub mod key_usage;
+pub mod module_resolver;
 pub mod parsers;
 pub mod resolve;
 pub mod schema;

@@ -216,6 +216,33 @@ pub struct TranslationFnCall {
     pub namespaces: Vec<Option<String>>,
 }
 
+/// Forwarding edge for a function parameter passed into another function call.
+///
+/// Example:
+/// ```typescript
+/// function createOtpSchema(t) {
+///   return otpField(t);
+/// }
+/// ```
+///
+/// If `createOtpSchema` parameter 0 is later proven to be a translation function,
+/// this edge lets us propagate that knowledge to `otpField` argument 0.
+#[derive(Debug, Clone)]
+pub struct TranslationFnForward {
+    /// File where the caller function is defined.
+    pub from_fn_file_path: String,
+    /// Caller function name.
+    pub from_fn_name: String,
+    /// Caller parameter index (0-based) that was forwarded.
+    pub from_param_index: usize,
+    /// File where the callee function is defined.
+    pub to_fn_file_path: String,
+    /// Callee function name.
+    pub to_fn_name: String,
+    /// Callee argument index (0-based) receiving the forwarded parameter.
+    pub to_arg_index: usize,
+}
+
 /// Registry of translation functions passed as regular function call arguments.
 ///
 /// **Phase 1**: Created by `RegistryCollector` when it sees `someFunc(translationVar)`
@@ -255,18 +282,19 @@ pub enum TranslationBindingValue {
     /// Example: `const t = useTranslations("MyNs")` → `Translation(Some("MyNs"))`
     Translation(Option<String>),
 
-    /// A shadowed binding (parameter that shadows outer translation binding).
+    /// A function parameter binding.
     ///
-    /// Example:
-    /// ```typescript
-    /// const t = useTranslations("Outer");
-    /// function inner(t) {  // This 't' shadows the outer 't'
-    ///   // ...
-    /// }
-    /// ```
+    /// Parameters must stop outer translation-binding lookup, but they still
+    /// participate in forwarding analysis when they belong to the current
+    /// function context.
+    ShadowedParam,
+
+    /// A non-translation local binding.
+    ///
+    /// Example: `const t = someOtherValue;`
     ///
     /// When encountered during lookup, indicates "stop searching, this is not a translation".
-    Shadowed,
+    ShadowedLocal,
 }
 
 /// Extract all identifier names from a pattern (handles destructuring).
@@ -296,41 +324,9 @@ pub fn extract_binding_names(pat: &Pat) -> Vec<String> {
     }
 }
 
-/// Resolves a TypeScript import path to an actual file path
+/// Resolves a TypeScript or JavaScript import path to an actual file path.
 pub fn resolve_import_path(current_file: &Path, import_path: &str) -> Option<String> {
-    // Only handle relative imports
-    if !import_path.starts_with('.') {
-        return None;
-    }
-
-    let base_dir = current_file.parent()?;
-    // Strip leading "./" from import_path to avoid paths like "./src/./utils"
-    let normalized_import = import_path.strip_prefix("./").unwrap_or(import_path);
-    let resolved = base_dir.join(normalized_import);
-
-    for ext in &["ts", "tsx", "js", "jsx"] {
-        let with_ext = resolved.with_extension(ext);
-        if with_ext.exists() {
-            return Some(with_ext.to_string_lossy().to_string());
-        }
-    }
-
-    for ext in &["ts", "tsx", "js", "jsx"] {
-        let index_path = resolved.join(format!("index.{}", ext));
-        if index_path.exists() {
-            return Some(index_path.to_string_lossy().to_string());
-        }
-    }
-
-    // Fallback: return speculative ".ts" path for registry lookup.
-    //
-    // Why: When checking file A that imports from file B, file B might not
-    // have been scanned yet. By returning a speculative path, the registry
-    // key will still match when file B is eventually processed.
-    //
-    // This is safe because if the import is invalid, TypeScript compilation
-    // would have already failed before this tool runs.
-    Some(resolved.with_extension("ts").to_string_lossy().to_string())
+    crate::core::module_resolver::resolve_import_path(current_file, import_path)
 }
 
 /// Create a generic registry key for file-scoped items.

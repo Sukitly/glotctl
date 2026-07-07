@@ -21,6 +21,7 @@ use swc_ecma_ast::{
 };
 use swc_ecma_visit::{Visit, VisitWith};
 
+use crate::config::TranslationMemberCallPattern;
 use crate::core::collect::SuppressibleRule;
 use crate::core::{CommentStyle, SourceContext, SourceLocation};
 use crate::issues::HardcodedTextIssue;
@@ -225,6 +226,15 @@ pub struct FileAnalyzer<'a> {
     /// Handles literals, template strings, object access, array iteration, etc.
     value_analyzer: ValueAnalyzer<'a>,
 
+    /// Import statements for the current file.
+    file_imports: &'a FileImports,
+
+    /// Additional direct callees configured by the user.
+    extra_translation_callees: &'a [String],
+
+    /// Additional member-call patterns configured by the user.
+    extra_translation_member_calls: &'a [TranslationMemberCallPattern],
+
     /// Registries from Phase 1 (translation props, fn calls, key objects, etc.).
     registries: &'a Registries,
 
@@ -253,6 +263,8 @@ impl<'a> FileAnalyzer<'a> {
         astro_template_start_line: Option<usize>,
         registries: &'a Registries,
         file_imports: &'a FileImports,
+        extra_translation_callees: &'a [String],
+        extra_translation_member_calls: &'a [TranslationMemberCallPattern],
     ) -> Self {
         Self {
             file_path,
@@ -272,6 +284,9 @@ impl<'a> FileAnalyzer<'a> {
                 &registries.string_array,
                 file_imports,
             ),
+            file_imports,
+            extra_translation_callees,
+            extra_translation_member_calls,
             registries,
             hardcoded_issues: Vec::new(),
             raw_calls: Vec::new(),
@@ -486,6 +501,86 @@ impl<'a> FileAnalyzer<'a> {
         });
     }
 
+    /// Resolve a bare callee name to a translation source.
+    fn resolve_direct_translation_source(&self, fn_name: &str) -> Option<TranslationSource> {
+        if let Some(translation_source) = self.binding_context.get_binding(fn_name).cloned() {
+            return (!translation_source.is_shadowed()).then_some(translation_source);
+        }
+
+        if self
+            .extra_translation_callees
+            .iter()
+            .any(|callee| callee == fn_name)
+        {
+            return Some(TranslationSource::Direct { namespace: None });
+        }
+
+        None
+    }
+
+    /// Check whether a member call should be treated as a translation usage.
+    fn is_translation_member_call(&self, object_name: &str, property: &str) -> bool {
+        self.is_builtin_translation_member_call(object_name, property)
+            || self.matches_extra_translation_member_call(object_name, property)
+    }
+
+    /// Built-in support for imported i18next singletons such as `i18n.t("...")`.
+    fn is_builtin_translation_member_call(&self, object_name: &str, property: &str) -> bool {
+        if property != "t" || self.binding_context.get_binding(object_name).is_some() {
+            return false;
+        }
+
+        self.file_imports.iter().any(|import| {
+            import.local_name == object_name
+                && import.module_path == "i18next"
+                && matches!(import.imported_name.as_str(), "default" | "*")
+        })
+    }
+
+    /// Match user-configured translation member-call patterns.
+    fn matches_extra_translation_member_call(&self, object_name: &str, property: &str) -> bool {
+        self.extra_translation_member_calls.iter().any(|pattern| {
+            if pattern.property != property {
+                return false;
+            }
+
+            if let Some(expected_object_name) = pattern.object_name.as_deref()
+                && expected_object_name != object_name
+            {
+                return false;
+            }
+
+            match (
+                pattern.import_from.as_deref(),
+                pattern.import_name.as_deref(),
+            ) {
+                (Some(expected_import_from), Some(expected_import_name)) => {
+                    self.binding_context.get_binding(object_name).is_none()
+                        && self.file_imports.iter().any(|import| {
+                            import.local_name == object_name
+                                && import.module_path == expected_import_from
+                                && import.imported_name == expected_import_name
+                        })
+                }
+                (Some(expected_import_from), None) => {
+                    self.binding_context.get_binding(object_name).is_none()
+                        && self.file_imports.iter().any(|import| {
+                            import.local_name == object_name
+                                && import.module_path == expected_import_from
+                        })
+                }
+                (None, Some(expected_import_name)) => {
+                    self.binding_context.get_binding(object_name).is_none()
+                        && self.file_imports.iter().any(|import| {
+                            import.local_name == object_name
+                                && import.imported_name == expected_import_name
+                        })
+                }
+                (None, None) => true,
+            }
+        })
+    }
+
     // ============================================================
     // Binding registration methods
     // ============================================================
@@ -663,11 +758,10 @@ impl<'a> FileAnalyzer<'a> {
         }
     }
 
-    /// Extract a React component defined as an arrow function.
-    ///
-    /// Example: `const MyComponent = (props) => <div>{props.children}</div>`
-    /// Returns: `Some(("MyComponent", arrow_expr))`
-    fn extract_arrow_component(decl: &VarDeclarator) -> Option<(String, &swc_ecma_ast::ArrowExpr)> {
+    /// Extract a named arrow function initializer from a variable declarator.
+    fn extract_arrow_initializer(
+        decl: &VarDeclarator,
+    ) -> Option<(String, &swc_ecma_ast::ArrowExpr)> {
         let Pat::Ident(binding_ident) = &decl.name else {
             return None;
         };
@@ -678,8 +772,26 @@ impl<'a> FileAnalyzer<'a> {
             return None;
         };
 
-        let component_name = binding_ident.id.sym.to_string();
-        Some((component_name, arrow))
+        let fn_name = binding_ident.id.sym.to_string();
+        Some((fn_name, arrow))
+    }
+
+    /// Extract a named function-expression initializer from a variable declarator.
+    fn extract_function_initializer(
+        decl: &VarDeclarator,
+    ) -> Option<(String, &swc_ecma_ast::Function)> {
+        let Pat::Ident(binding_ident) = &decl.name else {
+            return None;
+        };
+        let Some(init) = &decl.init else {
+            return None;
+        };
+        let Expr::Fn(fn_expr) = &**init else {
+            return None;
+        };
+
+        let fn_name = binding_ident.id.sym.to_string();
+        Some((fn_name, &fn_expr.function))
     }
 
     /// Extract the first parameter name from an arrow function.
@@ -874,12 +986,16 @@ impl<'a> Visit for FileAnalyzer<'a> {
     }
 
     fn visit_fn_decl(&mut self, node: &FnDecl) {
-        self.binding_context.enter_scope();
         let fn_name = node.ident.sym.to_string();
+        let params: Vec<Pat> = node.function.params.iter().map(|p| p.pat.clone()).collect();
+
+        self.binding_context
+            .insert_binding(fn_name.clone(), TranslationSource::Shadowed);
+        self.binding_context.enter_scope();
+        self.binding_context
+            .shadow_bindings(params.iter().flat_map(extract_binding_names));
 
         self.register_translation_props_from_params(&fn_name, &node.function.params);
-
-        let params: Vec<Pat> = node.function.params.iter().map(|p| p.pat.clone()).collect();
         self.register_translation_fn_params(&fn_name, &params);
 
         node.function.visit_children_with(self);
@@ -888,22 +1004,27 @@ impl<'a> Visit for FileAnalyzer<'a> {
 
     fn visit_export_default_decl(&mut self, node: &swc_ecma_ast::ExportDefaultDecl) {
         if let DefaultDecl::Fn(fn_expr) = &node.decl {
-            self.binding_context.enter_scope();
-
             let fn_name = fn_expr
                 .ident
                 .as_ref()
                 .map(|i| i.sym.to_string())
                 .unwrap_or_else(|| "default".to_string());
-
-            self.register_translation_props_from_params(&fn_name, &fn_expr.function.params);
-
             let params: Vec<Pat> = fn_expr
                 .function
                 .params
                 .iter()
                 .map(|p| p.pat.clone())
                 .collect();
+
+            if fn_name != "default" {
+                self.binding_context
+                    .insert_binding(fn_name.clone(), TranslationSource::Shadowed);
+            }
+            self.binding_context.enter_scope();
+            self.binding_context
+                .shadow_bindings(params.iter().flat_map(extract_binding_names));
+
+            self.register_translation_props_from_params(&fn_name, &fn_expr.function.params);
             self.register_translation_fn_params(&fn_name, &params);
 
             fn_expr.function.visit_children_with(self);
@@ -917,6 +1038,8 @@ impl<'a> Visit for FileAnalyzer<'a> {
     fn visit_export_default_expr(&mut self, node: &swc_ecma_ast::ExportDefaultExpr) {
         if let Expr::Arrow(arrow) = &*node.expr {
             self.binding_context.enter_scope();
+            self.binding_context
+                .shadow_bindings(arrow.params.iter().flat_map(extract_binding_names));
 
             let fn_name = "default";
 
@@ -931,20 +1054,47 @@ impl<'a> Visit for FileAnalyzer<'a> {
             return;
         }
 
+        if let Expr::Fn(fn_expr) = &*node.expr {
+            self.binding_context.enter_scope();
+            let params: Vec<Pat> = fn_expr
+                .function
+                .params
+                .iter()
+                .map(|p| p.pat.clone())
+                .collect();
+            self.binding_context
+                .shadow_bindings(params.iter().flat_map(extract_binding_names));
+
+            let fn_name = fn_expr
+                .ident
+                .as_ref()
+                .map(|ident| ident.sym.to_string())
+                .unwrap_or_else(|| "default".to_string());
+
+            self.register_translation_props_from_params(&fn_name, &fn_expr.function.params);
+            self.register_translation_fn_params(&fn_name, &params);
+
+            fn_expr.function.visit_children_with(self);
+            self.binding_context.exit_scope();
+            return;
+        }
+
         node.visit_children_with(self);
     }
 
     fn visit_function(&mut self, node: &swc_ecma_ast::Function) {
+        let params: Vec<Pat> = node.params.iter().map(|p| p.pat.clone()).collect();
         self.binding_context.enter_scope();
+        self.binding_context
+            .shadow_bindings(params.iter().flat_map(extract_binding_names));
         node.visit_children_with(self);
         self.binding_context.exit_scope();
     }
 
     fn visit_arrow_expr(&mut self, node: &swc_ecma_ast::ArrowExpr) {
         self.binding_context.enter_scope();
-        for param in &node.params {
-            param.visit_with(self);
-        }
+        self.binding_context
+            .shadow_bindings(node.params.iter().flat_map(extract_binding_names));
         match &*node.body {
             BlockStmtOrExpr::Expr(expr) => {
                 let line = self.source_map.lookup_char_pos(expr.span().lo).line;
@@ -971,8 +1121,13 @@ impl<'a> Visit for FileAnalyzer<'a> {
 
     fn visit_var_decl(&mut self, node: &VarDecl) {
         for decl in &node.decls {
-            if let Some((fn_name, arrow)) = Self::extract_arrow_component(decl) {
+            self.binding_context
+                .shadow_bindings(extract_binding_names(&decl.name).into_iter());
+
+            if let Some((fn_name, arrow)) = Self::extract_arrow_initializer(decl) {
                 self.binding_context.enter_scope();
+                self.binding_context
+                    .shadow_bindings(arrow.params.iter().flat_map(extract_binding_names));
 
                 if let Some(first_param) = arrow.params.first() {
                     self.register_translation_props_from_pat(&fn_name, first_param);
@@ -981,6 +1136,20 @@ impl<'a> Visit for FileAnalyzer<'a> {
                 self.register_translation_fn_params(&fn_name, &arrow.params);
 
                 arrow.visit_children_with(self);
+                self.binding_context.exit_scope();
+                continue;
+            }
+
+            if let Some((fn_name, function)) = Self::extract_function_initializer(decl) {
+                self.binding_context.enter_scope();
+                let params: Vec<Pat> = function.params.iter().map(|p| p.pat.clone()).collect();
+                self.binding_context
+                    .shadow_bindings(params.iter().flat_map(extract_binding_names));
+
+                self.register_translation_props_from_params(&fn_name, &function.params);
+                self.register_translation_fn_params(&fn_name, &params);
+
+                function.visit_children_with(self);
                 self.binding_context.exit_scope();
                 continue;
             }
@@ -1035,26 +1204,23 @@ impl<'a> Visit for FileAnalyzer<'a> {
     }
 
     fn visit_call_expr(&mut self, node: &CallExpr) {
-        // Handle direct translation calls: t("key")
+        // Handle direct translation calls: t("key") or configured bare callees
         if let Callee::Expr(expr) = &node.callee
             && let Expr::Ident(ident) = &**expr
         {
             let fn_name = ident.sym.as_str();
 
-            if let Some(translation_source) = self.binding_context.get_binding(fn_name).cloned()
-                && !translation_source.is_shadowed()
+            if let Some(translation_source) = self.resolve_direct_translation_source(fn_name)
+                && let Some(arg) = node.args.first()
             {
                 let loc = self.source_map.lookup_char_pos(node.span.lo);
-
-                if let Some(arg) = node.args.first() {
-                    let argument = self.value_analyzer.analyze_expr(&arg.expr);
-                    self.collect_translation_call(
-                        loc,
-                        translation_source,
-                        argument,
-                        TranslationCallKind::Direct,
-                    );
-                }
+                let argument = self.value_analyzer.analyze_expr(&arg.expr);
+                self.collect_translation_call(
+                    loc,
+                    translation_source,
+                    argument,
+                    TranslationCallKind::Direct,
+                );
             }
 
             // Detect schema function calls
@@ -1093,7 +1259,7 @@ impl<'a> Visit for FileAnalyzer<'a> {
             }
         }
 
-        // Handle method calls: t.raw("key"), t.rich("key"), t.markup("key")
+        // Handle method calls: t.raw("key"), t.rich("key"), t.markup("key"), i18n.t("key")
         if let Callee::Expr(expr) = &node.callee
             && let Expr::Member(member) = &**expr
             && let Expr::Ident(obj_ident) = &*member.obj
@@ -1115,6 +1281,17 @@ impl<'a> Visit for FileAnalyzer<'a> {
                     translation_source,
                     argument,
                     TranslationCallKind::Method(method_name.to_string()),
+                );
+            } else if self.is_translation_member_call(obj_name, method_name)
+                && let Some(arg) = node.args.first()
+            {
+                let loc = self.source_map.lookup_char_pos(node.span.lo);
+                let argument = self.value_analyzer.analyze_expr(&arg.expr);
+                self.collect_translation_call(
+                    loc,
+                    TranslationSource::Direct { namespace: None },
+                    argument,
+                    TranslationCallKind::Direct,
                 );
             }
         }

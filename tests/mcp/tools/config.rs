@@ -30,6 +30,11 @@ async fn test_get_config_defaults() {
     assert_eq!(json_result["config"]["primaryLocale"], "en");
     assert!(json_result["config"]["includes"].is_array());
     assert_eq!(json_result["config"]["framework"], "next-intl");
+    assert_eq!(json_result["config"]["extraTranslationCallees"], json!([]));
+    assert_eq!(
+        json_result["config"]["extraTranslationMemberCalls"],
+        json!([])
+    );
     assert_eq!(json_result["fromFile"], false);
 }
 
@@ -42,7 +47,15 @@ async fn test_get_config_from_glotrc() {
         .write_config(&json!({
             "messagesRoot": "locales",
             "primaryLocale": "zh",
-            "sourcePatterns": ["**/*.tsx"]
+            "extraTranslationCallees": ["tt"],
+            "extraTranslationMemberCalls": [
+                {
+                    "objectName": "intl",
+                    "property": "translate",
+                    "importFrom": "./intl",
+                    "importName": "default"
+                }
+            ]
         }))
         .unwrap();
 
@@ -58,6 +71,21 @@ async fn test_get_config_from_glotrc() {
     // Should use custom config
     assert_eq!(json_result["config"]["messagesRoot"], "locales");
     assert_eq!(json_result["config"]["primaryLocale"], "zh");
+    assert_eq!(
+        json_result["config"]["extraTranslationCallees"],
+        json!(["tt"])
+    );
+    assert_eq!(
+        json_result["config"]["extraTranslationMemberCalls"],
+        json!([
+            {
+                "objectName": "intl",
+                "property": "translate",
+                "importFrom": "./intl",
+                "importName": "default"
+            }
+        ])
+    );
 }
 
 // ============================================================================

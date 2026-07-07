@@ -61,6 +61,15 @@ impl BindingContext {
         }
     }
 
+    /// Shadow bindings in the current scope.
+    pub fn shadow_bindings(&mut self, names: impl Iterator<Item = String>) {
+        if let Some(scope) = self.bindings_stack.last_mut() {
+            for name in names {
+                scope.entry(name).or_insert(TranslationSource::Shadowed);
+            }
+        }
+    }
+
     /// Look up a binding by name, searching from innermost to outermost scope.
     pub fn get_binding(&self, name: &str) -> Option<&TranslationSource> {
         for scope in self.bindings_stack.iter().rev() {
