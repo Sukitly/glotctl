@@ -21,6 +21,7 @@ use swc_ecma_ast::{
 };
 use swc_ecma_visit::{Visit, VisitWith};
 
+use crate::config::TranslationMemberCallPattern;
 use crate::core::collect::SuppressibleRule;
 use crate::core::{CommentStyle, SourceContext, SourceLocation};
 use crate::issues::HardcodedTextIssue;
@@ -225,6 +226,15 @@ pub struct FileAnalyzer<'a> {
     /// Handles literals, template strings, object access, array iteration, etc.
     value_analyzer: ValueAnalyzer<'a>,
 
+    /// Import statements for the current file.
+    file_imports: &'a FileImports,
+
+    /// Additional direct callees configured by the user.
+    extra_translation_callees: &'a [String],
+
+    /// Additional member-call patterns configured by the user.
+    extra_translation_member_calls: &'a [TranslationMemberCallPattern],
+
     /// Registries from Phase 1 (translation props, fn calls, key objects, etc.).
     registries: &'a Registries,
 
@@ -253,6 +263,8 @@ impl<'a> FileAnalyzer<'a> {
         astro_template_start_line: Option<usize>,
         registries: &'a Registries,
         file_imports: &'a FileImports,
+        extra_translation_callees: &'a [String],
+        extra_translation_member_calls: &'a [TranslationMemberCallPattern],
     ) -> Self {
         Self {
             file_path,
@@ -272,6 +284,9 @@ impl<'a> FileAnalyzer<'a> {
                 &registries.string_array,
                 file_imports,
             ),
+            file_imports,
+            extra_translation_callees,
+            extra_translation_member_calls,
             registries,
             hardcoded_issues: Vec::new(),
             raw_calls: Vec::new(),
@@ -484,6 +499,79 @@ impl<'a> FileAnalyzer<'a> {
             argument,
             call_kind,
         });
+    }
+
+    /// Resolve a bare callee name to a translation source.
+    fn resolve_direct_translation_source(&self, fn_name: &str) -> Option<TranslationSource> {
+        if let Some(translation_source) = self.binding_context.get_binding(fn_name).cloned()
+            && !translation_source.is_shadowed()
+        {
+            return Some(translation_source);
+        }
+
+        if self
+            .extra_translation_callees
+            .iter()
+            .any(|callee| callee == fn_name)
+        {
+            return Some(TranslationSource::Direct { namespace: None });
+        }
+
+        None
+    }
+
+    /// Check whether a member call should be treated as a translation usage.
+    fn is_translation_member_call(&self, object_name: &str, property: &str) -> bool {
+        self.is_builtin_translation_member_call(object_name, property)
+            || self.matches_extra_translation_member_call(object_name, property)
+    }
+
+    /// Built-in support for imported i18next singletons such as `i18n.t("...")`.
+    fn is_builtin_translation_member_call(&self, object_name: &str, property: &str) -> bool {
+        if property != "t" {
+            return false;
+        }
+
+        self.file_imports.iter().any(|import| {
+            import.local_name == object_name
+                && import.module_path == "i18next"
+                && matches!(import.imported_name.as_str(), "default" | "*")
+        })
+    }
+
+    /// Match user-configured translation member-call patterns.
+    fn matches_extra_translation_member_call(&self, object_name: &str, property: &str) -> bool {
+        self.extra_translation_member_calls.iter().any(|pattern| {
+            if pattern.property != property {
+                return false;
+            }
+
+            if let Some(expected_object_name) = pattern.object_name.as_deref()
+                && expected_object_name != object_name
+            {
+                return false;
+            }
+
+            match (
+                pattern.import_from.as_deref(),
+                pattern.import_name.as_deref(),
+            ) {
+                (Some(expected_import_from), Some(expected_import_name)) => {
+                    self.file_imports.iter().any(|import| {
+                        import.local_name == object_name
+                            && import.module_path == expected_import_from
+                            && import.imported_name == expected_import_name
+                    })
+                }
+                (Some(expected_import_from), None) => self.file_imports.iter().any(|import| {
+                    import.local_name == object_name && import.module_path == expected_import_from
+                }),
+                (None, Some(expected_import_name)) => self.file_imports.iter().any(|import| {
+                    import.local_name == object_name && import.imported_name == expected_import_name
+                }),
+                (None, None) => true,
+            }
+        })
     }
 
     // ============================================================
@@ -1035,26 +1123,23 @@ impl<'a> Visit for FileAnalyzer<'a> {
     }
 
     fn visit_call_expr(&mut self, node: &CallExpr) {
-        // Handle direct translation calls: t("key")
+        // Handle direct translation calls: t("key") or configured bare callees
         if let Callee::Expr(expr) = &node.callee
             && let Expr::Ident(ident) = &**expr
         {
             let fn_name = ident.sym.as_str();
 
-            if let Some(translation_source) = self.binding_context.get_binding(fn_name).cloned()
-                && !translation_source.is_shadowed()
+            if let Some(translation_source) = self.resolve_direct_translation_source(fn_name)
+                && let Some(arg) = node.args.first()
             {
                 let loc = self.source_map.lookup_char_pos(node.span.lo);
-
-                if let Some(arg) = node.args.first() {
-                    let argument = self.value_analyzer.analyze_expr(&arg.expr);
-                    self.collect_translation_call(
-                        loc,
-                        translation_source,
-                        argument,
-                        TranslationCallKind::Direct,
-                    );
-                }
+                let argument = self.value_analyzer.analyze_expr(&arg.expr);
+                self.collect_translation_call(
+                    loc,
+                    translation_source,
+                    argument,
+                    TranslationCallKind::Direct,
+                );
             }
 
             // Detect schema function calls
@@ -1093,7 +1178,7 @@ impl<'a> Visit for FileAnalyzer<'a> {
             }
         }
 
-        // Handle method calls: t.raw("key"), t.rich("key"), t.markup("key")
+        // Handle method calls: t.raw("key"), t.rich("key"), t.markup("key"), i18n.t("key")
         if let Callee::Expr(expr) = &node.callee
             && let Expr::Member(member) = &**expr
             && let Expr::Ident(obj_ident) = &*member.obj
@@ -1115,6 +1200,17 @@ impl<'a> Visit for FileAnalyzer<'a> {
                     translation_source,
                     argument,
                     TranslationCallKind::Method(method_name.to_string()),
+                );
+            } else if self.is_translation_member_call(obj_name, method_name)
+                && let Some(arg) = node.args.first()
+            {
+                let loc = self.source_map.lookup_char_pos(node.span.lo);
+                let argument = self.value_analyzer.analyze_expr(&arg.expr);
+                self.collect_translation_call(
+                    loc,
+                    TranslationSource::Direct { namespace: None },
+                    argument,
+                    TranslationCallKind::Direct,
                 );
             }
         }

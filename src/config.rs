@@ -14,7 +14,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use anyhow::{Context, Ok, Result};
+use anyhow::{Context, Result};
 use glob::Pattern;
 use serde::{Deserialize, Serialize};
 
@@ -43,6 +43,80 @@ pub const TEST_FILE_PATTERNS: &[&str] = &[
     "**/__tests__/**",
 ];
 
+/// Additional member-call pattern treated as a translation usage.
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct TranslationMemberCallPattern {
+    /// Optional object name to match (e.g. `i18n` in `i18n.t(...)`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub object_name: Option<String>,
+    /// Member property name to match (e.g. `t`).
+    pub property: String,
+    /// Optional import source to restrict the match (e.g. `i18next`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub import_from: Option<String>,
+    /// Optional imported binding name restriction (`default`, `*`, or a named export).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub import_name: Option<String>,
+}
+
+impl TranslationMemberCallPattern {
+    fn validate(&self) -> Result<()> {
+        if self.property.trim().is_empty() {
+            return Err(anyhow::anyhow!(
+                "Invalid extra translation member-call pattern: 'property' must not be empty"
+            ));
+        }
+
+        let has_object_name = self
+            .object_name
+            .as_ref()
+            .is_some_and(|value| !value.trim().is_empty());
+        let has_import_from = self
+            .import_from
+            .as_ref()
+            .is_some_and(|value| !value.trim().is_empty());
+
+        if self
+            .object_name
+            .as_ref()
+            .is_some_and(|value| value.trim().is_empty())
+        {
+            return Err(anyhow::anyhow!(
+                "Invalid extra translation member-call pattern: 'objectName' must not be empty"
+            ));
+        }
+
+        if self
+            .import_from
+            .as_ref()
+            .is_some_and(|value| value.trim().is_empty())
+        {
+            return Err(anyhow::anyhow!(
+                "Invalid extra translation member-call pattern: 'importFrom' must not be empty"
+            ));
+        }
+
+        if self
+            .import_name
+            .as_ref()
+            .is_some_and(|value| value.trim().is_empty())
+        {
+            return Err(anyhow::anyhow!(
+                "Invalid extra translation member-call pattern: 'importName' must not be empty"
+            ));
+        }
+
+        if !has_object_name && !has_import_from {
+            return Err(anyhow::anyhow!(
+                "Invalid extra translation member-call pattern: set at least 'objectName' or 'importFrom'"
+            ));
+        }
+
+        Ok(())
+    }
+}
+
 /// Raw config as deserialized from JSON. Framework-dependent fields use Option
 /// to distinguish "not set" from "explicitly set".
 #[derive(Debug, Deserialize)]
@@ -64,6 +138,10 @@ struct RawConfig {
     source_root: Option<String>,
     #[serde(default = "default_ignore_test_files")]
     ignore_test_files: bool,
+    #[serde(default)]
+    extra_translation_callees: Vec<String>,
+    #[serde(default)]
+    extra_translation_member_calls: Vec<TranslationMemberCallPattern>,
 }
 
 impl RawConfig {
@@ -82,6 +160,8 @@ impl RawConfig {
             primary_locale: self.primary_locale,
             source_root: self.source_root.unwrap_or_else(default_source_root),
             ignore_test_files: self.ignore_test_files,
+            extra_translation_callees: self.extra_translation_callees,
+            extra_translation_member_calls: self.extra_translation_member_calls,
         }
     }
 }
@@ -107,6 +187,10 @@ pub struct Config {
     pub source_root: String,
     #[serde(default = "default_ignore_test_files")]
     pub ignore_test_files: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub extra_translation_callees: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub extra_translation_member_calls: Vec<TranslationMemberCallPattern>,
 }
 
 fn default_includes() -> Vec<String> {
@@ -193,6 +277,8 @@ impl Config {
             primary_locale: default_primary_locale(),
             source_root: default_source_root(),
             ignore_test_files: default_ignore_test_files(),
+            extra_translation_callees: Vec::new(),
+            extra_translation_member_calls: Vec::new(),
         }
     }
 
@@ -215,6 +301,18 @@ impl Config {
                     format!("Invalid glob pattern in 'includes': \"{}\"", pattern)
                 })?;
             }
+        }
+
+        for callee in &self.extra_translation_callees {
+            if callee.trim().is_empty() {
+                return Err(anyhow::anyhow!(
+                    "Invalid value in 'extraTranslationCallees': entries must not be empty"
+                ));
+            }
+        }
+
+        for pattern in &self.extra_translation_member_calls {
+            pattern.validate()?;
         }
 
         Ok(())
@@ -427,11 +525,71 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_extra_translation_patterns() {
+        let json = r#"{
+            "extraTranslationCallees": ["tt"],
+            "extraTranslationMemberCalls": [
+                {
+                    "objectName": "i18n",
+                    "property": "translate",
+                    "importFrom": "./intl",
+                    "importName": "default"
+                }
+            ]
+        }"#;
+        let config: Config = serde_json::from_str(json).unwrap();
+
+        assert_eq!(config.extra_translation_callees, vec!["tt"]);
+        assert_eq!(config.extra_translation_member_calls.len(), 1);
+        let pattern = &config.extra_translation_member_calls[0];
+        assert_eq!(pattern.object_name.as_deref(), Some("i18n"));
+        assert_eq!(pattern.property, "translate");
+        assert_eq!(pattern.import_from.as_deref(), Some("./intl"));
+        assert_eq!(pattern.import_name.as_deref(), Some("default"));
+    }
+
+    #[test]
+    fn test_validate_empty_extra_translation_callee_fails() {
+        let config = Config {
+            extra_translation_callees: vec!["   ".to_string()],
+            ..Default::default()
+        };
+
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("extraTranslationCallees")
+        );
+    }
+
+    #[test]
+    fn test_validate_member_pattern_requires_object_or_import() {
+        let config = Config {
+            extra_translation_member_calls: vec![TranslationMemberCallPattern {
+                object_name: None,
+                property: "t".to_string(),
+                import_from: None,
+                import_name: None,
+            }],
+            ..Default::default()
+        };
+
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("objectName"));
+    }
+
+    #[test]
     fn test_serialization_uses_new_names() {
         let config = Config::default();
         let json = serde_json::to_string(&config).unwrap();
         assert!(json.contains("messagesRoot"));
         assert!(!json.contains("messagesDir"));
+        assert!(!json.contains("extraTranslationCallees"));
+        assert!(!json.contains("extraTranslationMemberCalls"));
     }
 
     // ============================================================

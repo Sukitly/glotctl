@@ -509,6 +509,8 @@ impl CheckContext {
                 &metadata.schema_cache,
                 &self.config.checked_attributes,
                 &self.ignore_texts,
+                &self.config.extra_translation_callees,
+                &self.config.extra_translation_member_calls,
                 &available_keys,
             );
 
@@ -616,6 +618,7 @@ fn collect_registries_and_comments(
     let mut string_array = HashMap::new();
     let mut translation_prop = HashMap::new();
     let mut translation_fn_call = HashMap::new();
+    let mut translation_fn_forwards = Vec::new();
     let mut default_exports = HashMap::new();
     let mut file_imports: AllFileImports = HashMap::new();
     let mut file_comments: AllFileComments = HashMap::new();
@@ -675,11 +678,15 @@ fn collect_registries_and_comments(
                 .or_insert(fn_call);
         }
 
+        translation_fn_forwards.extend(collector.translation_fn_forwards);
+
         // Merge default exports
         if let Some(name) = collector.default_export_name {
             default_exports.insert(file_path.clone(), name);
         }
     }
+
+    propagate_translation_fn_calls(&translation_fn_forwards, &mut translation_fn_call);
 
     // Sequential translation props resolution (cross-file dependency)
     for (file_path, props) in translation_props_by_file {
@@ -717,6 +724,57 @@ fn collect_registries_and_comments(
     };
 
     (registries, file_imports, file_comments)
+}
+
+/// Propagate translation-function usage through helper-to-helper forwarding edges.
+fn propagate_translation_fn_calls(
+    forwards: &[crate::core::collect::TranslationFnForward],
+    translation_fn_call: &mut HashMap<String, TranslationFnCall>,
+) {
+    let mut changed = true;
+
+    while changed {
+        changed = false;
+
+        for forward in forwards {
+            let from_key = make_translation_fn_call_key(
+                &forward.from_fn_file_path,
+                &forward.from_fn_name,
+                forward.from_param_index,
+            );
+
+            let Some(source) = translation_fn_call.get(&from_key).cloned() else {
+                continue;
+            };
+
+            let to_key = make_translation_fn_call_key(
+                &forward.to_fn_file_path,
+                &forward.to_fn_name,
+                forward.to_arg_index,
+            );
+
+            match translation_fn_call.entry(to_key) {
+                std::collections::hash_map::Entry::Occupied(mut existing) => {
+                    let entry = existing.get_mut();
+                    for namespace in &source.namespaces {
+                        if !entry.namespaces.contains(namespace) {
+                            entry.namespaces.push(namespace.clone());
+                            changed = true;
+                        }
+                    }
+                }
+                std::collections::hash_map::Entry::Vacant(vacant) => {
+                    vacant.insert(TranslationFnCall {
+                        fn_file_path: forward.to_fn_file_path.clone(),
+                        fn_name: forward.to_fn_name.clone(),
+                        arg_index: forward.to_arg_index,
+                        namespaces: source.namespaces.clone(),
+                    });
+                    changed = true;
+                }
+            }
+        }
+    }
 }
 
 /// Resolve a component name to its original definition name.
@@ -770,6 +828,8 @@ fn extract_from_files(
     schema_cache: &HashMap<String, ExpandResult>,
     checked_attributes: &[String],
     ignore_texts: &std::collections::HashSet<String>,
+    extra_translation_callees: &[String],
+    extra_translation_member_calls: &[crate::config::TranslationMemberCallPattern],
     available_keys: &std::collections::HashSet<String>,
 ) -> (AllKeyUsages, AllHardcodedTextIssues) {
     // Parallel extraction and resolution per file
@@ -793,6 +853,8 @@ fn extract_from_files(
                 parsed.astro_template_start_line,
                 registries,
                 &imports,
+                extra_translation_callees,
+                extra_translation_member_calls,
             );
             let result = analyzer.analyze(&parsed.module);
 

@@ -1742,6 +1742,159 @@ export function StatusPage() {
 }
 
 #[test]
+fn test_translation_fn_call_paths_alias_used_key() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "framework": "react-i18next",
+            "includes": ["src"],
+            "messagesRoot": "./src/locales",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    test.write_file(
+        "tsconfig.json",
+        r#"{
+            "compilerOptions": {
+                "paths": {
+                    "@/*": ["./src/*"]
+                }
+            }
+        }"#,
+    )?;
+
+    test.write_file(
+        "src/locales/en.json",
+        r#"{
+            "auth": {
+                "validation": {
+                    "emailRequired": "Email is required."
+                }
+            }
+        }"#,
+    )?;
+
+    test.write_file(
+        "src/lib/form-schemas.ts",
+        r#"
+export function createSignupSchema(t) {
+    return {
+        email: t("auth.validation.emailRequired"),
+    };
+}
+"#,
+    )?;
+
+    test.write_file(
+        "src/components/app.tsx",
+        r#"
+import { useTranslation } from 'react-i18next';
+import { createSignupSchema } from '@/lib/form-schemas';
+
+export function App() {
+    const { t } = useTranslation();
+    const schema = createSignupSchema(t);
+    return <div>{schema.email}</div>;
+}
+"#,
+    )?;
+
+    let output = test.check_command().arg("unused").output()?;
+    assert!(
+        output.status.success(),
+        "check command should succeed for paths alias fixtures. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        !stdout.contains("auth.validation.emailRequired") && !stdout.contains("[unused-key]"),
+        "paths alias translation fn calls should mark keys as used. stdout:\n{}",
+        stdout
+    );
+
+    Ok(())
+}
+
+#[test]
+fn test_translation_fn_call_nested_helper_used_key() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "framework": "react-i18next",
+            "includes": ["src"],
+            "messagesRoot": "./src/locales",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    test.write_file(
+        "src/locales/en.json",
+        r#"{
+            "auth": {
+                "validation": {
+                    "otpRequired": "Enter the verification code.",
+                    "otpInvalid": "Enter the 6-digit code."
+                }
+            }
+        }"#,
+    )?;
+
+    test.write_file(
+        "src/form-schemas.ts",
+        r#"
+function otpField(t) {
+    return {
+        required: t("auth.validation.otpRequired"),
+        invalid: t("auth.validation.otpInvalid"),
+    };
+}
+
+export function createOtpSchema(t) {
+    return otpField(t);
+}
+"#,
+    )?;
+
+    test.write_file(
+        "src/app.tsx",
+        r#"
+import { useTranslation } from 'react-i18next';
+import { createOtpSchema } from './form-schemas';
+
+export function App() {
+    const { t } = useTranslation();
+    const schema = createOtpSchema(t);
+    return <div>{schema.required}</div>;
+}
+"#,
+    )?;
+
+    let output = test.check_command().arg("unused").output()?;
+    assert!(
+        output.status.success(),
+        "check command should succeed for nested helper fixtures. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        !stdout.contains("auth.validation.otpRequired")
+            && !stdout.contains("auth.validation.otpInvalid")
+            && !stdout.contains("[unused-key]"),
+        "nested helper forwarding should mark keys as used. stdout:\n{}",
+        stdout
+    );
+
+    Ok(())
+}
+
+#[test]
 fn test_translation_fn_call_default_export_used_key() -> Result<()> {
     let test = CliTest::new()?;
 
@@ -1852,6 +2005,175 @@ export function Page() {
     // Only "outerKey" should be tracked, "innerKey" should be ignored (shadowed)
     // No missing key error for "innerKey" since it's not tracked
     assert_cmd_snapshot!(test.check_command());
+
+    Ok(())
+}
+
+#[test]
+fn test_i18next_member_call_marks_key_as_used() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "framework": "react-i18next",
+            "includes": ["src"],
+            "messagesRoot": "./src/locales",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    test.write_file(
+        "src/locales/en.json",
+        r#"{
+            "auth": {
+                "sessionExpired": "Your session has expired."
+            }
+        }"#,
+    )?;
+
+    test.write_file(
+        "src/session-expired.ts",
+        r#"
+import i18n from 'i18next';
+
+export function notify() {
+    return i18n.t('auth.sessionExpired');
+}
+"#,
+    )?;
+
+    let output = test.check_command().arg("unused").output()?;
+    assert!(
+        output.status.success(),
+        "check command should succeed for i18next member-call fixtures. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        !stdout.contains("auth.sessionExpired") && !stdout.contains("[unused-key]"),
+        "i18next member calls should mark keys as used. stdout:\n{}",
+        stdout
+    );
+
+    Ok(())
+}
+
+#[test]
+fn test_extra_translation_callee_marks_key_as_used() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en",
+            "extraTranslationCallees": ["tt"]
+        }"#,
+    )?;
+
+    test.write_file(
+        "messages/en.json",
+        r#"{
+            "Common": {
+                "submit": "Submit"
+            }
+        }"#,
+    )?;
+
+    test.write_file(
+        "src/app.ts",
+        r#"
+export function renderLabel() {
+    return tt('Common.submit');
+}
+"#,
+    )?;
+
+    let output = test.check_command().arg("unused").output()?;
+    assert!(
+        output.status.success(),
+        "check command should succeed for configured callee fixtures. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        !stdout.contains("Common.submit") && !stdout.contains("[unused-key]"),
+        "configured bare translation callees should mark keys as used. stdout:\n{}",
+        stdout
+    );
+
+    Ok(())
+}
+
+#[test]
+fn test_extra_translation_member_call_marks_key_as_used() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "includes": ["src"],
+            "messagesDir": "./messages",
+            "primaryLocale": "en",
+            "extraTranslationMemberCalls": [
+                {
+                    "objectName": "intl",
+                    "property": "translate",
+                    "importFrom": "./intl",
+                    "importName": "default"
+                }
+            ]
+        }"#,
+    )?;
+
+    test.write_file(
+        "messages/en.json",
+        r#"{
+            "Common": {
+                "submit": "Submit"
+            }
+        }"#,
+    )?;
+
+    test.write_file(
+        "src/intl.ts",
+        r#"
+export default {
+    translate(key) {
+        return key;
+    },
+};
+"#,
+    )?;
+
+    test.write_file(
+        "src/app.ts",
+        r#"
+import intl from './intl';
+
+export function renderLabel() {
+    return intl.translate('Common.submit');
+}
+"#,
+    )?;
+
+    let output = test.check_command().arg("unused").output()?;
+    assert!(
+        output.status.success(),
+        "check command should succeed for configured member-call fixtures. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        !stdout.contains("Common.submit") && !stdout.contains("[unused-key]"),
+        "configured translation member calls should mark keys as used. stdout:\n{}",
+        stdout
+    );
 
     Ok(())
 }

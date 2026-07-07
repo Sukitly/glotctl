@@ -18,17 +18,17 @@ mod helpers;
 mod key_data;
 mod schema;
 
-use swc_ecma_ast::{ArrowExpr, Decl, Function, VarDecl};
+use swc_ecma_ast::{ArrowExpr, Decl, DefaultDecl, Expr, FnDecl, Function, VarDecl, VarDeclarator};
 use swc_ecma_visit::{Visit, VisitWith};
 
-use key_data::KeyDataInternalState;
+use key_data::{FunctionContext, KeyDataInternalState};
 use schema::SchemaInternalState;
 
 use crate::core::schema::SchemaFunction;
 
 use crate::core::collect::types::{
-    FileImports, KeyArray, KeyObject, StringArray, TranslationFnCall, TranslationProp,
-    extract_binding_names,
+    FileImports, KeyArray, KeyObject, StringArray, TranslationFnCall, TranslationFnForward,
+    TranslationProp, extract_binding_names,
 };
 
 /// Combined collector that gathers both schema functions and key objects
@@ -66,6 +66,8 @@ pub struct RegistryCollector {
     pub translation_props: Vec<TranslationProp>,
     /// Collected translation function calls.
     pub translation_fn_calls: Vec<TranslationFnCall>,
+    /// Forwarding edges between function parameters and nested helper calls.
+    pub translation_fn_forwards: Vec<TranslationFnForward>,
     /// Name of the default export, if any.
     pub default_export_name: Option<String>,
 
@@ -74,6 +76,8 @@ pub struct RegistryCollector {
     schema_state: SchemaInternalState,
     /// Key data collection state.
     key_data_state: KeyDataInternalState,
+    /// Current named function contexts for forwarding analysis.
+    function_context_stack: Vec<FunctionContext>,
 }
 
 impl RegistryCollector {
@@ -88,9 +92,11 @@ impl RegistryCollector {
             imports: Vec::new(),
             translation_props: Vec::new(),
             translation_fn_calls: Vec::new(),
+            translation_fn_forwards: Vec::new(),
             default_export_name: None,
             schema_state: SchemaInternalState::new(),
             key_data_state: KeyDataInternalState::new(),
+            function_context_stack: Vec::new(),
         }
     }
 
@@ -121,6 +127,15 @@ impl RegistryCollector {
             &mut self.string_arrays,
         );
     }
+
+    fn push_function_context(&mut self, fn_name: &str, params: &[swc_ecma_ast::Pat]) {
+        self.function_context_stack
+            .push(FunctionContext::new(&self.file_path, fn_name, params));
+    }
+
+    fn pop_function_context(&mut self) {
+        self.function_context_stack.pop();
+    }
 }
 
 impl Visit for RegistryCollector {
@@ -145,18 +160,90 @@ impl Visit for RegistryCollector {
     fn visit_export_default_decl(&mut self, node: &swc_ecma_ast::ExportDefaultDecl) {
         self.key_data_state
             .check_default_export_decl(node, &mut self.default_export_name);
+
+        if let DefaultDecl::Fn(fn_expr) = &node.decl {
+            let fn_name = fn_expr
+                .ident
+                .as_ref()
+                .map(|ident| ident.sym.to_string())
+                .unwrap_or_else(|| "default".to_string());
+            let params: Vec<_> = fn_expr
+                .function
+                .params
+                .iter()
+                .map(|param| param.pat.clone())
+                .collect();
+            self.push_function_context(&fn_name, &params);
+            fn_expr.function.visit_with(self);
+            self.pop_function_context();
+            return;
+        }
+
         node.visit_children_with(self);
     }
 
     fn visit_export_default_expr(&mut self, node: &swc_ecma_ast::ExportDefaultExpr) {
         self.key_data_state
             .check_default_export_expr(node, &mut self.default_export_name);
-        node.visit_children_with(self);
+
+        match &*node.expr {
+            Expr::Arrow(arrow) => {
+                self.push_function_context("default", &arrow.params);
+                arrow.visit_with(self);
+                self.pop_function_context();
+            }
+            Expr::Fn(fn_expr) => {
+                let fn_name = fn_expr
+                    .ident
+                    .as_ref()
+                    .map(|ident| ident.sym.to_string())
+                    .unwrap_or_else(|| "default".to_string());
+                let params: Vec<_> = fn_expr
+                    .function
+                    .params
+                    .iter()
+                    .map(|param| param.pat.clone())
+                    .collect();
+                self.push_function_context(&fn_name, &params);
+                fn_expr.function.visit_with(self);
+                self.pop_function_context();
+            }
+            _ => node.visit_children_with(self),
+        }
+    }
+
+    fn visit_fn_decl(&mut self, node: &FnDecl) {
+        let params: Vec<_> = node
+            .function
+            .params
+            .iter()
+            .map(|param| param.pat.clone())
+            .collect();
+        let fn_name = node.ident.sym.to_string();
+        self.push_function_context(&fn_name, &params);
+        node.function.visit_with(self);
+        self.pop_function_context();
     }
 
     fn visit_var_decl(&mut self, node: &VarDecl) {
         let is_module_level = self.scope_depth == 0;
         self.check_var_decl(node, false, is_module_level);
+        node.visit_children_with(self);
+    }
+
+    fn visit_var_declarator(&mut self, node: &VarDeclarator) {
+        if let swc_ecma_ast::Pat::Ident(binding_ident) = &node.name
+            && let Some(init) = &node.init
+            && let Expr::Arrow(arrow) = &**init
+        {
+            let fn_name = binding_ident.id.sym.to_string();
+            self.push_function_context(&fn_name, &arrow.params);
+            node.name.visit_with(self);
+            arrow.visit_with(self);
+            self.pop_function_context();
+            return;
+        }
+
         node.visit_children_with(self);
     }
 
@@ -230,7 +317,9 @@ impl Visit for RegistryCollector {
             node,
             &self.file_path,
             &self.imports,
+            self.function_context_stack.last(),
             &mut self.translation_fn_calls,
+            &mut self.translation_fn_forwards,
         );
 
         node.visit_children_with(self);

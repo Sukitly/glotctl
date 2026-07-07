@@ -8,7 +8,7 @@ use std::path::Path;
 
 use swc_ecma_ast::{
     CallExpr, Callee, DefaultDecl, Expr, ImportSpecifier, JSXAttr, JSXAttrName, JSXAttrOrSpread,
-    JSXAttrValue, JSXElement, JSXElementName, JSXExpr, ModuleExportName, VarDecl,
+    JSXAttrValue, JSXElement, JSXElementName, JSXExpr, ModuleExportName, Pat, VarDecl,
 };
 
 use crate::core::utils::{
@@ -22,8 +22,42 @@ use crate::core::collect::registry::helpers::{
 };
 use crate::core::collect::types::{
     FileImports, ImportInfo, KeyArray, KeyObject, StringArray, TranslationBindingValue,
-    TranslationFnCall, TranslationProp, resolve_import_path,
+    TranslationFnCall, TranslationFnForward, TranslationProp, resolve_import_path,
 };
+
+/// Named function context used for translation-function forwarding analysis.
+#[derive(Debug, Clone)]
+pub struct FunctionContext {
+    pub file_path: String,
+    pub fn_name: String,
+    param_indices: HashMap<String, usize>,
+}
+
+impl FunctionContext {
+    pub fn new(file_path: &str, fn_name: &str, params: &[Pat]) -> Self {
+        let param_indices = params
+            .iter()
+            .enumerate()
+            .filter_map(|(idx, param)| {
+                if let Pat::Ident(ident) = param {
+                    Some((ident.id.sym.to_string(), idx))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        Self {
+            file_path: file_path.to_string(),
+            fn_name: fn_name.to_string(),
+            param_indices,
+        }
+    }
+
+    pub fn param_index(&self, name: &str) -> Option<usize> {
+        self.param_indices.get(name).copied()
+    }
+}
 
 /// Internal state for key data collection.
 ///
@@ -292,7 +326,9 @@ impl KeyDataInternalState {
         node: &CallExpr,
         file_path: &str,
         imports: &FileImports,
+        current_function: Option<&FunctionContext>,
         translation_fn_calls: &mut Vec<TranslationFnCall>,
+        translation_fn_forwards: &mut Vec<TranslationFnForward>,
     ) {
         if let Callee::Expr(callee_expr) = &node.callee
             && let Expr::Ident(fn_ident) = &**callee_expr
@@ -315,6 +351,19 @@ impl KeyDataInternalState {
                                 namespace,
                                 translation_fn_calls,
                             );
+                        }
+
+                        if let Some(function_context) = current_function
+                            && let Some(param_index) = function_context.param_index(&var_name)
+                        {
+                            translation_fn_forwards.push(TranslationFnForward {
+                                from_fn_file_path: function_context.file_path.clone(),
+                                from_fn_name: function_context.fn_name.clone(),
+                                from_param_index: param_index,
+                                to_fn_file_path: fn_file_path.clone(),
+                                to_fn_name: fn_name.clone(),
+                                to_arg_index: idx,
+                            });
                         }
                     }
                 }
