@@ -525,6 +525,318 @@ export function Button() {
 }
 
 #[test]
+fn test_astro_static_keys_not_reported_as_unused() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "framework": "react-i18next",
+            "includes": ["src"],
+            "messagesRoot": "./src/i18n/messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    test.write_file(
+        "src/i18n/messages/en.json",
+        r#"{
+            "meta": { "title": "Title" },
+            "nav": {
+                "github": "GitHub",
+                "signIn": "Sign in"
+            }
+        }"#,
+    )?;
+
+    test.write_file(
+        "src/pages/index.astro",
+        r#"---
+import { useTranslation } from "@/i18n/messages";
+
+const locale = "en";
+const { t } = useTranslation(locale);
+---
+
+<div title={t("nav.github")} aria-label={t("nav.github")}>
+  {t("meta.title")}
+  {t("nav.signIn")}
+</div>
+"#,
+    )?;
+
+    let output = test.check_command().arg("unused").output()?;
+    assert!(
+        output.status.success(),
+        "check command should succeed for Astro fixtures. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        !stdout.contains("[unused-key]"),
+        "static t() calls inside .astro files should mark keys as used. stdout:\n{}",
+        stdout
+    );
+
+    Ok(())
+}
+
+#[test]
+fn test_astro_template_dynamic_key_warning_uses_html_comment_hint() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "framework": "react-i18next",
+            "includes": ["src"],
+            "messagesRoot": "./src/i18n/messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    test.write_file(
+        "src/i18n/messages/en.json",
+        r#"{
+            "feature": {
+                "a": { "title": "A" },
+                "b": { "title": "B" }
+            }
+        }"#,
+    )?;
+
+    test.write_file(
+        "src/pages/index.astro",
+        r#"---
+const { t } = useTranslation();
+---
+
+<div>
+  {t(`feature.${key}.title`)}
+</div>
+"#,
+    )?;
+
+    let output = test.check_command().arg("unresolved").output()?;
+    assert!(
+        output.status.success(),
+        "check command should succeed for Astro unresolved fixtures. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("<!-- glot-message-keys \"feature.*.title\" -->"),
+        "Astro template unresolved hints should recommend HTML comments. stdout:\n{}",
+        stdout
+    );
+    assert!(
+        !stdout.contains("{/* glot-message-keys"),
+        "Astro template unresolved hints should not recommend JSX comments. stdout:\n{}",
+        stdout
+    );
+
+    Ok(())
+}
+
+#[test]
+fn test_astro_template_dynamic_key_with_html_glot_message_keys_resolves() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "framework": "react-i18next",
+            "includes": ["src"],
+            "messagesRoot": "./src/i18n/messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    test.write_file(
+        "src/i18n/messages/en.json",
+        r#"{
+            "feature": {
+                "a": { "title": "A" },
+                "b": { "title": "B" }
+            }
+        }"#,
+    )?;
+
+    test.write_file(
+        "src/pages/index.astro",
+        r#"---
+const { t } = useTranslation();
+---
+
+<div>
+  <!-- glot-message-keys "feature.*.title" -->
+  {t(`feature.${key}.title`)}
+</div>
+"#,
+    )?;
+
+    let output = test
+        .check_command()
+        .arg("unused")
+        .arg("unresolved")
+        .output()?;
+    assert!(
+        output.status.success(),
+        "check command should succeed for Astro declared dynamic keys. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        !stdout.contains("[unused-key]") && !stdout.contains("[unresolved-key]"),
+        "Astro HTML glot-message-keys comments should resolve dynamic usages. stdout:\n{}",
+        stdout
+    );
+
+    Ok(())
+}
+
+#[test]
+fn test_astro_multi_file_regression_only_dynamic_frontmatter_keys_remain() -> Result<()> {
+    let test = CliTest::new()?;
+
+    test.write_file(
+        ".glotrc.json",
+        r#"{
+            "framework": "react-i18next",
+            "includes": ["src"],
+            "messagesRoot": "./src/i18n/messages",
+            "primaryLocale": "en"
+        }"#,
+    )?;
+
+    test.write_file(
+        "src/i18n/messages/en.json",
+        r#"{
+            "meta": {
+                "title": "Title",
+                "description": "Description"
+            },
+            "nav": {
+                "github": "GitHub",
+                "signIn": "Sign in"
+            },
+            "hero": {
+                "title": "Hero title",
+                "subtitle": "Hero subtitle"
+            },
+            "features": {
+                "items": {
+                    "zeroInstall": {
+                        "title": "Zero install",
+                        "text": "Read anywhere"
+                    },
+                    "negotiation": {
+                        "title": "One URL",
+                        "text": "Three formats"
+                    }
+                }
+            }
+        }"#,
+    )?;
+
+    test.write_file(
+        "src/layouts/BaseLayout.astro",
+        r#"---
+const { title, description } = Astro.props;
+---
+
+<html>
+  <head>
+    <title>{title}</title>
+    <meta name="description" content={description} />
+  </head>
+  <body>
+    <slot />
+  </body>
+</html>
+"#,
+    )?;
+
+    test.write_file(
+        "src/components/site/SiteHeader.astro",
+        r#"---
+const { t } = useTranslation();
+---
+
+<header>
+  <a title={t("nav.github")} aria-label={t("nav.github")}>GitHub</a>
+  <button>{t("nav.signIn")}</button>
+</header>
+"#,
+    )?;
+
+    test.write_file(
+        "src/components/home/HomePage.astro",
+        r#"---
+const { t } = useTranslation();
+const featureItems = ["zeroInstall", "negotiation"].map((key) => ({
+  title: t(`features.items.${key}.title`),
+  text: t(`features.items.${key}.text`),
+}));
+---
+
+<section>
+  <h1>{t("hero.title")}</h1>
+  <p>{t("hero.subtitle")}</p>
+  {featureItems.length}
+</section>
+"#,
+    )?;
+
+    test.write_file(
+        "src/pages/index.astro",
+        r#"---
+import HomePage from "@/components/home/HomePage.astro";
+import SiteHeader from "@/components/site/SiteHeader.astro";
+import BaseLayout from "@/layouts/BaseLayout.astro";
+
+const { t } = useTranslation();
+---
+
+<BaseLayout title={t("meta.title")} description={t("meta.description")}>
+  <SiteHeader />
+  <HomePage />
+</BaseLayout>
+"#,
+    )?;
+
+    let output = test
+        .check_command()
+        .arg("unused")
+        .arg("unresolved")
+        .output()?;
+    assert!(
+        output.status.success(),
+        "check command should succeed for realistic Astro fixtures. stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert_eq!(stdout.matches("[unresolved-key]").count(), 2);
+    assert_eq!(stdout.matches("[unused-key]").count(), 4);
+    assert!(stdout.contains("features.items.*.title"));
+    assert!(stdout.contains("features.items.*.text"));
+    assert!(stdout.contains("features.items.zeroInstall.title"));
+    assert!(stdout.contains("features.items.negotiation.text"));
+    assert!(!stdout.contains("meta.title"));
+    assert!(!stdout.contains("meta.description"));
+    assert!(!stdout.contains("nav.github"));
+    assert!(!stdout.contains("nav.signIn"));
+    assert!(!stdout.contains("hero.title"));
+    assert!(!stdout.contains("hero.subtitle"));
+
+    Ok(())
+}
+
+#[test]
 fn test_orphan_key() -> Result<()> {
     let test = CliTest::new()?;
 

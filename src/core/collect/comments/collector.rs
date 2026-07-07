@@ -56,15 +56,22 @@ impl CommentCollector {
 
         // Collect all comments with their line numbers (computed once)
         let (leading, trailing) = swc_comments.borrow_all();
-        let mut comments_with_lines: Vec<_> = leading
+        let mut comments_with_lines: Vec<(usize, String)> = leading
             .iter()
             .chain(trailing.iter())
             .flat_map(|(_, cmts)| cmts.iter())
             .map(|cmt| {
                 let line = source_map.lookup_char_pos(cmt.span.lo).line;
-                (line, cmt)
+                (line, cmt.text.to_string())
             })
             .collect();
+
+        comments_with_lines.extend(
+            swc_comments
+                .detached
+                .iter()
+                .map(|comment| (comment.line, comment.text.clone())),
+        );
 
         // Sort by line number
         comments_with_lines.sort_by_key(|(line, _)| *line);
@@ -76,8 +83,8 @@ impl CommentCollector {
         // Track open disable ranges per rule
         let mut open_ranges: HashMap<SuppressibleRule, usize> = HashMap::new();
 
-        for (line, cmt) in comments_with_lines {
-            let text = cmt.text.trim();
+        for (line, text) in comments_with_lines {
+            let text = text.trim();
 
             if let Some(directive) = Directive::parse(text) {
                 match directive {
@@ -156,13 +163,21 @@ impl CommentCollector {
 #[cfg(test)]
 mod tests {
     use crate::core::collect::comments::collector::*;
-    use crate::core::parsers::jsx::parse_jsx_source;
+    use crate::core::parsers::{astro::parse_astro_source, jsx::parse_jsx_source};
 
-    /// Helper to parse source and collect comments
+    /// Helper to parse JSX/TSX source and collect comments.
     fn parse_and_collect(source: &str) -> FileComments {
         use std::sync::Arc;
         let source_map = Arc::new(swc_common::SourceMap::default());
         let parsed = parse_jsx_source(source.to_string(), "test.tsx", source_map).unwrap();
+        CommentCollector::collect(&parsed.comments, &parsed.source_map)
+    }
+
+    /// Helper to parse Astro source and collect comments.
+    fn parse_astro_and_collect(source: &str) -> FileComments {
+        use std::sync::Arc;
+        let source_map = Arc::new(swc_common::SourceMap::default());
+        let parsed = parse_astro_source(source.to_string(), "test.astro", source_map).unwrap();
         CommentCollector::collect(&parsed.comments, &parsed.source_map)
     }
 
@@ -342,6 +357,25 @@ function renderForm() {}
             decl.absolute_patterns,
             vec!["CharacterForm.genderOptions.*"]
         ); // Glob patterns stored as-is
+    }
+
+    #[test]
+    fn test_astro_html_comment_single_key() {
+        let source = r#"---
+const { t } = useTranslation();
+---
+<div>
+  <!-- glot-message-keys "Features.items.*.title" -->
+  {t(`items.${key}.title`)}
+</div>
+"#;
+        let comments = parse_astro_and_collect(source);
+
+        let decl = comments.declarations.get_declaration(6).unwrap();
+        assert_eq!(
+            decl.absolute_patterns,
+            vec!["Features.items.*.title".to_string()]
+        );
     }
 
     // ============================================================

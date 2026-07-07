@@ -25,7 +25,7 @@ Or create `.glotrc.json` manually.
 | [primaryLocale](#primarylocale)         | `string`   | `"en"`                          | Primary locale for missing key detection |
 | [messagesRoot](#messagesroot)           | `string`   | `"./messages"`                  | Path to locale JSON files                |
 | [sourceRoot](#sourceroot)               | `string`   | `"./"`                          | Source code root directory               |
-| [includes](#includes)                   | `string[]` | [See below](#includes)          | Directories to scan for TSX/JSX          |
+| [includes](#includes)                   | `string[]` | [See below](#includes)          | Directories to scan for source files     |
 | [ignores](#ignores)                     | `string[]` | `[]`                            | Paths or glob patterns to exclude        |
 | [ignoreTestFiles](#ignoretestfiles)     | `boolean`  | `true`                          | Skip test files automatically            |
 | [ignoreTexts](#ignoretexts)             | `string[]` | `[]`                            | Text patterns to ignore                  |
@@ -107,7 +107,7 @@ This is useful when your source code is in a subdirectory or when working in a m
 
 ### includes
 
-Directories to scan for TSX/JSX files. Glot only checks files in these directories.
+Directories to scan for source files. Glot only checks `.tsx`, `.jsx`, `.ts`, `.js`, and supported `.astro` files in these directories.
 
 | Type       | Default   |
 | ---------- | --------- |

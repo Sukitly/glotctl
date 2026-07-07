@@ -1,6 +1,6 @@
 use crate::core::data::comment_style::CommentStyle;
 
-/// Pure position information in source code files (TSX/JSX/TS/JS).
+/// Pure position information in source code files (TSX/JSX/TS/JS/Astro).
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct SourceLocation {
     pub file_path: String,

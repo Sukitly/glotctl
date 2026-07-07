@@ -356,6 +356,12 @@ fn format_hint(pattern: &str, comment_style: CommentStyle) -> String {
                 pattern
             )
         }
+        CommentStyle::Html => {
+            format!(
+                "add `<!-- glot-message-keys \"{}\" -->` to declare expected keys",
+                pattern
+            )
+        }
         CommentStyle::Js => {
             format!(
                 "add `// glot-message-keys \"{}\"` to declare expected keys",

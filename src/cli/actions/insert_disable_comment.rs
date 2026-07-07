@@ -23,6 +23,7 @@ impl InsertDisableComment {
         match comment_style {
             CommentStyle::Js => format!("// {}", directive),
             CommentStyle::Jsx => format!("{{/* {} */}}", directive),
+            CommentStyle::Html => format!("<!-- {} -->", directive),
         }
     }
 }
@@ -92,6 +93,12 @@ mod tests {
     fn test_format_comment_jsx() {
         let comment = InsertDisableComment::format_comment(Rule::Untranslated, CommentStyle::Jsx);
         assert_eq!(comment, "{/* glot-disable-next-line untranslated */}");
+    }
+
+    #[test]
+    fn test_format_comment_html() {
+        let comment = InsertDisableComment::format_comment(Rule::Untranslated, CommentStyle::Html);
+        assert_eq!(comment, "<!-- glot-disable-next-line untranslated -->");
     }
 
     #[test]

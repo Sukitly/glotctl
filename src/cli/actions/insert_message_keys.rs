@@ -22,6 +22,7 @@ impl InsertMessageKeys {
         match comment_style {
             CommentStyle::Js => format!("// {}", directive),
             CommentStyle::Jsx => format!("{{/* {} */}}", directive),
+            CommentStyle::Html => format!("<!-- {} -->", directive),
         }
     }
 }
@@ -72,6 +73,12 @@ mod tests {
     fn test_format_comment_jsx() {
         let comment = InsertMessageKeys::format_comment("Common.status.*", CommentStyle::Jsx);
         assert_eq!(comment, "{/* glot-message-keys \"Common.status.*\" */}");
+    }
+
+    #[test]
+    fn test_format_comment_html() {
+        let comment = InsertMessageKeys::format_comment("Common.status.*", CommentStyle::Html);
+        assert_eq!(comment, "<!-- glot-message-keys \"Common.status.*\" -->");
     }
 
     #[test]

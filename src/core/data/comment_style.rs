@@ -5,6 +5,8 @@ pub enum CommentStyle {
     Js,
     /// JSX comment: `{/* comment */}`
     Jsx,
+    /// Markup/HTML comment: `<!-- comment -->`
+    Html,
 }
 
 impl CommentStyle {
@@ -22,5 +24,6 @@ mod tests {
     fn test_comment_style_is_jsx() {
         assert!(!CommentStyle::Js.is_jsx());
         assert!(CommentStyle::Jsx.is_jsx());
+        assert!(!CommentStyle::Html.is_jsx());
     }
 }

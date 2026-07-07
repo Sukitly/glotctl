@@ -7,6 +7,11 @@ description: Understanding hardcoded text detection
 
 Glot detects hardcoded text in JSX/TSX files that should use internationalization (i18n) translation functions.
 
+<Note>
+  The hardcoded-text rule currently does **not** run on `.astro` files. Astro
+  support is limited to translation key usage analysis for now.
+</Note>
+
 ## Detection Rule
 
 Text is flagged as hardcoded if it contains **at least one Unicode alphabetic character** (`char::is_alphabetic()`). This approach:

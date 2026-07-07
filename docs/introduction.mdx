@@ -59,10 +59,17 @@ Glot is designed specifically for **Next.js** projects using **[next-intl](https
 - TSX/JSX files with `.tsx`, `.jsx`, `.ts`, `.js` extensions
 - JSON-based locale files
 
+**Also supported (limited):**
+- Astro `.astro` files for translation key usage analysis
+- Astro frontmatter static and template-literal `t(...)` calls
+- Astro template expressions like `{t("...")}` and attributes like `title={t("...")}`
+- Astro template `<!-- glot-message-keys "..." -->` declarations for dynamic keys
+
 **Not supported:**
 - Other frameworks (Vue, Angular, Svelte, etc.)
 - Other i18n libraries (react-intl, i18next, lingui, etc.)
 - Non-JSON translation formats (YAML, PO, XLIFF, etc.)
+- Hardcoded text detection in `.astro` files (key usage only for now)
 
 <Tip>
 If your project doesn't use next-intl, glot's hardcoded text detection still works — but translation key analysis (missing, unused, orphan, etc.) requires next-intl patterns.
@@ -77,7 +84,7 @@ If your project doesn't use next-intl, glot's hardcoded text detection still wor
 
 ## How It Works
 
-Glot parses your TSX/JSX files using the [swc](https://swc.rs/) AST parser (the same parser used by Next.js) and performs static analysis to detect hardcoded text, track translation function usage, and resolve dynamic keys.
+Glot parses your TSX/JSX files using the [swc](https://swc.rs/) AST parser (the same parser used by Next.js). For supported Astro files, glot converts the analyzable subset of `.astro` syntax into a TSX-like representation so it can track translation usage and unresolved dynamic keys there as well.
 
 For a detailed breakdown of all supported patterns, detection capabilities, and known limitations, see [How Detection Works](/how-it-works).
 

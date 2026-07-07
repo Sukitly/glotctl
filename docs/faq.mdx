@@ -15,7 +15,20 @@ However, **hardcoded text detection** works regardless of your i18n library — 
 
 <Accordion title="Does glot work with Vue, Angular, or Svelte?">
 
-**No.** Glot only parses JSX/TSX files and is built for Next.js projects. It uses swc (the same parser Next.js uses) to parse your source code.
+**No.** Glot is still focused on React-style source analysis. It does not support Vue, Angular, or Svelte projects.
+
+</Accordion>
+
+<Accordion title="Does glot support Astro?">
+
+**Partially.** Glot can analyze translation key usage inside supported `.astro` files:
+
+- frontmatter static and template-literal `t(...)` calls
+- template expressions like `{t("...")}`
+- template attributes like `title={t("...")}`
+- template dynamic-key declarations via `<!-- glot-message-keys "..." -->`
+
+**Current limitation:** hardcoded text detection does **not** run on `.astro` files yet.
 
 </Accordion>
 
@@ -49,8 +62,8 @@ See [Common Configurations](/configuration#common-configurations) for more examp
 
 Only two commands modify files, and both require explicit `--apply` flags:
 
-- `glot baseline --apply` — inserts `// glot-disable-next-line` comments
-- `glot fix --apply` — inserts `/* glot-message-keys */` comments
+- `glot baseline --apply` — inserts `glot-disable-next-line` comments
+- `glot fix --apply` — inserts `glot-message-keys` comments (`//`, `{/* */}`, or `<!-- -->` depending on context)
 - `glot clean --apply` — removes unused keys from JSON locale files
 
 Without `--apply`, these commands only show a preview (dry run). All other commands (`check`, `init`, `serve`) are read-only.
@@ -124,6 +137,8 @@ Several options, from most to least specific:
 
 1. **Single line**: Add `// glot-disable-next-line` (or `{/* glot-disable-next-line */}` in JSX) above the line.
 
+   Astro note: hardcoded text suppression is not needed today because the hardcoded-text rule does not run on `.astro` files yet.
+
 2. **Block**: Wrap with `// glot-disable` and `// glot-enable`.
 
 3. **Specific text patterns**: Add to `ignoreTexts` in `.glotrc.json`:
@@ -155,6 +170,13 @@ This is a safety feature to prevent accidentally deleting keys that are used dyn
 ```tsx
 // glot-message-keys "status.active", "status.inactive", "status.pending"
 t(`status.${code}`)
+```
+
+In Astro templates, use HTML comments instead:
+
+```astro
+<!-- glot-message-keys "status.active", "status.inactive", "status.pending" -->
+{t(`status.${code}`)}
 ```
 
 Or use the `fix` command to auto-insert them:
